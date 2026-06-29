@@ -27,6 +27,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/hira_test
       TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/hira_test
     steps:
       - name: Check out code
