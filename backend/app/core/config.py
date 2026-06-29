@@ -26,5 +26,12 @@ class Settings(BaseSettings):
     embedding_provider: str = "local_bge"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 
+    # LLM (reasoning/response generation). Default "mock" so the app runs with
+    # no API key; set LLM_PROVIDER=claude and ANTHROPIC_API_KEY to go live.
+    llm_provider: str = "mock"
+    anthropic_api_key: str = ""
+    llm_model: str = "claude-sonnet-4-6"
+    llm_max_tokens: int = 1024
+
 
 settings = Settings()

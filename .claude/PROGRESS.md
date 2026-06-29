@@ -154,6 +154,16 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 12 — 2026-06-29
+
+- **Objectives**: Build the complete LLM orchestration layer (provider-agnostic, mock default) so only the API key is missing.
+- **Work completed**: `LLMProvider` interface + `LLMResponse`/`ChatMessage`; `MockProvider` (default) + `ClaudeProvider` (Anthropic, retries, lazy import); config-driven cached factory. Prompt builder + versioned system prompt + knowledge injection + history assembly (`app/ai/prompts.py`). Orchestrator `generate_reply` (`app/ai/orchestrator.py`). Background `generate_and_store_reply` storing outbound `pending_approval` (`app/ai/processing.py`). Wired webhook → background dispatch via overridable dependency. 11 new tests (LLM, orchestrator, processing, updated webhook). Verified full loop with real local embeddings + mock LLM. CI green (31 tests).
+- **Decisions made**: DEC-021 (provider-agnostic LLM layer).
+- **Files changed**: `backend/app/ai/llm/*`, `backend/app/ai/prompts.py`, `backend/app/ai/orchestrator.py`, `backend/app/ai/processing.py`, `backend/app/webhooks/whatsapp.py`, `backend/app/core/config.py`, `backend/pyproject.toml`, tests (`test_llm`, `test_orchestrator`, `test_whatsapp_webhook`), `documentation/LLM_ORCHESTRATION.md`, `MILESTONES.md`, `.claude/DECISIONS.md`, `.claude/PROGRESS.md`.
+- **Next actions**: Loop runs end-to-end offline. To go live: `ANTHROPIC_API_KEY` + `LLM_PROVIDER=claude` (real Claude), and the approval→send step + WhatsApp access token (real outbound). Both credential-gated.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |

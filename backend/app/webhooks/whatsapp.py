@@ -15,10 +15,11 @@ import hashlib
 import hmac
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.processing import generate_and_store_reply
 from app.core.config import settings
 from app.db.session import get_db
 from app.models import Business, Conversation, Customer, Message
@@ -26,6 +27,15 @@ from app.models import Business, Conversation, Customer, Message
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 SERVICE_WINDOW = timedelta(hours=24)
+
+
+def get_reply_dispatcher():
+    """Returns the callable that schedules reply generation. Overridable in tests."""
+
+    def dispatch(background_tasks: BackgroundTasks, conversation_id, user_text: str) -> None:
+        background_tasks.add_task(generate_and_store_reply, conversation_id, user_text)
+
+    return dispatch
 
 
 @router.get("/whatsapp")
@@ -49,18 +59,27 @@ def _signature_valid(raw_body: bytes, header: str | None) -> bool:
 
 
 @router.post("/whatsapp")
-async def receive(request: Request, db: Session = Depends(get_db)) -> Response:
+async def receive(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    dispatch=Depends(get_reply_dispatcher),
+) -> Response:
     raw_body = await request.body()
     if not _signature_valid(raw_body, request.headers.get("X-Hub-Signature-256")):
         return Response(status_code=403)
 
     payload = await request.json()
-    _persist_inbound(db, payload)
+    new_inbound = _persist_inbound(db, payload)
+    for conversation_id, user_text in new_inbound:
+        dispatch(background_tasks, conversation_id, user_text)
     # Always 200 once persisted, so Meta does not retry.
     return Response(status_code=200, content='{"status":"received"}', media_type="application/json")
 
 
-def _persist_inbound(db: Session, payload: dict) -> None:
+def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
+    """Persist inbound messages; return (conversation_id, text) for new ones."""
+    new_inbound: list[tuple] = []
     now = datetime.now(timezone.utc)
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
@@ -87,20 +106,23 @@ def _persist_inbound(db: Session, payload: dict) -> None:
                 customer = _get_or_create_customer(db, business.id, wa_phone, names.get(wa_phone))
                 conversation = _get_or_create_conversation(db, business.id, customer.id, now)
 
+                body = _extract_text(msg)
                 db.add(
                     Message(
                         conversation_id=conversation.id,
                         business_id=business.id,
                         direction="inbound",
                         wa_message_id=wa_message_id,
-                        body=_extract_text(msg),
+                        body=body,
                         type=msg.get("type", "text"),
                         status="received",
                     )
                 )
                 conversation.last_message_at = now
                 conversation.window_expires_at = now + SERVICE_WINDOW
+                new_inbound.append((conversation.id, body))
             db.commit()
+    return new_inbound
 
 
 def _extract_text(msg: dict) -> str:

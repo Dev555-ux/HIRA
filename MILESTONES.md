@@ -15,10 +15,12 @@ Customer → WhatsApp message → verified → stored → knowledge retrieved �
 - [x] Generate embeddings — local bge-small via `EmbeddingProvider`
 - [x] Semantic search — pgvector cosine similarity
 - [x] Retrieve relevant knowledge — retrieval pipeline returns grounding context
-- [ ] Claude grounded response — **BLOCKED: needs Anthropic API key**
-- [ ] Send WhatsApp reply — service built (S1-07); needs wiring into the loop + WhatsApp access token
+- [x] Grounded response pipeline — orchestrator assembles context + injects knowledge + history and calls the LLM. **Runs now via MockProvider**; flip to real Claude with `LLM_PROVIDER=claude` + `ANTHROPIC_API_KEY` (no code change).
+- [~] Send WhatsApp reply — generated reply is stored as `pending_approval` (Assisted Mode); send service built (S1-07). Real send needs the **WhatsApp access token** + the approval/send step.
 
 When every item is checked, Milestone 1 (first AI receptionist MVP) is complete.
+
+**Status**: the entire loop runs end-to-end offline today (WhatsApp inbound → store → retrieve → generate via mock → store pending reply). Going live needs two credentials only: `ANTHROPIC_API_KEY` (real Claude) and the WhatsApp access token (real outbound send + a send step on approval).
 
 ## Blocked on (stop conditions)
 - **Anthropic API key** → Claude grounded response generation (orchestration + final reply wiring).

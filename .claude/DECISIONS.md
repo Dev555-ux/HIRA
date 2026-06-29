@@ -282,3 +282,17 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Trade-offs**: Lower retrieval quality than top hosted models; CPU inference latency; model download on first use; schema dimension (384) is coupled to the model — changing to a different-dimension provider needs a migration.
 - **Status**: Accepted
 - **Review Date**: If retrieval quality proves insufficient in pilot.
+
+---
+
+## DEC-021 — Provider-agnostic LLM layer (LLMProvider; Claude + Mock)
+
+- **Date**: 2026-06-29
+- **Category**: Architecture
+- **Decision**: All reasoning/response generation goes through an `LLMProvider` interface. `MockProvider` (default, no key) and `ClaudeProvider` (Anthropic) are implemented; provider selected by `LLM_PROVIDER` config. Business logic (orchestrator, prompts, processing) never imports a vendor SDK. Going live = add `ANTHROPIC_API_KEY` + set `LLM_PROVIDER=claude`.
+- **Context**: Build the full AI loop before the API key arrives; keep vendor lock-in out; enable offline tests.
+- **Alternatives Considered**: Call the Anthropic SDK directly from the orchestrator (vendor lock-in, untestable without a key — rejected).
+- **Reasoning**: The abstraction lets the whole loop run/test with a mock today and swap to Claude (or OpenAI/Gemini/OpenRouter/local later) by config alone. Matches the EmbeddingProvider pattern (DEC-020).
+- **Trade-offs**: A thin abstraction layer over the SDK; worth it for testability and flexibility. Provider-specific features (e.g. tool use) will need interface extension when needed.
+- **Status**: Accepted
+- **Review Date**: N/A. Detail: `documentation/LLM_ORCHESTRATION.md`.
