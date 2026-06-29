@@ -111,6 +111,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 8 — 2026-06-29
+
+- **Objectives**: Adopt Autonomous Execution Mode (DEC-018); complete S1-06 (WhatsApp webhook).
+- **Work completed**: Recorded DEC-018 autonomy rules. Built WhatsApp webhook (`app/webhooks/whatsapp.py`): GET token handshake, POST HMAC signature verification, dedupe by `wa_message_id`, get-or-create customer/conversation, persist inbound message, fast 200. Wired router into `main.py`; added WhatsApp config vars. 5 webhook tests; CI green (14 tests total).
+- **Decisions made**: DEC-018 (autonomous execution); webhook persists synchronously and acknowledges fast, defers AI dispatch.
+- **Files changed**: `.claude/CLAUDE.md`/`DECISIONS.md`/`MEMORY.md`, `backend/app/webhooks/whatsapp.py`, `backend/app/main.py`, `backend/app/core/config.py`, `backend/tests/test_whatsapp_webhook.py`, `backend/.env.example`, `.github/workflows/ci.yml`, `roadmap/SPRINT_1.md`, `.claude/PROGRESS.md`.
+- **Lessons learned (process)**: Module-level `Settings()` means any import path that reaches config requires its env vars present — CI needed `DATABASE_URL`, not just `TEST_DATABASE_URL`.
+- **Next actions**: S1-05 (Clerk auth) is blocked on Clerk credentials (founder). Unblocked alternatives: S1-08 (AI orchestrator + intent classification — needs Anthropic API key, also a credential) or S1-09/S1-10. **Most AI/integration tasks now need a credential (stop-list #5).** Recommend founder provides Anthropic + Clerk keys to unblock S1-05/S1-08.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |
@@ -133,7 +144,7 @@ Rough, honest estimates against currently-known scope. Not inflated.
 |------|----------|-------|
 | Documentation | ~85% | Memory system, structure, READMEs, and full MVP design docs done; onboarding docs pending. |
 | Architecture | ~80% (design Accepted) | Design documented & accepted; implementation underway (DB schema live). |
-| Code | ~8% | Backend skeleton, CI, and full DB schema/migrations built (S1-01–03). |
+| Code | ~18% | Backend skeleton, CI+DB tests, schema/migrations, tenant scoping, WhatsApp webhook (S1-01–04, S1-06). |
 | Customer interviews | 0% | 0 of a target-not-yet-set number completed. |
 | MVP | 0% | No MVP work begun. |
 | Testing | ~5% | CI pipeline live; 1 behaviour test (/health). |

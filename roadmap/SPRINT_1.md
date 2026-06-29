@@ -55,13 +55,12 @@ Conventions for every task below: write tests where applicable; update the relev
 - **Testing checklist**: 401/200 paths tested; user→business resolution tested.
 - **Docs**: confirm against `API.md` auth section.
 
-### S1-06 — WhatsApp webhook (verify + receive)
+### S1-06 — WhatsApp webhook (verify + receive) — **DONE (2026-06-29)**
 - **Objective**: `GET` verification handshake + `POST` receive with signature check & dedupe.
-- **Files to create**: `backend/app/webhooks/whatsapp.py`.
-- **Dependencies**: S1-03.
-- **Expected output**: Meta verification succeeds; a posted sample payload is signature-verified, deduped, and persisted as a `message`.
-- **Testing checklist**: bad signature → rejected; duplicate `wa_message_id` → not double-stored; valid → 200.
-- **Docs**: note webhook setup steps in `documentation/`.
+- **Files created**: `backend/app/webhooks/whatsapp.py`; tests `tests/test_whatsapp_webhook.py`; config + `.env.example` WhatsApp vars; router wired in `main.py`.
+- **Outcome**: GET handshake verifies token; POST verifies HMAC, dedupes by `wa_message_id`, creates customer/conversation, persists inbound message, returns 200. 5 tests (handshake ok/bad, bad signature, persist, dedupe). CI green. ✅
+- **Deferred**: async dispatch to the AI orchestrator (S1-08+); non-text message types; status callbacks. Real Meta verify-token/app-secret go in `.env` at integration time (dev defaults in code).
+- **Bug fixed**: CI lacked `DATABASE_URL` (settings load at import via webhook) — added to CI env.
 
 ### S1-07 — Outbound messaging service
 - **Objective**: Send a WhatsApp message via Cloud API (service-window text).
