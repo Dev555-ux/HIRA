@@ -62,7 +62,9 @@ No findings recorded yet. **Pending Validation** for all six verticals (demand s
 
 ## How Sessions Run (Execution Mode — DEC-017, supersedes DEC-016)
 
-Default is **Execution Mode** (CLAUDE.md §18): brief overview → implement immediately → explain only important architectural decisions → end-of-task summary (built / why / files / key concepts / bugs). Skip quizzes and long lessons unless asked; founder asks "Why?" for depth. Stop and warn before any important architectural mistake. Still update PROGRESS/TODOS/docs per task. Founder can switch back to Teacher Mode (DEC-016 style) any time.
+Default is **Autonomous Execution Mode** (CLAUDE.md §18; DEC-017 + DEC-018): brief overview → implement immediately → explain only important architectural decisions → end-of-task summary (built / why / files / key concepts / bugs). Skip quizzes and long lessons unless asked; founder asks "Why?" for depth. Still update PROGRESS/TODOS/docs per task. Founder can switch back to Teacher Mode (DEC-016 style) any time.
+
+**Autonomy (DEC-018):** no approval needed for routine engineering (files, dev deps, tests/linters, migrations, commits, refactors, bug fixes, non-behavioral architecture, docs). **Stop and ask only for:** business-decision change, product-feature change, required paid service, destructive/data-loss ops, credentials/API-keys/billing, legal/security/privacy decisions, or multiple valid architectures with significant trade-offs. State what you're doing and continue otherwise.
 
 ## Coding Standards
 

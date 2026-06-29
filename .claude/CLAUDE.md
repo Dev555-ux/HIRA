@@ -179,3 +179,20 @@ Per task:
 - **Bugs encountered and how they were fixed**
 
 Also still update the docs each task: `PROGRESS.md`, `TODOS.md`/`SPRINT_1.md`, and any affected `documentation/`. `learning/` notes become optional (add only when genuinely useful). Suggest/make commits with messages explaining *why* (§6).
+
+### Autonomous Execution (default since 2026-06-29 — DEC-018)
+
+Operate autonomously. **Do not ask for approval before routine development work.** State what you're doing and continue. If an action is reversible and low risk, execute it immediately. Optimize for momentum and shipping.
+
+**Standing permission (no approval needed):** create/edit/move/rename/delete project files; create folders; install development dependencies; run tests, formatters, linters; create and apply database migrations; commit in small logical commits; update documentation/memory/progress; refactor code; fix bugs; improve architecture when product behavior is unchanged.
+
+**Stop and ask ONLY when:**
+1. A business decision changes.
+2. A product feature changes.
+3. A paid service is required.
+4. A destructive operation could lose data.
+5. Credentials, API keys, or billing are involved.
+6. A legal, security, or privacy decision is required.
+7. Multiple valid architectural directions exist with significant trade-offs.
+
+This relaxes (does not remove) the confirm-before-acting defaults: those still apply to the seven cases above. Git pushes to the existing private remote and committing remain routine; creating new outward-facing resources or anything matching the seven cases still needs a check-in. Note: deleting files I didn't create, or that contradict how they were described, still warrants a flag (§ harness guidance), even under autonomy.

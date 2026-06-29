@@ -240,3 +240,17 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Trade-offs**: Less proactive teaching; relies on the founder to pull deeper explanations when wanted.
 - **Status**: Accepted
 - **Review Date**: N/A
+
+---
+
+## DEC-018 — Autonomous Execution Mode
+
+- **Date**: 2026-06-29
+- **Category**: Operations
+- **Decision**: Claude operates autonomously for routine engineering — no approval needed to create/edit/delete files, install dev deps, run tests/linters, create+apply migrations, commit, refactor, fix bugs, improve non-behavioral architecture, or update docs/memory/progress. Stop and ask only for: (1) business decision changes, (2) product feature changes, (3) a required paid service, (4) destructive operations risking data loss, (5) credentials/API-keys/billing, (6) legal/security/privacy decisions, (7) multiple valid architectures with significant trade-offs. Codified in CLAUDE.md §18.
+- **Context**: Founder prioritizes momentum/shipping; per-task approval prompts were slowing routine work after the foundation is in place.
+- **Alternatives Considered**: Keep per-task approval (slower); full autonomy with no stop-list (too risky for business/legal/cost). The seven-case stop-list is the balance.
+- **Reasoning**: Reversible, low-risk work should just happen; irreversible or business/cost/legal/security-significant decisions still require the founder.
+- **Trade-offs**: Less oversight on routine changes; mitigated by small commits + CI + the stop-list, all reversible via Git.
+- **Status**: Accepted
+- **Review Date**: N/A
