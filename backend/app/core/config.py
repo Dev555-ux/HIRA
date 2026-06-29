@@ -13,5 +13,10 @@ class Settings(BaseSettings):
 
     database_url: str
 
+    # WhatsApp / Meta. Dev defaults let the webhook run and be tested locally;
+    # real values come from .env (never committed). See documentation/WHATSAPP_INTEGRATION.md.
+    whatsapp_verify_token: str = "dev-verify-token"
+    whatsapp_app_secret: str = "dev-app-secret"
+
 
 settings = Settings()

@@ -7,7 +7,10 @@ this skeleton in later Sprint 1 tasks.
 
 from fastapi import FastAPI
 
+from app.webhooks.whatsapp import router as whatsapp_router
+
 app = FastAPI(title="HIRA Backend", version="0.1.0")
+app.include_router(whatsapp_router)
 
 
 @app.get("/health")
