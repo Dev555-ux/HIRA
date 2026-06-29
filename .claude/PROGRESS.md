@@ -144,6 +144,16 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 11 — 2026-06-29
+
+- **Objectives**: Capability-driven delivery toward the first AI receptionist; build the KB→retrieval pipeline (no key needed).
+- **Work completed**: Added `MILESTONES.md` (capability tracking). Built KB ingestion (`index_entry`: chunk→embed→store per-chunk rows), text chunking (`app/ai/chunking.py`), tenant-scoped pgvector cosine search + `retrieve_context` (`app/ai/knowledge_base.py`), and an HNSW index migration. 8 new tests (chunking + KB, via deterministic fake provider). CI green (24 tests).
+- **Decisions made**: KB chunks stored as individual `kb_entries` rows (matches schema); character-based chunking for MVP (upgradeable to token-aware); retrieval depends only on `EmbeddingProvider`.
+- **Files changed**: `MILESTONES.md`, `backend/app/ai/chunking.py`, `backend/app/ai/knowledge_base.py`, HNSW migration, `backend/tests/test_chunking.py`, `backend/tests/test_knowledge_base.py`, `.claude/PROGRESS.md`, `roadmap/SPRINT_1.md`.
+- **Next actions**: Milestone 1 is complete through "retrieve relevant knowledge." Remaining items — **Claude grounded response** (BLOCKED on Anthropic API key) and final **send-reply wiring** (orchestrator + WhatsApp access token). Awaiting the Anthropic key to proceed.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |
@@ -166,7 +176,7 @@ Rough, honest estimates against currently-known scope. Not inflated.
 |------|----------|-------|
 | Documentation | ~85% | Memory system, structure, READMEs, and full MVP design docs done; onboarding docs pending. |
 | Architecture | ~80% (design Accepted) | Design documented & accepted; implementation underway (DB schema live). |
-| Code | ~18% | Backend skeleton, CI+DB tests, schema/migrations, tenant scoping, WhatsApp webhook (S1-01–04, S1-06). |
+| Code | ~30% | Backend, CI+DB, schema, tenant scoping, WhatsApp webhook in/out, embeddings, KB ingestion+chunking+pgvector retrieval. Milestone 1: 9/11 capabilities done. |
 | Customer interviews | 0% | 0 of a target-not-yet-set number completed. |
 | MVP | 0% | No MVP work begun. |
 | Testing | ~5% | CI pipeline live; 1 behaviour test (/health). |
