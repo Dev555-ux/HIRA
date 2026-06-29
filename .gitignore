@@ -1,6 +1,7 @@
 # ---- Secrets (NEVER commit these) ----
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 
@@ -19,6 +20,9 @@ node_modules/
 .next/
 out/
 npm-debug.log*
+
+# ---- Local Claude config (machine-specific) ----
+.claude/settings.local.json
 
 # ---- OS / editor junk ----
 .DS_Store
