@@ -254,3 +254,17 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Trade-offs**: Less oversight on routine changes; mitigated by small commits + CI + the stop-list, all reversible via Git.
 - **Status**: Accepted
 - **Review Date**: N/A
+
+---
+
+## DEC-019 — Prioritize end-to-end AI receptionist over auth/dashboard
+
+- **Date**: 2026-06-29
+- **Category**: Product
+- **Decision**: Build the core AI loop first — receive WhatsApp message → retrieve from knowledge base → generate response → send back to WhatsApp. Pause Clerk auth (S1-05) and dashboard work until that loop works end to end. Reorder Sprint 1 accordingly (S1-07, S1-08, S1-09 next).
+- **Context**: Founder is obtaining an Anthropic API key and wants the product's differentiating capability proven before supporting infrastructure.
+- **Alternatives Considered**: Continue strict S1 numeric order (auth before AI) — rejected; auth is supporting infrastructure, not the value proposition.
+- **Reasoning**: The AI receptionist is the MVP's core value; proving it end to end de-risks the product fastest. Auth/dashboard can follow.
+- **Trade-offs**: The AI loop will run without the dashboard approval UI initially; Assisted-Mode approval surfaces later. Acceptable for proving the loop.
+- **Status**: Accepted
+- **Review Date**: When the E2E AI loop works.

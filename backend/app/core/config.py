@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # real values come from .env (never committed). See documentation/WHATSAPP_INTEGRATION.md.
     whatsapp_verify_token: str = "dev-verify-token"
     whatsapp_app_secret: str = "dev-app-secret"
+    whatsapp_access_token: str = "dev-access-token"
+    whatsapp_api_base: str = "https://graph.facebook.com"
+    whatsapp_graph_version: str = "v21.0"
 
 
 settings = Settings()
