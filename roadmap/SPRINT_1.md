@@ -62,13 +62,11 @@ Conventions for every task below: write tests where applicable; update the relev
 - **Deferred**: async dispatch to the AI orchestrator (S1-08+); non-text message types; status callbacks. Real Meta verify-token/app-secret go in `.env` at integration time (dev defaults in code).
 - **Bug fixed**: CI lacked `DATABASE_URL` (settings load at import via webhook) — added to CI env.
 
-### S1-07 — Outbound messaging service
+### S1-07 — Outbound messaging service — **DONE (2026-06-29)**
 - **Objective**: Send a WhatsApp message via Cloud API (service-window text).
-- **Files to create**: `backend/app/services/messaging.py`.
-- **Dependencies**: S1-06.
-- **Expected output**: a test send delivers a message to a test number; failures handled with retry/backoff.
-- **Testing checklist**: success path (mocked + one real sandbox/live send); failure → graceful error, no crash.
-- **Docs**: none beyond code.
+- **Files created**: `backend/app/services/messaging.py`; `tests/test_messaging.py`; WhatsApp send config vars; `httpx` runtime dep.
+- **Outcome**: `send_text` posts to Meta Graph API, retries transient/5xx, does not retry 4xx, injectable client for tests. 3 tests, CI green. ✅
+- **Deferred**: real live send (needs WhatsApp access token); template messages for outside-window sends.
 
 ### S1-08 — AI orchestrator skeleton + intent classification
 - **Objective**: The conversation loop entry point + Haiku intent classifier.

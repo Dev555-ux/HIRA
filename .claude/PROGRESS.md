@@ -122,6 +122,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 9 — 2026-06-29
+
+- **Objectives**: Prioritize the end-to-end AI receptionist loop (DEC-019); build what doesn't need the Anthropic key.
+- **Work completed**: Logged DEC-019 (AI-core-first, pause Clerk). Built S1-07 outbound messaging service (`send_text`, retry policy, injectable client) + 3 tests; CI green (12 tests total).
+- **Decisions made**: DEC-019.
+- **Open decision (BLOCKING S1-09)**: embeddings provider for KB semantic search — Anthropic doesn't do embeddings. Options: local open-source (recommended, free, no extra key), Voyage AI, or OpenAI. **Founder dismissed the question — awaiting their choice before KB work.**
+- **Files changed**: `.claude/DECISIONS.md`, `backend/app/services/messaging.py`, `backend/app/core/config.py`, `backend/pyproject.toml`, `backend/tests/test_messaging.py`, `roadmap/SPRINT_1.md`, `.claude/PROGRESS.md`.
+- **Next actions**: Awaiting (a) Anthropic API key → unblocks S1-08 generation; (b) embeddings-provider decision → unblocks S1-09 KB retrieval. Then wire S1-08 + S1-09 into the webhook for the full loop.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |
