@@ -78,6 +78,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 5 — 2026-06-29
+
+- **Objectives**: S1-02 — CI pipeline (three-stage workflow).
+- **Work completed**: Added dev deps (pytest, ruff, httpx) + ruff/pytest config to `pyproject.toml`; wrote first behaviour test for `/health` via FastAPI TestClient; created `.github/workflows/ci.yml` (lint + format-check + tests on push/PR to main, Python 3.14). Ran all checks locally (pass), pushed, confirmed CI green on GitHub, and verified the failure path locally (ruff rejects unused import).
+- **Decisions made**: Real behaviour test in CI (not lint-only); CI Python pinned to 3.14 to match local; verified failure path without committing broken code.
+- **Files changed**: `.github/workflows/ci.yml`, `backend/tests/__init__.py`, `backend/tests/test_health.py`, `backend/pyproject.toml`, `roadmap/SPRINT_1.md`, `.claude/PROGRESS.md`, `learning/02-ci-and-testing.md`.
+- **Lessons learned (process)**: A green CI check is only meaningful if it tests real behaviour. Verify the *failing* path too, but keep `main` clean by proving failures locally.
+- **Next actions**: S1-03 — database schema & migrations (needs a Postgres decision: local Docker vs. managed dev DB).
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |

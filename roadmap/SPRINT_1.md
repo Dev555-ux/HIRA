@@ -25,13 +25,12 @@ Conventions for every task below: write tests where applicable; update the relev
 - **Testing checklist**: dev server boots; default page renders.
 - **Note**: pulled out of S1-01 because Node was not installed; backend-first means this isn't needed until the frontend tasks (S1-12+).
 
-### S1-02 — CI pipeline
-- **Objective**: Automated lint + type-check + test on push.
-- **Files to create**: `.github/workflows/ci.yml`, `infrastructure/` notes.
+### S1-02 — CI pipeline — **DONE (2026-06-29)**
+- **Objective**: Automated lint + test on push.
+- **Files created**: `.github/workflows/ci.yml`; `backend/tests/test_health.py` (+ `__init__.py`); `backend/pyproject.toml` dev deps + ruff/pytest config.
 - **Dependencies**: S1-01.
-- **Expected output**: CI green on a trivial PR.
-- **Testing checklist**: CI runs on push; fails on a deliberately broken lint, passes when fixed.
-- **Docs**: note pipeline in `infrastructure/README.md`.
+- **Outcome**: CI runs on push/PR to main; ruff lint + format-check + pytest all green ✓. Failure path verified locally (ruff rejects unused import, exit 1). ✅
+- **Deferred**: type-check (mypy) and a frontend CI job — added later. Minor: Node20-action + httpx2 deprecation warnings noted for future cleanup.
 
 ### S1-03 — Database schema & migrations
 - **Objective**: Implement the `DATABASE.md` schema as migrations.
