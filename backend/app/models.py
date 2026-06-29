@@ -117,7 +117,9 @@ class KbEntry(Base):
     )
     title: Mapped[str] = mapped_column(String(512))
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    # 384 = BAAI/bge-small-en-v1.5 (local embeddings). Changing provider to a
+    # different dimension requires a migration. See app/ai/embeddings.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

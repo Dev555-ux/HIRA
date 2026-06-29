@@ -268,3 +268,17 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Trade-offs**: The AI loop will run without the dashboard approval UI initially; Assisted-Mode approval surfaces later. Acceptable for proving the loop.
 - **Status**: Accepted
 - **Review Date**: When the E2E AI loop works.
+
+---
+
+## DEC-020 — Local open-source embeddings (BAAI/bge-small-en-v1.5) behind an EmbeddingProvider abstraction
+
+- **Date**: 2026-06-29
+- **Category**: Architecture
+- **Decision**: Knowledge-base embeddings are generated locally by `BAAI/bge-small-en-v1.5` (384 dims) via `fastembed` (ONNX, no PyTorch). All KB indexing/retrieval depend only on an `EmbeddingProvider` interface; provider is selected by config (`EMBEDDING_PROVIDER`, default `local_bge`). Anthropic/Claude handles reasoning only, not embeddings.
+- **Context**: Founder priorities — low cost, learning, simplicity, privacy, flexibility; no second paid API during MVP.
+- **Alternatives Considered**: Voyage AI / OpenAI embeddings (higher quality, but paid + another key/vendor — rejected for MVP); sentence-transformers (pulls heavy PyTorch — rejected; fastembed is lighter). bge-small chosen over larger bge variants for speed/footprint at acceptable quality.
+- **Reasoning**: Local embeddings are free, private, no extra credential, and good enough for KB semantic search. The abstraction keeps a hosted provider a config + small class away.
+- **Trade-offs**: Lower retrieval quality than top hosted models; CPU inference latency; model download on first use; schema dimension (384) is coupled to the model — changing to a different-dimension provider needs a migration.
+- **Status**: Accepted
+- **Review Date**: If retrieval quality proves insufficient in pilot.

@@ -21,5 +21,10 @@ class Settings(BaseSettings):
     whatsapp_api_base: str = "https://graph.facebook.com"
     whatsapp_graph_version: str = "v21.0"
 
+    # Embeddings. Provider is swappable via config (see app/ai/embeddings).
+    # "local_bge" runs BAAI/bge-small-en-v1.5 locally (384 dims) — no API key.
+    embedding_provider: str = "local_bge"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+
 
 settings = Settings()
