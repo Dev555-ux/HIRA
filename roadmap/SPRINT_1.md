@@ -32,13 +32,14 @@ Conventions for every task below: write tests where applicable; update the relev
 - **Outcome**: CI runs on push/PR to main; ruff lint + format-check + pytest all green ✓. Failure path verified locally (ruff rejects unused import, exit 1). ✅
 - **Deferred**: type-check (mypy) and a frontend CI job — added later. Minor: Node20-action + httpx2 deprecation warnings noted for future cleanup.
 
-### S1-03 — Database schema & migrations
+### S1-03 — Database schema & migrations — **DONE (2026-06-29)**
 - **Objective**: Implement the `DATABASE.md` schema as migrations.
-- **Files to create**: migration files, ORM models (`backend/app/models/`), DB session setup.
-- **Dependencies**: S1-01.
-- **Expected output**: migrations apply cleanly to a local/staging Postgres; tables + indexes exist.
-- **Testing checklist**: migrate up/down works; model CRUD smoke test passes.
-- **Docs**: reconcile any schema deviations back into `DATABASE.md`.
+- **Files created**: `app/models.py` (9 tables), `app/core/config.py`, `app/db/{base,session}.py`, `alembic/` + initial migration, `.env`/`.env.example`.
+- **Dev DB**: Postgres 16 + pgvector 0.8.3 via **Colima/Docker** container `hira-postgres` (decision: Docker, founder's choice).
+- **Outcome**: migration applies cleanly; all 9 tables + indexes exist; up/down round-trip verified; `embedding` is `vector(1536)`; CI green. ✅
+- **Bugs fixed in-task**: missing `pgvector` import in migration; setuptools flat-layout ambiguity (alembic/ vs app/) — caught by CI on fresh install.
+- **Deferred**: DB-backed tests + Postgres service in CI (no query code yet); pgvector index + final embedding dimension (pending embedding-model choice); tighten status strings into constraints.
+- **Schema note**: matches `DATABASE.md`; status fields implemented as strings (flexible for MVP).
 
 ### S1-04 — Tenant scoping & config
 - **Objective**: `business_id` scoping primitive + settings/env loading.
