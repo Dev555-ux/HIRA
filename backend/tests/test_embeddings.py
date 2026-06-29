@@ -30,7 +30,7 @@ def test_local_provider_reports_correct_dimension():
     assert LocalBGEProvider().dimension == BGE_SMALL_DIMENSION == 384
 
 
-@pytest.mark.skipif(os.environ.get("CI"), reason="downloads the embedding model")
+@pytest.mark.skipif(bool(os.environ.get("CI")), reason="downloads the embedding model")
 def test_local_provider_embeds_query_and_documents():
     provider = LocalBGEProvider()
     doc_vecs = provider.embed_documents(["We are open 9am to 5pm on weekdays."])
