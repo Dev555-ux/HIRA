@@ -76,10 +76,15 @@ Conventions for every task below: write tests where applicable; update the relev
 - **Testing checklist**: sample messages classify into expected intents; AI inputs/outputs logged.
 - **Docs**: record prompt version in `prompts/`.
 
+### S1-08b — Embedding layer — **DONE (2026-06-29)**
+- **Objective**: Local embeddings behind a swappable provider interface (prereq for KB retrieval).
+- **Files created**: `app/ai/embeddings/{base,local_bge,__init__}.py`; migration to `vector(384)`; `tests/test_embeddings.py`; `documentation/EMBEDDINGS.md`; config `embedding_provider`/`embedding_model`; `fastembed` dep.
+- **Outcome**: `EmbeddingProvider` ABC + `LocalBGEProvider` (bge-small-en-v1.5, 384d, fastembed), config-driven cached factory. KB column now `vector(384)`. 4 tests (real model-load test skips in CI). CI green. DEC-020. ✅
+
 ### S1-09 — Knowledge base + pgvector retrieval
 - **Objective**: KB CRUD + embedding on write + vector search.
-- **Files to create**: `ai/kb_retrieval.py`, KB service, `prompts/faq_answer.md`.
-- **Dependencies**: S1-03, S1-08.
+- **Files to create**: KB service + retrieval (uses `EmbeddingProvider`), `prompts/faq_answer.md`.
+- **Dependencies**: S1-03, S1-08b (embeddings ✓). Generation step also needs S1-08 (Anthropic key).
 - **Expected output**: creating a KB entry stores an embedding; a query returns the most relevant entries; Sonnet composes a grounded answer.
 - **Testing checklist**: retrieval returns expected entry for a paraphrased question; answer cites retrieved content.
 - **Docs**: prompt version in `prompts/`.

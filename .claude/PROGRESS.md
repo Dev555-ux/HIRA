@@ -133,6 +133,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 10 — 2026-06-29
+
+- **Objectives**: Implement the embedding layer (local, swappable) — DEC-020.
+- **Work completed**: Verified `fastembed` + bge-small install/run on Python 3.14 (384d). Built `EmbeddingProvider` ABC + `LocalBGEProvider` (fastembed, lazy load, retry on load, logging), config-driven cached factory. Migration switched `kb_entries.embedding` to `vector(384)`. Tests (factory, dimension, real embed [CI-skipped]). Docs `EMBEDDINGS.md`. CI green.
+- **Decisions made**: DEC-020 (local bge-small behind EmbeddingProvider abstraction).
+- **Files changed**: `backend/app/ai/embeddings/*`, `backend/app/models.py`, `backend/app/core/config.py`, `backend/pyproject.toml`, new migration, `backend/tests/test_embeddings.py`, `documentation/EMBEDDINGS.md`, `.claude/DECISIONS.md`, `roadmap/SPRINT_1.md`, `.claude/PROGRESS.md`.
+- **Bugs fixed**: `pytest.mark.skipif` given a string evaluated it as an expression (CI value "true" → NameError) — coerced to bool.
+- **Next actions**: S1-09 KB indexing/retrieval (uses EmbeddingProvider; the search half needs no key). Full grounded answer + S1-08 generation need the **Anthropic API key**.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |
