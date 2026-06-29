@@ -41,13 +41,11 @@ Conventions for every task below: write tests where applicable; update the relev
 - **Deferred**: DB-backed tests + Postgres service in CI (no query code yet); pgvector index + final embedding dimension (pending embedding-model choice); tighten status strings into constraints.
 - **Schema note**: matches `DATABASE.md`; status fields implemented as strings (flexible for MVP).
 
-### S1-04 — Tenant scoping & config
+### S1-04 — Tenant scoping & config — **DONE (2026-06-29)**
 - **Objective**: `business_id` scoping primitive + settings/env loading.
-- **Files to create**: `backend/app/core/config.py`, a tenant-scoping dependency/helper.
-- **Dependencies**: S1-03.
-- **Expected output**: a helper that guarantees queries are business-scoped; secrets loaded from env.
-- **Testing checklist**: unit test proving cross-tenant access is blocked.
-- **Docs**: none beyond code.
+- **Files created**: `app/db/tenant.py` (`tenant_query`, `get_scoped`); `tests/conftest.py` (Postgres-backed `db_session` fixture); `tests/test_tenant_scoping.py`. (`config.py` done in S1-03.)
+- **Outcome**: explicit scoping helpers force `business_id` filtering and reject unscoped models; 3 isolation tests prove cross-tenant reads are blocked; CI now runs a pgvector Postgres service so DB tests run on every push. All green. ✅
+- **Decision**: explicit `tenant_query` helper over global/implicit query rewriting — auditable, hard to bypass silently.
 
 ### S1-05 — Clerk auth on the API
 - **Objective**: Validate Clerk JWT and resolve `business_id` on dashboard routes.

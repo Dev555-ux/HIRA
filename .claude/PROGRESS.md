@@ -100,6 +100,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 7 — 2026-06-29
+
+- **Objectives**: Switch to Execution Mode (DEC-017); complete S1-04 (tenant scoping & config).
+- **Work completed**: Recorded Execution Mode as default workflow (CLAUDE.md §18, DEC-017 supersedes DEC-016, MEMORY updated). Built `app/db/tenant.py` (`tenant_query`/`get_scoped`, rejects unscoped models). Added Postgres-backed pytest fixture (`conftest.py`) + 3 multi-tenant isolation tests. Added a pgvector Postgres service to CI so DB tests run on every push. CI green (4 tests).
+- **Decisions made**: DEC-017 Execution Mode; explicit tenant-scoping helpers over implicit query rewriting.
+- **Files changed**: `.claude/CLAUDE.md`, `.claude/DECISIONS.md`, `.claude/MEMORY.md`, `backend/app/db/tenant.py`, `backend/tests/conftest.py`, `backend/tests/test_tenant_scoping.py`, `.github/workflows/ci.yml`, `roadmap/SPRINT_1.md`, `.claude/PROGRESS.md`.
+- **Lessons learned (process)**: SQLite can't stand in for Postgres here (pgvector/JSONB) — DB tests need a real Postgres, now provided in CI.
+- **Next actions**: S1-05 — Clerk auth on the API (validate Clerk JWT, resolve business_id on dashboard routes).
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |
