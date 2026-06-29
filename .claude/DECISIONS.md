@@ -224,5 +224,19 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Alternatives Considered**: Build-only (faster but no learning) and explain-only (learning without shipping). Both rejected — the founder's stated goal requires both simultaneously.
 - **Reasoning**: Structured teaching around real implementation builds durable understanding ("understand every technology, not copy code") while still producing a shipped product and a portfolio.
 - **Trade-offs**: Slower per-feature throughput due to explanation overhead; explicitly accepted as the point of the project.
+- **Status**: **Superseded by DEC-017 (2026-06-29).** Founder moved to Execution Mode to ship faster; can switch back to Teacher Mode on request.
+- **Review Date**: N/A
+
+---
+
+## DEC-017 — Switch to Execution Mode (supersedes DEC-016)
+
+- **Date**: 2026-06-29
+- **Category**: Operations
+- **Decision**: Default working mode is **Execution Mode**: brief 2–5 min overview → implement immediately → explain only important architectural decisions while coding → end-of-task summary (what was built, why it matters, files changed, key concepts, bugs fixed). Skip quizzes/knowledge-checks/long lessons unless requested. Stop and warn before any important architectural mistake. Codified in CLAUDE.md §18.
+- **Context**: Foundation tasks (S1-01–03) are done; founder now prioritizes building HIRA quickly while keeping high engineering quality. The teaching-heavy three-stage workflow (DEC-016) was too slow for that priority.
+- **Alternatives Considered**: Keep DEC-016 teacher mode (too slow for shipping); drop explanations entirely (loses the learning goal). Execution Mode is the middle path.
+- **Reasoning**: Founder can always ask "Why?" for depth; defaulting to lean delivery maximizes shipping speed without abandoning understanding of important parts.
+- **Trade-offs**: Less proactive teaching; relies on the founder to pull deeper explanations when wanted.
 - **Status**: Accepted
 - **Review Date**: N/A

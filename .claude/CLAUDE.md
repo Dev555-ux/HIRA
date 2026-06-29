@@ -160,42 +160,22 @@ Before considering any non-trivial change complete, check:
 - **Blast radius**: if this is wrong, how bad is it, and is it easy to reverse?
 - **Docs**: does anything in `.claude/` need to change as a result of this?
 
-## 18. Feature Development Workflow (Three-Stage: Explain → Build → Review)
+## 18. Feature Development Workflow — Execution Mode (default since 2026-06-29)
 
-**Mandatory for every feature.** The founder is a beginner learning professional software engineering while building HIRA; the goal of every session is *both* shipping the product *and* teaching. No feature skips a stage, even small ones (scale the depth to the feature's size, don't skip).
+**Current default. Optimize for shipping a production-quality MVP while still surfacing the parts the founder needs to understand.** (Superseded the earlier teaching-heavy three-stage workflow — see DEC-017 superseding DEC-016. The founder can switch back to "Teacher Mode" any time by saying so.)
 
-### Stage 1 — Explain (before any code)
-- **Why** we're building it — the product/user reason.
-- **How** it fits the overall architecture — where it sits in the system (reference `documentation/ARCHITECTURE.md`).
-- **Concepts to understand** — the fundamentals the founder should grasp first, taught from first principles.
-- **Alternative approaches** — realistic options and their trade-offs, with a recommendation.
-- **Common beginner mistakes** — what typically goes wrong here and how to avoid it.
+Per task:
+1. **Brief overview first** — 2–5 min: the goal of the task and any important decisions. Then start implementing immediately.
+2. **Implement** using professional practices (this manual's standards). Keep commits small and focused; verify before claiming done.
+3. **While coding, explain only what matters** — important architectural decisions or anything needed to understand the system. Do **not** explain every command or library.
+4. **Skip** quizzes, knowledge checks, and long conceptual lessons unless explicitly requested. (Assume the founder will ask "Why?" when they want depth.)
+5. **Stop and flag before proceeding** if the founder is about to make an important architectural mistake — explain why, then continue once resolved.
 
-Do not start Stage 2 until the founder has had the chance to absorb Stage 1.
+### Task Closeout (end of every task)
+- **What was built**
+- **Why it matters**
+- **Files created or modified**
+- **Important concepts to understand** (brief)
+- **Bugs encountered and how they were fixed**
 
-### Stage 2 — Build
-- Implement using professional practices (this manual's standards).
-- Keep commits **small and focused**; one logical change per commit.
-- **Avoid unnecessary abstractions** (§14) — favor clear, direct code a learner can follow.
-- Write code that teaches by example: readable names, obvious structure.
-
-### Stage 3 — Review (after implementation)
-- **Explain every important file** that was created/changed and its role.
-- **Explain how the code works** — walk through the logic.
-- **Explain why decisions were made** — the reasoning behind the approach taken.
-- **Explain how to improve or extend it later** — the growth path.
-- **Update all project documentation** affected by the change.
-- **Update project memory** (`MEMORY.md`), **progress** (`PROGRESS.md`), and todos (`TODOS.md`).
-- **Capture concepts learned** in the `learning/` folder when something non-obvious was taught.
-- **Suggest a Git commit message** (explaining *why*, per §6).
-
-This three-stage cycle overrides the brevity defaults in §9 *for teaching content specifically* — explanations should be thorough. Implementation narration stays concise.
-
-### Task Closeout (end of every task, after Stage 3)
-Always finish a task with these four sections:
-- **What I learned** — concise recap of the concepts/skills covered.
-- **Knowledge check** — 3–5 questions testing understanding (answers on request).
-- **Professional engineering tip** — one habit/principle a working engineer would apply here.
-- **How today's work connects to future HIRA features** — tie the task to what it enables later.
-
-Do not move to the next task until the current one is complete *and* the founder confirms understanding.
+Also still update the docs each task: `PROGRESS.md`, `TODOS.md`/`SPRINT_1.md`, and any affected `documentation/`. `learning/` notes become optional (add only when genuinely useful). Suggest/make commits with messages explaining *why* (§6).

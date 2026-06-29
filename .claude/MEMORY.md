@@ -60,9 +60,9 @@ No findings recorded yet. **Pending Validation** for all six verticals (demand s
 - Database: **PostgreSQL + pgvector**. Auth: **Clerk**. Hosting: **Railway** (backend+DB) + **Vercel** (frontend).
 - **Backend-first** development. Full detail in `documentation/`.
 
-## How Sessions Run (Three-Stage Workflow — DEC-016)
+## How Sessions Run (Execution Mode — DEC-017, supersedes DEC-016)
 
-Every feature follows **Explain → Build → Review** (CLAUDE.md §18). Stage 1 teaches before coding; Stage 3 reviews, updates all docs/memory/progress, and suggests a commit message. Sessions optimize for both shipping and teaching the founder professional engineering.
+Default is **Execution Mode** (CLAUDE.md §18): brief overview → implement immediately → explain only important architectural decisions → end-of-task summary (built / why / files / key concepts / bugs). Skip quizzes and long lessons unless asked; founder asks "Why?" for depth. Stop and warn before any important architectural mistake. Still update PROGRESS/TODOS/docs per task. Founder can switch back to Teacher Mode (DEC-016 style) any time.
 
 ## Coding Standards
 
