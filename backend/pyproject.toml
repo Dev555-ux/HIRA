@@ -13,6 +13,11 @@ dependencies = [
     "pydantic-settings>=2.4",
 ]
 
+[tool.setuptools.packages.find]
+# Only "app" is our importable package. Without this, setuptools also sees the
+# "alembic" migrations folder and errors on ambiguous flat-layout discovery.
+include = ["app*"]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
