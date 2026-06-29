@@ -10,13 +10,20 @@ Conventions for every task below: write tests where applicable; update the relev
 
 ---
 
-### S1-01 — Repo init & project scaffolding
-- **Objective**: Version control + base backend/frontend project skeletons.
-- **Files to create**: `.gitignore`, `backend/pyproject.toml` (FastAPI app skeleton), `backend/app/main.py` (health endpoint), `frontend/` (Next.js app), root `Makefile`/scripts.
+### S1-01 — Repo init & backend skeleton — **DONE (2026-06-29)**
+- **Objective**: Version control + base backend project skeleton. (Frontend scaffold split out — see S1-01b — because Node/npm is not yet installed; consistent with backend-first.)
+- **Files created**: `.gitignore`, `backend/pyproject.toml`, `backend/app/__init__.py`, `backend/app/main.py` (health endpoint).
 - **Dependencies**: none (closes TASK-002).
-- **Expected output**: `GET /health` returns 200 locally; Next.js dev server runs; first commit pushed.
-- **Testing checklist**: backend boots; `/health` 200; frontend renders; lint passes.
-- **Docs**: `PROGRESS.md` session entry; mark TASK-002 done in `TODOS.md`.
+- **Outcome**: `GET /health` returns 200 `{"status":"ok"}` locally; FastAPI `/docs` works; 3 commits pushed to private `Dev555-ux/HIRA`. ✅
+- **Done via**: venv + pip (no Poetry/uv); three Conventional-Commits commits.
+
+### S1-01b — Frontend scaffold (Next.js) — **deferred**
+- **Objective**: Scaffold the Next.js + TypeScript app once Node/npm is installed.
+- **Files to create**: `frontend/` via `create-next-app`.
+- **Dependencies**: install Node.js + npm first.
+- **Expected output**: Next.js dev server runs and renders the starter page.
+- **Testing checklist**: dev server boots; default page renders.
+- **Note**: pulled out of S1-01 because Node was not installed; backend-first means this isn't needed until the frontend tasks (S1-12+).
 
 ### S1-02 — CI pipeline
 - **Objective**: Automated lint + type-check + test on push.

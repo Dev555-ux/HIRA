@@ -35,8 +35,8 @@ Priority: P0 (critical) · P1 (high) · P2 (medium) · P3 (low).
 - **Category**: Operations
 - **Estimated effort**: S
 - **Dependencies**: None
-- **Status**: To Do
-- **Success criteria**: Repo is under version control, current scaffolding is committed, and the GitHub remote is set and pushed.
+- **Status**: **Done (2026-06-29)** — see S1-01. Repo initialized, 3 commits, pushed to private `Dev555-ux/HIRA`.
+- **Success criteria**: Repo is under version control, current scaffolding is committed, and the GitHub remote is set and pushed. ✅
 
 ### TASK-003 — Customer discovery interviews across candidate verticals
 - **Description**: Conduct structured conversations with businesses in the six candidate verticals (DEC-006) to gather demand, willingness-to-pay, and sales-cycle signals. Validation work only — not engineering.

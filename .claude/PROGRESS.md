@@ -62,6 +62,22 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 4 — 2026-06-29
+
+- **Objectives**: Begin Sprint 1. Complete S1-01 (repo init & backend skeleton) via the three-stage workflow.
+- **Work completed**:
+  - Added Task Closeout section to CLAUDE.md §18 (What I learned / Knowledge check / Eng tip / HIRA connection).
+  - Verified toolchain: Git ✓, Python 3.14 ✓, **Node/npm not installed** → frontend scaffold split into S1-01b (deferred), backend-first.
+  - Built backend skeleton: `.gitignore` (first), `backend/pyproject.toml`, `app/main.py` with `/health`. Created venv, installed fastapi+uvicorn, ran server, verified `GET /health` → 200 and `/docs` → 200.
+  - `git init` + 3 Conventional-Commits commits.
+  - Created/reconciled GitHub remote: an existing **public placeholder** `Dev555-ux/HIRA` was found; with founder consent, set it **private** and force-pushed our history to replace 3 trivial placeholder commits. Remote now in sync.
+- **Decisions made**: Repo kept **private** (founder choice). Frontend scaffold deferred (S1-01b) pending Node install.
+- **Files changed**: `.gitignore`, `backend/pyproject.toml`, `backend/app/__init__.py`, `backend/app/main.py`; `.claude/CLAUDE.md`, `.claude/TODOS.md`, `.claude/PROGRESS.md`; `roadmap/SPRINT_1.md`.
+- **Lessons learned (process)**: Always verify the toolchain before scoping; a missing dependency (Node) legitimately reshaped the task. Found a pre-existing public repo — surfaced it and got consent before any destructive/visibility change rather than force-pushing blindly.
+- **Next actions**: S1-02 (CI pipeline) — or install Node and do S1-01b first if the founder prefers. TASK-002 closed.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |
