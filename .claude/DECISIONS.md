@@ -322,5 +322,19 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Alternatives Considered**: Keep Gemini (DEC-022) — superseded by founder choice; Gemini key also had a quota-0 project.
 - **Reasoning**: OpenRouter's OpenAI-compatible API + the provider abstraction made this a drop-in: one class + factory entry + config, no orchestrator/business-logic/prompt/retrieval change. One account fronts many models (incl. free tiers).
 - **Trade-offs**: Adds OpenRouter as an intermediary (extra hop, their uptime/pricing). Embeddings remain local (DEC-020), unaffected.
-- **Status**: Accepted (provider built, unit-tested). Live smoke test blocked by a malformed API key (non-ASCII char in `.env`) — a key-config issue, not code; awaiting a clean key.
+- **Status**: **Superseded by DEC-024 (2026-06-29)** — switched to Groq after OpenRouter free-tier models proved unavailable/rate-limited. OpenRouterProvider removed.
+- **Review Date**: N/A. Detail: `documentation/LLM_ORCHESTRATION.md`.
+
+---
+
+## DEC-024 — Groq is the default LLM provider (replaces OpenRouter)
+
+- **Date**: 2026-06-29
+- **Category**: Technical
+- **Decision**: Use **Groq** (official `groq` SDK) as the primary LLM provider via `GroqProvider` behind the existing `LLMProvider` interface. `LLM_PROVIDER=groq`, `GROQ_MODEL` (default `llama-3.3-70b-versatile`). OpenRouterProvider + `openai` dep removed; Claude + Mock intact.
+- **Context**: OpenRouter free-tier models were retired/unavailable or rate-limited (404/429) on the founder's account; Groq offers a fast free tier that worked on the first live call.
+- **Alternatives Considered**: OpenRouter (DEC-023, superseded — free tier unreliable); Gemini (DEC-022, quota 0); Claude (available, needs Anthropic key/billing).
+- **Reasoning**: The provider abstraction made this a drop-in (one class + factory + config); **live smoke test succeeded** (`llama-3.3-70b-versatile` answered correctly). No orchestrator/business-logic/prompt/retrieval change.
+- **Trade-offs**: Groq model catalog is smaller (Llama/Mixtral/Gemma family); fine for the receptionist. Embeddings remain local (DEC-020).
+- **Status**: Accepted — **live and verified.**
 - **Review Date**: N/A. Detail: `documentation/LLM_ORCHESTRATION.md`.

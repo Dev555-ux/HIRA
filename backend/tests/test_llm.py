@@ -5,8 +5,8 @@ import pytest
 from app.ai.llm import ChatMessage, LLMError, _PROVIDERS, get_llm_provider
 from app.ai.llm.base import LLMProvider
 from app.ai.llm.claude import ClaudeProvider
+from app.ai.llm.groq import GroqProvider, _to_chat_messages
 from app.ai.llm.mock import MockProvider
-from app.ai.llm.openrouter import OpenRouterProvider, _to_openai_messages
 
 
 def test_factory_returns_mock_by_default():
@@ -44,17 +44,17 @@ def test_claude_provider_requires_api_key():
         ClaudeProvider(api_key="", model="claude-sonnet-4-6")
 
 
-def test_openrouter_is_registered_in_factory():
-    assert "openrouter" in _PROVIDERS
+def test_groq_is_registered_in_factory():
+    assert "groq" in _PROVIDERS
 
 
-def test_openrouter_provider_requires_api_key():
+def test_groq_provider_requires_api_key():
     with pytest.raises(LLMError):
-        OpenRouterProvider(api_key="", model="openai/gpt-4o-mini")
+        GroqProvider(api_key="", model="llama-3.3-70b-versatile")
 
 
-def test_openrouter_prepends_system_message():
-    msgs = _to_openai_messages(
+def test_groq_prepends_system_message():
+    msgs = _to_chat_messages(
         "system rules",
         [ChatMessage(role="user", content="hi"), ChatMessage(role="assistant", content="hello")],
     )

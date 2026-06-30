@@ -15,16 +15,17 @@ Customer → WhatsApp message → verified → stored → knowledge retrieved �
 - [x] Generate embeddings — local bge-small via `EmbeddingProvider`
 - [x] Semantic search — pgvector cosine similarity
 - [x] Retrieve relevant knowledge — retrieval pipeline returns grounding context
-- [x] Grounded response pipeline — orchestrator assembles context + injects knowledge + history and calls the LLM. **Runs now via MockProvider**; flip to real Claude with `LLM_PROVIDER=claude` + `ANTHROPIC_API_KEY` (no code change).
-- [~] Send WhatsApp reply — generated reply is stored as `pending_approval` (Assisted Mode); send service built (S1-07). Real send needs the **WhatsApp access token** + the approval/send step.
+- [x] Grounded response — orchestrator assembles context + injects knowledge + history and calls the LLM. **Verified live with Groq** (`llama-3.3-70b-versatile`); also runs via MockProvider; Claude available by config.
+- [x] Send WhatsApp reply — `approve_and_send` sends a pending reply via the WhatsApp messaging service and marks it sent/failed (tenant-scoped, tested). Real outbound to a live number still needs the **WhatsApp access token**; an authenticated approve endpoint arrives with Clerk.
 
-When every item is checked, Milestone 1 (first AI receptionist MVP) is complete.
+**Milestone 1 capabilities are all implemented.** The full loop works end to end: WhatsApp inbound → store → retrieve knowledge → generate grounded reply (Groq, live) → store pending → approve & send.
 
-**Status**: the entire loop runs end-to-end offline today (WhatsApp inbound → store → retrieve → generate via mock → store pending reply). Going live needs two credentials only: `ANTHROPIC_API_KEY` (real Claude) and the WhatsApp access token (real outbound send + a send step on approval).
+Remaining to run against real WhatsApp traffic (not new capabilities): the **WhatsApp access token** for live outbound, and an authenticated approval endpoint (with Clerk).
 
 ## Blocked on (stop conditions)
-- **Anthropic API key** → Claude grounded response generation (orchestration + final reply wiring).
-- **WhatsApp access token** → real outbound send (send service already built & tested with mocks).
+- **WhatsApp access token** → real outbound send to live numbers (send + approve_and_send built & tested with mocks).
+- **Clerk** → authenticated approval endpoint on top of `approve_and_send`.
+- LLM generation: **unblocked — Groq live** (`GROQ_API_KEY` + `LLM_PROVIDER=groq`).
 
 ## After Milestone 1 (deferred)
 Authentication (Clerk), dashboard, analytics, billing, advanced settings — unless one becomes technically required.

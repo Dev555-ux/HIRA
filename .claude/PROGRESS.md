@@ -186,6 +186,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 15 — 2026-06-29
+
+- **Objectives**: Switch LLM provider to Groq; on live success, wire approval→send.
+- **Work completed**: Added `GroqProvider` (official `groq` SDK) behind `LLMProvider`; registered `"groq"`; added `groq_*` config; removed OpenRouterProvider + `openai` dep (no remaining refs). **Live smoke test PASSED** — `llama-3.3-70b-versatile` answered correctly. Then built `approve_and_send` (tenant-scoped: send pending reply via WhatsApp messaging, mark sent/failed; injectable sender) + 4 tests. Full suite 38 passing. Updated `.env.example`, `LLM_ORCHESTRATION.md`, MILESTONES.
+- **Decisions made**: DEC-024 (Groq default, live & verified; supersedes DEC-023).
+- **Files changed**: removed `openrouter.py`; `backend/app/ai/llm/groq.py`, `__init__.py`, `config.py`, `pyproject.toml`, `backend/app/services/replies.py`, `tests/test_llm.py`, `tests/test_replies.py`, `.env.example`, `documentation/LLM_ORCHESTRATION.md`, `MILESTONES.md`, `.claude/DECISIONS.md`, `.claude/PROGRESS.md`.
+- **Milestone 1**: all 11 capabilities implemented; loop works end-to-end (Groq live). Remaining for real traffic (not new capabilities): WhatsApp access token (live outbound) + authenticated approve endpoint (Clerk).
+- **Next actions**: WhatsApp access token + Clerk auth to run against live WhatsApp; otherwise dashboard/auth phase.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |

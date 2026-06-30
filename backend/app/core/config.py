@@ -33,10 +33,9 @@ class Settings(BaseSettings):
     # Claude
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-4-6"
-    # OpenRouter (OpenAI-compatible API)
-    openrouter_api_key: str = ""
-    openrouter_model: str = "openai/gpt-4o-mini"
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Groq
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
 
 
 settings = Settings()

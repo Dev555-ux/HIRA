@@ -15,7 +15,7 @@ SDK directly. Default provider is `mock` (runs with no API key); set
 app/ai/llm/
 ├── base.py     LLMProvider (ABC), ChatMessage, LLMResponse, LLMError
 ├── mock.py     MockProvider (default; deterministic, for dev/tests)
-├── openrouter.py OpenRouterProvider (OpenAI-compatible API via openai SDK; retries; lazy import)
+├── groq.py     GroqProvider (official groq SDK; retries; lazy import)  ← default
 ├── claude.py   ClaudeProvider (Anthropic Messages API; retries; lazy SDK import)
 └── __init__.py get_llm_provider() factory (config-driven, cached)
 
@@ -36,14 +36,12 @@ app/ai/processing.py     background: generate reply, store as pending_approval (
 
 ## Going live
 
-Default provider is **OpenRouter** (`LLM_PROVIDER=openrouter`).
+Default provider is **Groq** (`LLM_PROVIDER=groq`).
 
-- **OpenRouter** (OpenAI-compatible): set `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` (e.g. `openai/gpt-4o-mini`, `deepseek/deepseek-chat-v3-0324:free`). Uses the official `openai` SDK pointed at `OPENROUTER_BASE_URL`. The key must be a valid `sk-or-v1-…` ASCII string.
+- **Groq** (official `groq` SDK): set `GROQ_API_KEY` + `GROQ_MODEL` (e.g. `llama-3.3-70b-versatile`).
 - **Claude** (Anthropic): set `LLM_PROVIDER=claude` + `ANTHROPIC_API_KEY` (optional `LLM_MODEL`, default `claude-sonnet-4-6`).
 
 Either way the orchestrator, prompts, retrieval, and persistence are unchanged.
-
-> SDK note: OpenRouter exposes an OpenAI-compatible API, so we use the official `openai` SDK with `base_url=https://openrouter.ai/api/v1`.
 
 ## Adding another provider (OpenAI, Gemini, OpenRouter, local)
 

@@ -4,7 +4,7 @@
 live with Claude: set ANTHROPIC_API_KEY and LLM_PROVIDER=claude in the
 environment — no code change.
 
-To add a provider (OpenAI, Gemini, OpenRouter, local): implement LLMProvider in
+To add a provider (OpenAI, Gemini, OpenRouter, local, etc.): implement LLMProvider in
 this package and register it in `_PROVIDERS`. No business logic changes.
 """
 
@@ -14,8 +14,8 @@ from functools import lru_cache
 
 from app.ai.llm.base import ChatMessage, LLMError, LLMProvider, LLMResponse
 from app.ai.llm.claude import ClaudeProvider
+from app.ai.llm.groq import GroqProvider
 from app.ai.llm.mock import MockProvider
-from app.ai.llm.openrouter import OpenRouterProvider
 from app.core.config import settings
 
 
@@ -27,11 +27,10 @@ def _build_claude() -> LLMProvider:
     )
 
 
-def _build_openrouter() -> LLMProvider:
-    return OpenRouterProvider(
-        api_key=settings.openrouter_api_key,
-        model=settings.openrouter_model,
-        base_url=settings.openrouter_base_url,
+def _build_groq() -> LLMProvider:
+    return GroqProvider(
+        api_key=settings.groq_api_key,
+        model=settings.groq_model,
         default_max_tokens=settings.llm_max_tokens,
     )
 
@@ -39,7 +38,7 @@ def _build_openrouter() -> LLMProvider:
 _PROVIDERS = {
     "mock": lambda: MockProvider(),
     "claude": _build_claude,
-    "openrouter": _build_openrouter,
+    "groq": _build_groq,
 }
 
 
