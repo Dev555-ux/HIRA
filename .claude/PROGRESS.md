@@ -175,6 +175,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 14 — 2026-06-29
+
+- **Objectives**: Replace Gemini provider with OpenRouter (OpenAI-compatible), keep abstraction/business logic intact.
+- **Work completed**: Removed `GeminiProvider`; added `OpenRouterProvider` (official `openai` SDK pointed at OpenRouter base_url; system-message prepend; retries on connection/timeout/429/5xx). Registered `"openrouter"`; added `openrouter_*` config; swapped `google-genai`→`openai` dep. Claude + Mock unchanged; orchestrator/prompts/retrieval untouched. Updated tests (removed gemini, added openrouter). Full suite 34 passing.
+- **Decisions made**: DEC-023 (OpenRouter default; supersedes DEC-022).
+- **Smoke test**: ❌ blocked — `OPENROUTER_API_KEY` in `.env` contains a non-ASCII char `ø` at index 73 (corrupted copy-paste); httpx rejects non-ASCII headers. **Key-config issue, not code.** Provider verified correct up to the malformed-header point. Stopped per instructions.
+- **Files changed**: removed `gemini.py`; `backend/app/ai/llm/openrouter.py`, `__init__.py`, `config.py`, `pyproject.toml`, `tests/test_llm.py`, `.env.example`, `documentation/LLM_ORCHESTRATION.md`, `.claude/DECISIONS.md`, `.claude/PROGRESS.md`.
+- **Next actions**: Founder to paste a clean `sk-or-v1-…` key (pure ASCII) into `.env`. Then re-run smoke test; on success, continue building (approval→send step).
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |

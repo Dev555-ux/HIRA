@@ -2,12 +2,11 @@
 
 import pytest
 
-from app.ai.llm import ChatMessage, LLMError, get_llm_provider
-from app.ai.llm import _PROVIDERS
+from app.ai.llm import ChatMessage, LLMError, _PROVIDERS, get_llm_provider
 from app.ai.llm.base import LLMProvider
 from app.ai.llm.claude import ClaudeProvider
-from app.ai.llm.gemini import GeminiProvider
 from app.ai.llm.mock import MockProvider
+from app.ai.llm.openrouter import OpenRouterProvider, _to_openai_messages
 
 
 def test_factory_returns_mock_by_default():
@@ -45,17 +44,20 @@ def test_claude_provider_requires_api_key():
         ClaudeProvider(api_key="", model="claude-sonnet-4-6")
 
 
-def test_gemini_is_registered_in_factory():
-    assert "gemini" in _PROVIDERS
+def test_openrouter_is_registered_in_factory():
+    assert "openrouter" in _PROVIDERS
 
 
-def test_gemini_provider_requires_api_key():
+def test_openrouter_provider_requires_api_key():
     with pytest.raises(LLMError):
-        GeminiProvider(api_key="", model="gemini-2.0-flash")
+        OpenRouterProvider(api_key="", model="openai/gpt-4o-mini")
 
 
-def test_gemini_maps_assistant_role_to_model():
-    # Role mapping is part of the contract; verify without any network call.
-    from app.ai.llm.gemini import _ROLE_MAP
-
-    assert _ROLE_MAP == {"user": "user", "assistant": "model"}
+def test_openrouter_prepends_system_message():
+    msgs = _to_openai_messages(
+        "system rules",
+        [ChatMessage(role="user", content="hi"), ChatMessage(role="assistant", content="hello")],
+    )
+    assert msgs[0] == {"role": "system", "content": "system rules"}
+    assert msgs[1] == {"role": "user", "content": "hi"}
+    assert msgs[2] == {"role": "assistant", "content": "hello"}

@@ -14,8 +14,8 @@ from functools import lru_cache
 
 from app.ai.llm.base import ChatMessage, LLMError, LLMProvider, LLMResponse
 from app.ai.llm.claude import ClaudeProvider
-from app.ai.llm.gemini import GeminiProvider
 from app.ai.llm.mock import MockProvider
+from app.ai.llm.openrouter import OpenRouterProvider
 from app.core.config import settings
 
 
@@ -27,10 +27,11 @@ def _build_claude() -> LLMProvider:
     )
 
 
-def _build_gemini() -> LLMProvider:
-    return GeminiProvider(
-        api_key=settings.gemini_api_key,
-        model=settings.gemini_model,
+def _build_openrouter() -> LLMProvider:
+    return OpenRouterProvider(
+        api_key=settings.openrouter_api_key,
+        model=settings.openrouter_model,
+        base_url=settings.openrouter_base_url,
         default_max_tokens=settings.llm_max_tokens,
     )
 
@@ -38,7 +39,7 @@ def _build_gemini() -> LLMProvider:
 _PROVIDERS = {
     "mock": lambda: MockProvider(),
     "claude": _build_claude,
-    "gemini": _build_gemini,
+    "openrouter": _build_openrouter,
 }
 
 

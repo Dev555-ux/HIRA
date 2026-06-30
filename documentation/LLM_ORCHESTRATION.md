@@ -15,7 +15,7 @@ SDK directly. Default provider is `mock` (runs with no API key); set
 app/ai/llm/
 ├── base.py     LLMProvider (ABC), ChatMessage, LLMResponse, LLMError
 ├── mock.py     MockProvider (default; deterministic, for dev/tests)
-├── gemini.py   GeminiProvider (google-genai SDK; retries incl. 429; lazy import)
+├── openrouter.py OpenRouterProvider (OpenAI-compatible API via openai SDK; retries; lazy import)
 ├── claude.py   ClaudeProvider (Anthropic Messages API; retries; lazy SDK import)
 └── __init__.py get_llm_provider() factory (config-driven, cached)
 
@@ -36,14 +36,14 @@ app/ai/processing.py     background: generate reply, store as pending_approval (
 
 ## Going live
 
-Default provider is **Gemini** (`LLM_PROVIDER=gemini`).
+Default provider is **OpenRouter** (`LLM_PROVIDER=openrouter`).
 
-- **Gemini** (google-genai): set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`, default `gemini-2.0-flash`). The key's Google project must have the Generative Language API enabled and quota/billing available — a `429 RESOURCE_EXHAUSTED` with `limit: 0` means the project has no quota.
+- **OpenRouter** (OpenAI-compatible): set `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` (e.g. `openai/gpt-4o-mini`, `deepseek/deepseek-chat-v3-0324:free`). Uses the official `openai` SDK pointed at `OPENROUTER_BASE_URL`. The key must be a valid `sk-or-v1-…` ASCII string.
 - **Claude** (Anthropic): set `LLM_PROVIDER=claude` + `ANTHROPIC_API_KEY` (optional `LLM_MODEL`, default `claude-sonnet-4-6`).
 
 Either way the orchestrator, prompts, retrieval, and persistence are unchanged.
 
-> SDK note: Gemini uses the current official **`google-genai`** package (`from google import genai`), not the deprecated `google-generativeai`.
+> SDK note: OpenRouter exposes an OpenAI-compatible API, so we use the official `openai` SDK with `base_url=https://openrouter.ai/api/v1`.
 
 ## Adding another provider (OpenAI, Gemini, OpenRouter, local)
 

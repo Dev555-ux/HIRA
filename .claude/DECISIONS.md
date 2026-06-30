@@ -308,5 +308,19 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Alternatives Considered**: Keep Claude default (DEC-021) — superseded by founder choice. Deprecated `google-generativeai` SDK — rejected for the current official `google-genai`.
 - **Reasoning**: The provider-agnostic layer (DEC-021) made this a drop-in: one new class + factory entry + config, no orchestrator/business-logic change.
 - **Trade-offs**: Gemini's API key project must have quota/billing enabled (observed `429 limit:0` on a project without quota). Embeddings remain local (DEC-020) — unaffected.
-- **Status**: Accepted (provider built & wired). Live use pending the API key's project having quota/billing enabled.
+- **Status**: **Superseded by DEC-023 (2026-06-29)** — switched from Gemini to OpenRouter. GeminiProvider removed.
 - **Review Date**: N/A.
+
+---
+
+## DEC-023 — OpenRouter is the default LLM provider (replaces Gemini)
+
+- **Date**: 2026-06-29
+- **Category**: Technical
+- **Decision**: Use **OpenRouter** (OpenAI-compatible API) as the primary LLM provider via the official **`openai`** SDK with `base_url=https://openrouter.ai/api/v1`, implemented as `OpenRouterProvider` behind the existing `LLMProvider` interface. `LLM_PROVIDER=openrouter`, `OPENROUTER_MODEL` selects the model (any OpenRouter model id). GeminiProvider removed; ClaudeProvider + MockProvider intact.
+- **Context**: Founder switched from Gemini to OpenRouter (one key, many models; avoids per-vendor billing setup).
+- **Alternatives Considered**: Keep Gemini (DEC-022) — superseded by founder choice; Gemini key also had a quota-0 project.
+- **Reasoning**: OpenRouter's OpenAI-compatible API + the provider abstraction made this a drop-in: one class + factory entry + config, no orchestrator/business-logic/prompt/retrieval change. One account fronts many models (incl. free tiers).
+- **Trade-offs**: Adds OpenRouter as an intermediary (extra hop, their uptime/pricing). Embeddings remain local (DEC-020), unaffected.
+- **Status**: Accepted (provider built, unit-tested). Live smoke test blocked by a malformed API key (non-ASCII char in `.env`) — a key-config issue, not code; awaiting a clean key.
+- **Review Date**: N/A. Detail: `documentation/LLM_ORCHESTRATION.md`.
