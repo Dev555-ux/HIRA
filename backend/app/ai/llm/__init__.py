@@ -14,6 +14,7 @@ from functools import lru_cache
 
 from app.ai.llm.base import ChatMessage, LLMError, LLMProvider, LLMResponse
 from app.ai.llm.claude import ClaudeProvider
+from app.ai.llm.gemini import GeminiProvider
 from app.ai.llm.mock import MockProvider
 from app.core.config import settings
 
@@ -26,9 +27,18 @@ def _build_claude() -> LLMProvider:
     )
 
 
+def _build_gemini() -> LLMProvider:
+    return GeminiProvider(
+        api_key=settings.gemini_api_key,
+        model=settings.gemini_model,
+        default_max_tokens=settings.llm_max_tokens,
+    )
+
+
 _PROVIDERS = {
     "mock": lambda: MockProvider(),
     "claude": _build_claude,
+    "gemini": _build_gemini,
 }
 
 

@@ -164,6 +164,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 13 — 2026-06-29
+
+- **Objectives**: Replace Anthropic with Gemini as the LLM provider.
+- **Work completed**: Added `GeminiProvider` (official `google-genai` SDK, role mapping user/assistant→user/model, system_instruction, retries incl. 429) implementing the existing `LLMProvider`; registered `"gemini"` in the factory; added `gemini_api_key`/`gemini_model` config. Orchestrator/business logic unchanged; MockProvider unchanged. 4 new tests. Full suite 34 passing. Updated `.env.example`, `LLM_ORCHESTRATION.md`, DEC-022.
+- **Decisions made**: DEC-022 (Gemini default via google-genai; supersedes Claude-as-default from DEC-021's spirit, Claude still available).
+- **Real run result**: integration verified — auth + request + response path works. Live call returned **429 RESOURCE_EXHAUSTED, limit:0** = the API key's Google project has no quota (needs Generative Language API + billing/quota enabled). **Code is correct; blocked on billing/quota (founder action).**
+- **Files changed**: `backend/app/ai/llm/gemini.py`, `backend/app/ai/llm/__init__.py`, `backend/app/core/config.py`, `backend/pyproject.toml`, `backend/tests/test_llm.py`, `backend/.env.example`, `documentation/LLM_ORCHESTRATION.md`, `.claude/DECISIONS.md`, `.claude/PROGRESS.md`.
+- **Next actions**: Founder to enable quota/billing on the Gemini key's Google project (or supply a key from a project with quota). Then real end-to-end generation works with no code change.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |

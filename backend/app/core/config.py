@@ -29,9 +29,13 @@ class Settings(BaseSettings):
     # LLM (reasoning/response generation). Default "mock" so the app runs with
     # no API key; set LLM_PROVIDER=claude and ANTHROPIC_API_KEY to go live.
     llm_provider: str = "mock"
+    llm_max_tokens: int = 1024
+    # Claude
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-4-6"
-    llm_max_tokens: int = 1024
+    # Gemini
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
 
 
 settings = Settings()

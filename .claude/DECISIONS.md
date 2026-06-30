@@ -296,3 +296,17 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Trade-offs**: A thin abstraction layer over the SDK; worth it for testability and flexibility. Provider-specific features (e.g. tool use) will need interface extension when needed.
 - **Status**: Accepted
 - **Review Date**: N/A. Detail: `documentation/LLM_ORCHESTRATION.md`.
+
+---
+
+## DEC-022 — Gemini is the default LLM provider (replacing Claude as default)
+
+- **Date**: 2026-06-29
+- **Category**: Technical
+- **Decision**: Use Google **Gemini** (`gemini-2.0-flash` default) as the primary LLM provider, via the official **`google-genai`** SDK, implemented as `GeminiProvider` behind the existing `LLMProvider` interface. `LLM_PROVIDER=gemini`. ClaudeProvider and MockProvider remain available; switching is config-only.
+- **Context**: Founder chose to replace Anthropic with Gemini for response generation.
+- **Alternatives Considered**: Keep Claude default (DEC-021) — superseded by founder choice. Deprecated `google-generativeai` SDK — rejected for the current official `google-genai`.
+- **Reasoning**: The provider-agnostic layer (DEC-021) made this a drop-in: one new class + factory entry + config, no orchestrator/business-logic change.
+- **Trade-offs**: Gemini's API key project must have quota/billing enabled (observed `429 limit:0` on a project without quota). Embeddings remain local (DEC-020) — unaffected.
+- **Status**: Accepted (provider built & wired). Live use pending the API key's project having quota/billing enabled.
+- **Review Date**: N/A.

@@ -3,8 +3,10 @@
 import pytest
 
 from app.ai.llm import ChatMessage, LLMError, get_llm_provider
+from app.ai.llm import _PROVIDERS
 from app.ai.llm.base import LLMProvider
 from app.ai.llm.claude import ClaudeProvider
+from app.ai.llm.gemini import GeminiProvider
 from app.ai.llm.mock import MockProvider
 
 
@@ -41,3 +43,19 @@ def test_mock_echoes_last_user_message_by_default():
 def test_claude_provider_requires_api_key():
     with pytest.raises(LLMError):
         ClaudeProvider(api_key="", model="claude-sonnet-4-6")
+
+
+def test_gemini_is_registered_in_factory():
+    assert "gemini" in _PROVIDERS
+
+
+def test_gemini_provider_requires_api_key():
+    with pytest.raises(LLMError):
+        GeminiProvider(api_key="", model="gemini-2.0-flash")
+
+
+def test_gemini_maps_assistant_role_to_model():
+    # Role mapping is part of the contract; verify without any network call.
+    from app.ai.llm.gemini import _ROLE_MAP
+
+    assert _ROLE_MAP == {"user": "user", "assistant": "model"}

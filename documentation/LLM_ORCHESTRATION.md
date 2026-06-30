@@ -15,6 +15,7 @@ SDK directly. Default provider is `mock` (runs with no API key); set
 app/ai/llm/
 ├── base.py     LLMProvider (ABC), ChatMessage, LLMResponse, LLMError
 ├── mock.py     MockProvider (default; deterministic, for dev/tests)
+├── gemini.py   GeminiProvider (google-genai SDK; retries incl. 429; lazy import)
 ├── claude.py   ClaudeProvider (Anthropic Messages API; retries; lazy SDK import)
 └── __init__.py get_llm_provider() factory (config-driven, cached)
 
@@ -33,11 +34,16 @@ app/ai/processing.py     background: generate reply, store as pending_approval (
 4. The reply is stored as an outbound `pending_approval` message (Assisted Mode);
    sending to WhatsApp is a separate step (needs access token + approval).
 
-## Going live with Claude
+## Going live
 
-1. Add `ANTHROPIC_API_KEY=...` to `backend/.env`.
-2. Set `LLM_PROVIDER=claude` (and optionally `LLM_MODEL`, default `claude-sonnet-4-6`).
-That's it — the orchestrator, prompts, retrieval, and persistence are unchanged.
+Default provider is **Gemini** (`LLM_PROVIDER=gemini`).
+
+- **Gemini** (google-genai): set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`, default `gemini-2.0-flash`). The key's Google project must have the Generative Language API enabled and quota/billing available — a `429 RESOURCE_EXHAUSTED` with `limit: 0` means the project has no quota.
+- **Claude** (Anthropic): set `LLM_PROVIDER=claude` + `ANTHROPIC_API_KEY` (optional `LLM_MODEL`, default `claude-sonnet-4-6`).
+
+Either way the orchestrator, prompts, retrieval, and persistence are unchanged.
+
+> SDK note: Gemini uses the current official **`google-genai`** package (`from google import genai`), not the deprecated `google-generativeai`.
 
 ## Adding another provider (OpenAI, Gemini, OpenRouter, local)
 
