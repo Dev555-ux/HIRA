@@ -197,6 +197,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 16 — 2026-06-29
+
+- **Objectives**: Milestone 2 — production-grade Clerk authentication.
+- **Work completed**: Clerk RS256 JWT verification against JWKS (`app/auth/clerk.py`, PyJWT); `get_current_principal` dependency resolving Clerk `sub` → local `User` → `Principal(business_id,...)` (`app/auth/dependencies.py`); protected dashboard router `/api/v1` with `GET /pending` (tenant-scoped) and `POST /messages/{id}/approve` on top of `approve_and_send`. Cross-tenant → 404. Token verifier + sender injected for tests. 10 new tests (real self-signed-JWT crypto: valid/expired/wrong-key/unconfigured; endpoint: no-token 401, bad-token 401, approve→sent, cross-tenant 404, pending scoping, unknown-user 401). Full suite 48 passing, CI-ready.
+- **Decisions made**: DEC-025 (Clerk JWKS auth; user→business_id resolution).
+- **Files changed**: `backend/app/auth/*`, `backend/app/api/dashboard.py`, `backend/app/main.py`, `backend/app/core/config.py`, `backend/pyproject.toml`, `backend/tests/test_auth.py`, `backend/tests/test_dashboard_api.py`, `backend/.env.example`, `documentation/API.md`, `MILESTONES.md`, `.claude/DECISIONS.md`, `.claude/PROGRESS.md`.
+- **WhatsApp**: still paused (no dedicated number); approve endpoint uses an injected sender, so no real send occurs in tests.
+- **Next actions**: live Clerk creds in `.env` (`CLERK_JWKS_URL`) + a user-provisioning step (Clerk webhook → create User); then dashboard UI. WhatsApp resumes when a number is available.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |

@@ -338,3 +338,17 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Trade-offs**: Groq model catalog is smaller (Llama/Mixtral/Gemma family); fine for the receptionist. Embeddings remain local (DEC-020).
 - **Status**: Accepted — **live and verified.**
 - **Review Date**: N/A. Detail: `documentation/LLM_ORCHESTRATION.md`.
+
+---
+
+## DEC-025 — Clerk JWT auth with JWKS verification; user→business_id resolution
+
+- **Date**: 2026-06-29
+- **Category**: Architecture
+- **Decision**: Protect dashboard/API routes with Clerk. Verify RS256 session JWTs against Clerk's public **JWKS** (`CLERK_JWKS_URL`, optional issuer check) using PyJWT — no Clerk secret needed server-side. A `get_current_principal` dependency resolves the JWT `sub` (Clerk user id) to the local `User` row and returns a `Principal` carrying `business_id`; every protected route scopes by it. Cross-tenant access → `404`. First protected endpoints: `GET /api/v1/pending`, `POST /api/v1/messages/{id}/approve` (on top of `approve_and_send`).
+- **Context**: Milestone 2. Existing multi-tenant architecture (DEC-013) and tenant helpers (DEC — tenant scoping) unchanged.
+- **Alternatives Considered**: Verify via Clerk's API/secret key per request (network round-trip, slower — rejected; JWKS is the standard, stateless approach); hand-rolled auth (rejected — security risk for a beginner solo founder, per DEC-011).
+- **Reasoning**: JWKS verification is stateless, fast, and the Clerk-recommended backend pattern. Token verification is injected as a dependency, so routes are testable without a live Clerk account (deterministic self-signed-JWT tests).
+- **Trade-offs**: Requires `CLERK_JWKS_URL` configured to run live; a `User` row must exist per Clerk user (user provisioning/webhook is a later step).
+- **Status**: Accepted (built & tested). Live use pending Clerk app credentials in `.env`.
+- **Review Date**: N/A. Detail: `documentation/API.md`.

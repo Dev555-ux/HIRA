@@ -27,5 +27,16 @@ Remaining to run against real WhatsApp traffic (not new capabilities): the **Wha
 - **Clerk** → authenticated approval endpoint on top of `approve_and_send`.
 - LLM generation: **unblocked — Groq live** (`GROQ_API_KEY` + `LLM_PROVIDER=groq`).
 
-## After Milestone 1 (deferred)
-Authentication (Clerk), dashboard, analytics, billing, advanced settings — unless one becomes technically required.
+## Milestone 2 — Clerk Authentication
+
+- [x] Verify Clerk JWTs (RS256 via JWKS, `CLERK_JWKS_URL`) — real crypto, tested with self-signed keys
+- [x] Resolve authenticated user → `business_id` (`get_current_principal` → `Principal`)
+- [x] Protect dashboard/API routes (`/api/v1/*`) — 401 without a valid token
+- [x] Authenticated approval endpoint on top of `approve_and_send` (`POST /api/v1/messages/{id}/approve`)
+- [x] Tenant isolation enforced — cross-tenant access → 404 (tested)
+- [x] `GET /api/v1/pending` — tenant-scoped list of pending replies
+
+**Live use** needs Clerk app credentials in `.env` (`CLERK_JWKS_URL`) + a `User` row per Clerk user (provisioning via Clerk webhook is a later step).
+
+## After Milestone 2 (deferred)
+Dashboard UI (Next.js), user provisioning webhook, analytics, billing, advanced settings, Google Calendar booking — unless one becomes technically required. WhatsApp production integration stays paused until a dedicated phone number is available.

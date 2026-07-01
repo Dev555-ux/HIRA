@@ -37,5 +37,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
 
+    # Clerk auth (dashboard). JWKS URL from the Clerk dashboard; issuer optional.
+    clerk_jwks_url: str = ""
+    clerk_issuer: str = ""
+
 
 settings = Settings()

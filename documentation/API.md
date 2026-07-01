@@ -1,7 +1,9 @@
 # REST API Design
 
-Status: **Accepted** (2026-06-29). See `DECISIONS.md` DEC-014.
+Status: **Accepted** (2026-06-29). See `DECISIONS.md` DEC-014, DEC-025.
 Base path: `/api/v1`. Auth: Clerk JWT (dashboard endpoints) / Meta signature (webhook). All dashboard endpoints are tenant-scoped to the caller's `business_id`.
+
+**Implemented so far** (Milestone 2 — Clerk auth): `GET /api/v1/pending` and `POST /api/v1/messages/{message_id}/approve`, both protected by Clerk JWT via `get_current_principal` (resolves the Clerk user → local `User` → `business_id`). Cross-tenant access returns `404`. Verification: RS256 against Clerk JWKS (`CLERK_JWKS_URL`). Remaining dashboard endpoints below are still to be built.
 
 ---
 
