@@ -352,3 +352,17 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Trade-offs**: Requires `CLERK_JWKS_URL` configured to run live; a `User` row must exist per Clerk user (user provisioning/webhook is a later step).
 - **Status**: Accepted (built & tested). Live use pending Clerk app credentials in `.env`.
 - **Review Date**: N/A. Detail: `documentation/API.md`.
+
+---
+
+## DEC-026 — Next.js dashboard with mock-auth dev fallback (production-guarded)
+
+- **Date**: 2026-07-01
+- **Category**: UX
+- **Decision**: Build the dashboard as specified (Next.js 15 App Router, TS, Tailwind v4, shadcn-style UI on Radix, TanStack Query, RHF/Zod, Lucide, Clerk). Auth uses real Clerk when `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set, and a **dev-only mock** otherwise; in production without Clerk the app renders an "auth not configured" screen rather than bypassing auth. A shared `AuthContext` abstracts Clerk vs mock so pages/API never call Clerk hooks directly. Typed API client centralizes auth token, retries, and errors; TanStack Query handles caching/optimistic updates/background refresh. Dashboard layers on the existing backend — no backend changes.
+- **Context**: Milestone 3. Backend exposes only `/api/v1/pending` and approve; other pages render polished placeholders until endpoints exist.
+- **Alternatives Considered**: Next.js 16 (installed by create-next-app) — **rejected**, pinned to 15 per spec (16 had breaking changes vs known conventions); shadcn CLI — skipped in favor of hand-authored primitives (Tailwind v4 + Radix) to avoid the interactive/config churn; hard build-time throw when Clerk missing — rejected (broke CI builds); replaced with a runtime auth-misconfigured screen.
+- **Reasoning**: Mock fallback keeps dev unblocked without Clerk keys while the production guard preserves "never bypass auth in production." The `AuthContext` seam keeps Clerk swappable and pages testable without a live account.
+- **Trade-offs**: Placeholder pages for missing endpoints; Node 26 local vs Node 22 CI (Next 15 supports both). Pinning Next 15 over the newer 16 to stay on known-stable ground.
+- **Status**: Accepted — builds, typechecks, lints, tests pass; frontend CI job added.
+- **Review Date**: N/A. Detail: `frontend/README.md`, `documentation/FRONTEND.md`.

@@ -208,6 +208,17 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 17 — 2026-07-01
+
+- **Objectives**: Milestone 3 — production-grade Next.js dashboard on top of the existing backend.
+- **Work completed**: Installed Node 26. Scaffolded Next.js (pinned **15**, not the 16 create-next-app installed — flagged). Built: design system (Tailwind v4 tokens + class dark mode), shadcn-style UI primitives (button/card/badge/input/skeleton/dropdown), typed API client (auth token, retries, errors), `AuthContext` abstraction with **Clerk + dev mock** (production-guarded → auth-misconfigured screen, never bypass), TanStack Query provider + `use-pending` (list/approve optimistic + auto-refresh), app shell (sidebar/topbar/user-menu/mobile nav/theme toggle/error boundary), 7 pages (Dashboard, Inbox, Pending [live], Knowledge Base, Customers, Analytics, Settings), route loading/error, Vitest tests (9). Added frontend CI job (typecheck+lint+test+build). Verified locally: typecheck ✓, tests ✓, lint ✓, build ✓ (12 routes).
+- **Decisions made**: DEC-026 (Next.js dashboard; mock-auth dev fallback with production guard; pin Next 15).
+- **Constraint honored**: no backend changes (AI/retrieval/Groq/embeddings/tenant/WhatsApp untouched); WhatsApp paused; pages needing missing endpoints render placeholders.
+- **Files changed**: new `frontend/` app (~35 files); `.github/workflows/ci.yml` (frontend job); `MILESTONES.md`, `.claude/DECISIONS.md`, `.claude/PROGRESS.md`.
+- **Next actions**: backend endpoints for inbox/customers/KB/analytics + reply reject; Clerk user-provisioning webhook; then wire those pages to live data.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |

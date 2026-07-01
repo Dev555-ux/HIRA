@@ -38,5 +38,17 @@ Remaining to run against real WhatsApp traffic (not new capabilities): the **Wha
 
 **Live use** needs Clerk app credentials in `.env` (`CLERK_JWKS_URL`) + a `User` row per Clerk user (provisioning via Clerk webhook is a later step).
 
-## After Milestone 2 (deferred)
-Dashboard UI (Next.js), user provisioning webhook, analytics, billing, advanced settings, Google Calendar booking — unless one becomes technically required. WhatsApp production integration stays paused until a dedicated phone number is available.
+## Milestone 3 — Next.js Dashboard UI
+
+- [x] Next.js 15 (App Router) + TS + Tailwind v4 + shadcn-style UI + TanStack Query + RHF/Zod + Lucide
+- [x] Clerk integration, production-ready, with dev **mock-auth fallback** (never in production; auth-misconfigured screen instead)
+- [x] All API requests attach the Clerk session token; centralized typed API client (auth/retries/errors/loading)
+- [x] App shell: sidebar, top nav, user menu, mobile nav, dark mode, loading skeletons, error boundaries
+- [x] Pages: Dashboard, Inbox, Pending Replies (live), Knowledge Base, Customers, Analytics, Settings
+- [x] Pending Replies live against real API (list + approve, optimistic update, auto-refresh)
+- [x] Tests (Vitest + Testing Library), typecheck, eslint, build all pass; frontend CI job added
+
+Backend untouched (AI, retrieval, Groq, embeddings, tenant isolation, WhatsApp all unchanged). Pages needing not-yet-built endpoints show polished placeholders.
+
+## After Milestone 3 (deferred)
+Backend endpoints for inbox/customers/KB-list/analytics + reply reject; Clerk user-provisioning webhook; billing; Google Calendar booking. WhatsApp production integration stays paused until a dedicated phone number is available.
