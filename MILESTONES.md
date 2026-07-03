@@ -50,5 +50,19 @@ Remaining to run against real WhatsApp traffic (not new capabilities): the **Wha
 
 Backend untouched (AI, retrieval, Groq, embeddings, tenant isolation, WhatsApp all unchanged). Pages needing not-yet-built endpoints show polished placeholders.
 
+## Milestone 4 — WhatsApp Cloud API (autonomous loop)
+
+- [x] Verify Meta webhook (GET handshake)
+- [x] Receive incoming WhatsApp messages
+- [x] Validate webhook signatures (HMAC SHA-256)
+- [x] Ignore duplicate events (dedupe by wa_message_id)
+- [x] Ignore delivery/status callbacks (explicit skip)
+- [x] Send replies via the official WhatsApp Cloud API
+- [x] **Autonomous auto-send** — `business.mode == "autonomous"` sends the AI reply with no human approval (completes the no-manual-intervention loop)
+- [x] All WhatsApp config from `.env`; no hardcoded secrets; `.env.example` updated
+- [x] 50 backend tests pass (incl. autonomous send + status-callback ignore); CI green
+
+**Live round-trip blocker (credentials/account — the founder's to provide):** a real Meta access token, a WhatsApp phone number + its Phone number ID (seeded on a `businesses` row with `mode=autonomous`), and the webhook registered at a public HTTPS URL. See `documentation/WHATSAPP_INTEGRATION.md`.
+
 ## After Milestone 3 (deferred)
 Backend endpoints for inbox/customers/KB-list/analytics + reply reject; Clerk user-provisioning webhook; billing; Google Calendar booking. WhatsApp production integration stays paused until a dedicated phone number is available.

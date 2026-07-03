@@ -219,6 +219,18 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 18 — 2026-07-03
+
+- **Objectives**: Complete WhatsApp Cloud API integration (audit + fill gaps only).
+- **Audit finding**: verify/receive/signature/dedupe/send all already existed; the one functional gap was **autonomous auto-send** (loop required a human dashboard approval).
+- **Work completed**: Added autonomous auto-send in `app/ai/processing.py` (gated on `business.mode == "autonomous"`; assisted path unchanged; sender injectable). Made status-callback ignore explicit in the webhook. Added `WHATSAPP_ACCESS_TOKEN`/base/version to `.env.example`. Documented the loop + Meta config + curl in `WHATSAPP_INTEGRATION.md`. Added tests (autonomous send, status-callback ignore). Cleared a corrupted local fastembed cache (env issue, not code). **50 backend tests pass.**
+- **Decisions**: DEC-027 (autonomous auto-send; no global PHONE_NUMBER_ID — per-business).
+- **Not changed**: AI logic, retrieval, embeddings, DB schema, frontend, unrelated code.
+- **Files changed**: `backend/app/ai/processing.py`, `backend/app/webhooks/whatsapp.py`, `backend/.env.example`, `backend/tests/test_orchestrator.py`, `backend/tests/test_whatsapp_webhook.py`, `documentation/WHATSAPP_INTEGRATION.md`, `MILESTONES.md`, `.claude/DECISIONS.md`, `.claude/PROGRESS.md`.
+- **Remaining blocker**: live Meta credentials + WhatsApp number + public webhook URL (founder-provided).
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |

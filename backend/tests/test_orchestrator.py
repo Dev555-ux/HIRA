@@ -73,3 +73,43 @@ def test_generate_and_store_reply_persists_pending_outbound(db_session, monkeypa
     assert outbound[0].status == "pending_approval"
     assert outbound[0].body == "Yes, we're open today!"
     assert outbound[0].ai_meta["model"] == "mock-1"
+
+
+def test_autonomous_mode_sends_reply_immediately(db_session, monkeypatch):
+    from app.models import Customer
+
+    biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
+    db_session.add(biz)
+    db_session.flush()
+    index_entry(db_session, biz.id, "Hours", "Open 9-5 weekdays.", provider=FakeEmbeddingProvider())
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="We are open 9am-5pm."),
+    )
+    sent: dict = {}
+
+    def fake_sender(phone_number_id, to, body):
+        sent.update(phone_number_id=phone_number_id, to=to, body=body)
+        return "wamid.sent1"
+
+    processing.generate_and_store_reply(conversation.id, "are you open?", sender=fake_sender)
+
+    outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
+    assert len(outbound) == 1
+    assert outbound[0].status == "sent"  # auto-sent, no approval needed
+    assert outbound[0].wa_message_id == "wamid.sent1"
+    assert sent == {
+        "phone_number_id": "PN1",
+        "to": "+15550001111",
+        "body": "We are open 9am-5pm.",
+    }

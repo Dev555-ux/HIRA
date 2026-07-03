@@ -366,3 +366,17 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Trade-offs**: Placeholder pages for missing endpoints; Node 26 local vs Node 22 CI (Next 15 supports both). Pinning Next 15 over the newer 16 to stay on known-stable ground.
 - **Status**: Accepted — builds, typechecks, lints, tests pass; frontend CI job added.
 - **Review Date**: N/A. Detail: `frontend/README.md`, `documentation/FRONTEND.md`.
+
+---
+
+## DEC-027 — Autonomous-mode auto-send completes the WhatsApp loop
+
+- **Date**: 2026-07-03
+- **Category**: Product
+- **Decision**: In the background reply processor (`app/ai/processing.py`), when `business.mode == "autonomous"` the generated reply is sent immediately via the WhatsApp Cloud API (`send_text`) and marked `sent`/`failed` — no human approval. Assisted Mode (default) is unchanged (stores `pending_approval` for dashboard approval). No global `PHONE_NUMBER_ID` env: the sender number id is per-business (`businesses.whatsapp_phone_number_id`, from webhook metadata).
+- **Context**: The webhook (verify/receive/signature/dedupe) and `send_text` already existed, but the loop required a human approval click. The requested end-to-end flow has no human node.
+- **Alternatives Considered**: A global auto-send flag (rejected — `businesses.mode` already models this per-tenant); a global PHONE_NUMBER_ID (rejected — breaks multi-tenancy).
+- **Reasoning**: Acts on the already-modelled `businesses.mode`; additive, preserves assisted behavior; no AI/retrieval/schema change.
+- **Trade-offs**: Autonomous businesses send unreviewed replies — acceptable and opt-in per business; escalation/guardrails remain future work.
+- **Status**: Accepted — code complete & tested (50 backend tests). Live round-trip pending Meta credentials/number (see WHATSAPP_INTEGRATION.md).
+- **Review Date**: N/A.

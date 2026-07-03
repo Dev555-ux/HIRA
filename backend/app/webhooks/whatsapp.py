@@ -84,6 +84,9 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
+            # Ignore delivery/status callbacks: they carry "statuses", not "messages".
+            if not value.get("messages"):
+                continue
             phone_number_id = value.get("metadata", {}).get("phone_number_id")
             business = db.scalars(
                 select(Business).where(Business.whatsapp_phone_number_id == phone_number_id)

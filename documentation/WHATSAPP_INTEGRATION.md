@@ -50,3 +50,74 @@ Against the founder's stated optimization targets:
 - [WhatsApp API Pricing comparison: Meta vs Twilio vs 360dialog (EZContact)](https://ezcontact.ai/en/blog/whatsapp-api-pricing-comparison-meta-twilio-360dialog-ezcontact/)
 
 > Pricing figures above are current as of June 2026 research and **change frequently** — re-verify against Meta's official rate card before committing to financial projections.
+
+---
+
+## Operational integration (implemented)
+
+### The autonomous loop (no manual intervention)
+
+```
+Customer → Meta → POST /webhooks/whatsapp → verify signature → dedupe → store inbound
+       → background task → orchestrator (KB retrieval + Groq) → reply
+       → [business.mode == "autonomous"] → send_text() → WhatsApp Cloud API → Customer
+```
+
+- **Assisted Mode** (default): the reply is stored as `pending_approval` and sent only when a human approves it in the dashboard (`POST /api/v1/messages/{id}/approve`).
+- **Autonomous Mode** (`businesses.mode = "autonomous"`): the reply is sent immediately by the background processor — no human step. Set a business to autonomous to get the fully-automatic loop.
+
+Code map:
+- Verify + receive + signature + dedupe + ignore status callbacks: `app/webhooks/whatsapp.py`
+- Generate + (autonomous) auto-send: `app/ai/processing.py`
+- Outbound Cloud API call: `app/services/messaging.py::send_text`
+- Approve-then-send (assisted): `app/services/replies.py::approve_and_send`
+
+### Environment variables (all from `.env`, never hardcoded)
+
+| Var | Meaning | Where to get it |
+|---|---|---|
+| `WHATSAPP_VERIFY_TOKEN` | Arbitrary string; must match Meta's webhook config | You choose it |
+| `WHATSAPP_APP_SECRET` | Verifies `X-Hub-Signature-256` on every payload | Meta App → Settings → Basic → App Secret |
+| `WHATSAPP_ACCESS_TOKEN` | Bearer token for outbound sends | Meta → WhatsApp → API Setup (temp) or a System User token (permanent) |
+| `WHATSAPP_API_BASE` | Graph API base (default `https://graph.facebook.com`) | default |
+| `WHATSAPP_GRAPH_VERSION` | Graph API version (default `v21.0`) | default |
+
+**No global `PHONE_NUMBER_ID`.** The sender phone-number-id is stored per business in `businesses.whatsapp_phone_number_id`, resolved from the inbound webhook's `metadata.phone_number_id`. This preserves multi-tenancy (each business sends from its own number).
+
+### Meta configuration required (to go live)
+
+1. **Meta app** with the **WhatsApp** product added; note the **App Secret** → `WHATSAPP_APP_SECRET`.
+2. **A WhatsApp phone number** (test or production) → note its **Phone number ID**.
+3. Seed a `businesses` row whose `whatsapp_phone_number_id` = that Phone number ID (and `mode = "autonomous"` for the no-approval loop).
+4. **Access token** → `WHATSAPP_ACCESS_TOKEN` (temp 24h token for testing, or a System User permanent token).
+5. **Webhook**: expose the backend over HTTPS (e.g. `ngrok http 8000`), then in Meta → WhatsApp → Configuration set:
+   - Callback URL: `https://<public-host>/webhooks/whatsapp`
+   - Verify token: the same string as `WHATSAPP_VERIFY_TOKEN`
+   - Subscribe to the **messages** field.
+
+### Test with curl
+
+Webhook verification (GET handshake):
+```bash
+curl "http://localhost:8000/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=$WHATSAPP_VERIFY_TOKEN&hub.challenge=12345"
+# → 12345
+```
+
+Simulate an inbound message (signature must match the raw body):
+```bash
+BODY='{"entry":[{"changes":[{"value":{"metadata":{"phone_number_id":"<PHONE_NUMBER_ID>"},"contacts":[{"wa_id":"15551230000","profile":{"name":"Test"}}],"messages":[{"id":"wamid.test1","from":"15551230000","type":"text","text":{"body":"Are you open on Sunday?"}}]}}]}]}'
+SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$WHATSAPP_APP_SECRET" | sed 's/^.* //')"
+curl -X POST http://localhost:8000/webhooks/whatsapp \
+  -H "Content-Type: application/json" \
+  -H "X-Hub-Signature-256: $SIG" \
+  --data "$BODY"
+# → {"status":"received"}; in autonomous mode the reply is generated (Groq) and sent via the Cloud API.
+```
+
+Outbound send directly against the Cloud API (sanity-check token/number):
+```bash
+curl -X POST "https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages" \
+  -H "Authorization: Bearer $WHATSAPP_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"messaging_product":"whatsapp","to":"<CUSTOMER_WA_NUMBER>","type":"text","text":{"body":"Hello from HIRA"}}'
+```

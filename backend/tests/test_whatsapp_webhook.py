@@ -120,6 +120,38 @@ def test_post_persists_inbound_and_dispatches_reply(db_session):
     app.dependency_overrides.clear()
 
 
+def test_post_ignores_status_callback(db_session):
+    business = Business(name="Clinic A", whatsapp_phone_number_id="PN1")
+    db_session.add(business)
+    db_session.commit()
+
+    client, dispatched = _client(db_session)
+    payload = {
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "metadata": {"phone_number_id": "PN1"},
+                            "statuses": [{"id": "wamid.x", "status": "delivered"}],
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+    body = json.dumps(payload).encode()
+    resp = client.post(
+        "/webhooks/whatsapp",
+        content=body,
+        headers={"X-Hub-Signature-256": _sign(body), "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 200
+    assert db_session.scalars(select(Message)).all() == []  # nothing stored
+    assert len(dispatched) == 0  # no reply generation dispatched
+    app.dependency_overrides.clear()
+
+
 def test_post_dedupes_repeated_message_id(db_session):
     business = Business(name="Clinic A", whatsapp_phone_number_id="PN1")
     db_session.add(business)
