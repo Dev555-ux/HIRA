@@ -231,6 +231,40 @@ Execution journal for HIRA. This is an append-only record of what has actually h
 
 ---
 
+### Session 19 — 2026-07-04
+
+- **Objectives**: Diagnose why the live WhatsApp pipeline produced no automated replies; get the first real end-to-end conversation working.
+- **Milestone: First successful end-to-end WhatsApp conversation.** Pipeline verified live: Customer → Meta WhatsApp Cloud API → Webhook → FastAPI → Database → Retrieval → Groq → WhatsApp Cloud API → Customer.
+- **Completed and verified live**: webhook verification, signature validation, business lookup, autonomous mode, knowledge retrieval, Groq response generation, WhatsApp Cloud API outbound send.
+- **Work completed**: Added temporary `[WA-DEBUG]` logging across the webhook, processing, and messaging layers to trace all 9 pipeline stages. Found and killed an orphaned duplicate uvicorn process (from an earlier session) racing for port 8000 alongside the live `--reload` server. Traced a real signed payload through the running app end to end via direct Graph API + DB inspection (no code changes) to isolate two distinct root causes. Removed all `[WA-DEBUG]` instrumentation after the live test succeeded; reverted the 4 touched files to their committed state (restoring two pre-existing normal log lines in `app/ai/processing.py` that debug logging had temporarily overwritten). Full suite green (50 passed).
+- **Root causes found (both config/credential, not code)**:
+  1. **Outbound send failing** — the WhatsApp access token in `.env` had expired (Meta `401`, `OAuthException` code 190, 24h temporary token). Fixed by rotating to a fresh token.
+  2. **Inbound webhook never firing on real messages** — the WABA's `subscribed_apps` only listed Meta's internal placeholder app ("WA DevX Webhook Events 1P App"); the founder's real app ("Stoneveil AI") was never subscribed to receive webhook events for this WABA, despite webhook URL verification succeeding (verification and event-subscription are separate Meta-side concerns). Fixed via `POST /{waba-id}/subscribed_apps`; confirmed against the app's own webhook config that the callback URL matches the live ngrok tunnel with `messages` active.
+- **Decisions made**: None architectural — both fixes were live Meta configuration/credential actions, not code changes.
+- **Files changed**: `app/webhooks/whatsapp.py`, `app/services/messaging.py`, `app/main.py`, `app/ai/processing.py` (temporary debug logging added, then fully reverted — net no code change versus pre-session state); `MILESTONES.md` (Milestone 4 marked live-verified).
+- **Lessons learned (process)**: Webhook GET verification succeeding says nothing about whether Meta is actually routing real message events to the app — that depends on the app appearing in the WABA's `subscribed_apps`, a separate check. Orphaned background dev-server processes from prior sessions can silently coexist with a live `--reload` server on the same port and produce exactly "sometimes works" symptoms; worth checking `lsof -i :<port>` early when a webhook behaves inconsistently.
+- **Next actions**: Consider replacing the 24h temporary WhatsApp access token with a permanent System User token to avoid recurring expiry. Milestone 4 (autonomous WhatsApp loop) is now complete and live-verified; remaining backend work is Milestone-3-adjacent (inbox/customers/KB-list/analytics endpoints, Clerk user-provisioning webhook).
+
+---
+
+### Session 20 — 2026-07-04
+
+- **Objectives**: Replace the temporary 24-hour WhatsApp access token with a permanent one, closing the recurring-expiry risk flagged in Session 19.
+- **Work completed**: Founder created a Meta System User and generated a permanent WhatsApp access token with the required permissions. Replaced `WHATSAPP_ACCESS_TOKEN` in `backend/.env` (only that line changed) and restarted the FastAPI dev server with the existing `uvicorn app.main:app --reload` command. Verified the new token without ever printing its full value: fingerprint (length/prefix/suffix/SHA256) confirmed the running app loaded the new value; a read-only `GET /me` Graph API call confirmed validity (`200`, resolves to `stoneveil-backend`); `GET /debug_token` confirmed token type and non-expiry.
+- **Verified**:
+  - Permanent System User token created, replacing the temporary 24-hour token.
+  - `backend/.env` updated (`WHATSAPP_ACCESS_TOKEN` only).
+  - Token validity confirmed via Graph API (`GET /me` → `200`).
+  - Token type confirmed: `"type":"SYSTEM_USER"`.
+  - `expires_at: 0` — non-expiring.
+  - Scopes confirmed: `whatsapp_business_management`, `whatsapp_business_messaging`.
+- **Decisions made**: None architectural — credential rotation only.
+- **Files changed**: `backend/.env` (single line). No application code, database, or other configuration changed.
+- **Lessons learned (process)**: `GET /debug_token` (using an app access token, `app_id|app_secret`) reliably confirms a WhatsApp token's type (`SYSTEM_USER` vs. temporary dashboard token) and expiry — more precise than inferring it from send-endpoint behavior.
+- **Next actions**: TODOS.md High Priority item closed (moved to Completed, TASK-C007). Remaining follow-up is the Infrastructure backlog (INFRA-001–006): permanent HTTPS deployment, secrets manager, monitoring, backups, and re-verifying the webhook loop against that deployment.
+
+---
+
 ## Milestone Progress
 
 | ID | Milestone | Status |
@@ -283,3 +317,31 @@ Active risk list. Severity: High / Medium / Low.
 In parallel, start validation prep — **TASK-005** (scoring criteria) and **TASK-006** (interview script) — since customer discovery (TASK-003) is the longest-lead, highest-priority work and gates vertical selection.
 
 Defer architecture/stack decisions (TASK-007–011) until the integration and model research (TASK-008, TASK-009) is underway.
+
+---
+
+### Session 20 — 2026-07-05
+
+- **Objective**: Design the complete self-service onboarding experience (signup → knowledge generation → test drive → WhatsApp connection → go-live), per founder request. Design-only — no code written, per explicit instruction.
+- **Work completed**: Inspected current state first (backend `app/`, frontend `src/`, `app/models.py`, `app/ai/{knowledge_base,chunking,orchestrator}.py`, `app/api/dashboard.py`, `app/auth/dependencies.py`, WhatsApp integration docs) to confirm: no onboarding flow exists today — the only business/user rows are created by manually running `backend/scripts/seed_business.py`; KB ingestion has no upload/crawl surface, only a Python-script-driven `index_entry()`; WhatsApp connection is fully manual `.env` editing. Produced three deliverables:
+  - `ONBOARDING_ARCHITECTURE.md` — DB schema additions (`kb_ingestion_jobs`, `kb_entry_drafts`, `businesses` onboarding/WhatsApp-status columns), the extraction→clean→structure→validate→review pipeline, new `app/ingestion/` package design, new `/api/v1/onboarding/*` routes, and SSRF/file-upload security considerations for the new untrusted-input surface.
+  - `ONBOARDING_USER_FLOW.md` — the conversational onboarding sequence, full customer journey (pre-signup → subscription), and screen wireframes (Mermaid), including an honest two-path design for WhatsApp connection (guided-manual v1 vs. Embedded Signup v2).
+  - `ONBOARDING_IMPLEMENTATION_PLAN.md` — six milestones (A–F: provisioning, ingestion pipeline, review UI + playground, guided-manual WhatsApp, Embedded Signup, go-live), a self-critique pass, and a recommendation to sequence this before Google Calendar/CRM/Analytics.
+- **Key design decisions**: Reuse `index_entry()`/`orchestrator.generate_reply()` unchanged rather than building parallel logic; stage extracted knowledge in a new table (`kb_entry_drafts`) rather than adding draft-state to the retrieval-hot `kb_entries` table, so a missed filter can never leak an unreviewed entry to a real customer; reuse `BackgroundTasks` rather than introducing a task queue ahead of the already-planned `REL-1`/`SCALE-2` work; flagged Meta Tech Provider / Embedded Signup approval as an external, non-engineering dependency that should be started immediately in parallel.
+- **Files changed**: `ONBOARDING_ARCHITECTURE.md`, `ONBOARDING_USER_FLOW.md`, `ONBOARDING_IMPLEMENTATION_PLAN.md` (new, repo root). This entry.
+- **Observation flagged, not acted on**: `MEMORY.md`, `PROJECT_CONTEXT.md`, `TODOS.md`, and this file's "Project Status"/"Progress"/"Risks"/"Next Session" sections (above) still describe the pre-implementation concept stage (e.g., "no application code yet," AI provider as Claude, hosting as Railway/Vercel) and contradict `ARCHITECTURE.md`/`MILESTONES.md`, which are current as of 2026-07-04 and describe four completed, live-verified milestones. This predates today's session and is out of scope for the onboarding design requested, but is worth a dedicated cleanup pass — flagging per CLAUDE.md §5/§12 ("stale documentation is a bug").
+- **Next actions**: Founder decision needed on whether to proceed with Milestone A (provisioning) first, per the plan's recommendation; separately, decide whether to greenlight a documentation-refresh pass on `MEMORY.md`/`PROJECT_CONTEXT.md`/`TODOS.md`/`PROGRESS.md`'s status header to match current reality.
+
+---
+
+### Session 21 — 2026-07-05
+
+- **Objective**: Implement Milestone A (business provisioning) from `ONBOARDING_IMPLEMENTATION_PLAN.md` — the first piece of real onboarding code, replacing the manual `seed_business.py` script as the only way a tenant comes into existence.
+- **Work completed**:
+  - **Backend**: added `contact_email`, `country`, `onboarding_status`, `whatsapp_connection_status`, `website_url`, `trial_ends_at` columns to `businesses` (Alembic migration `b4fa9e1f5f6a`, applied to the local dev DB); `app/services/provisioning.py` (`provision_business()` / `get_business_for_clerk_user()`, idempotent — a repeat call for the same Clerk user returns the existing business rather than duplicating it); refactored `app/auth/dependencies.py` to split `get_verified_clerk_user_id` (token verification only) out of `get_current_principal` (token + existing-User lookup), since onboarding routes must authenticate a brand-new signup that has no `User` row yet, without weakening the existing dashboard routes' "unknown user → 401" guarantee; new `app/api/onboarding.py` router (`GET /api/v1/onboarding/status`, `POST /api/v1/onboarding/business`), registered in `main.py`.
+  - **Frontend**: new `(onboarding)` route group (`/onboarding`) with a minimal shell and a single form (business name, industry, business email, country, timezone — react-hook-form + zod, matching the stack already in `package.json` but not previously wired up anywhere); `(dashboard)/layout.tsx` converted to a client component that checks `/api/v1/onboarding/status` and redirects a business-less user to `/onboarding` (fails open to the dashboard on a status-check error rather than trapping the user on a blank screen); a placeholder "getting started" checklist (Knowledge Import / WhatsApp Connection / Test AI / Go Live, all inert) rendered on `/dashboard` once a business exists; new `lib/api.ts`/`lib/types.ts` entries and a `hooks/use-onboarding.ts` (TanStack Query), following the exact conventions `use-pending.ts` already established.
+  - **Testing**: 13 new backend tests (`test_onboarding_api.py`, `test_provisioning.py`) — auth guard, idempotency, validation, tenant-correct serialization; 63/63 backend tests passing (up from 50). 5 new frontend tests (onboarding form validation/submit/blocked-without-email; dashboard layout redirect-vs-render) — 14/14 frontend tests passing (up from 9). `ruff check`, `tsc --noEmit`, `eslint`, and `next build` all clean.
+  - **Manual verification**: ran the real migration against the local Postgres dev DB (not just the test DB, which builds schema via `create_all` and wouldn't have caught a migration error); booted `uvicorn` and curled `/health` and the new `/api/v1/onboarding/status` route directly — confirmed 401 with no token and behavior-parity (500, due to `CLERK_JWKS_URL` being unset in local dev) with the pre-existing `/api/v1/pending` route under an invalid token, i.e., no regression and no new failure mode introduced by the new route.
+- **Scope discipline**: explicitly did not implement website crawling, PDF upload, knowledge extraction, WhatsApp Embedded Signup, Calendar, or CRM — the checklist items for those are static placeholders, matching the milestone's stated scope.
+- **Files changed**: `backend/app/models.py`, `backend/app/auth/dependencies.py`, `backend/app/main.py`; new `backend/app/services/provisioning.py`, `backend/app/api/onboarding.py`, `backend/alembic/versions/b4fa9e1f5f6a_*.py`, `backend/tests/test_onboarding_api.py`, `backend/tests/test_provisioning.py`; new `frontend/src/app/(onboarding)/layout.tsx`, `frontend/src/app/(onboarding)/onboarding/page.tsx` (+ `.test.tsx`), `frontend/src/hooks/use-onboarding.ts`, `frontend/src/components/onboarding-checklist.tsx`; modified `frontend/src/app/(dashboard)/layout.tsx` (+ new `.test.tsx`), `frontend/src/app/(dashboard)/dashboard/page.tsx`, `frontend/src/lib/api.ts`, `frontend/src/lib/types.ts`. Docs: `ONBOARDING_IMPLEMENTATION_PLAN.md` (Milestone A marked done), `.claude/TODOS.md` (new Onboarding section), this entry.
+- **Next actions**: Milestone B (knowledge ingestion pipeline) is next per the plan's dependency graph; separately, the Meta Tech Provider application (Milestone E's external dependency) should be started now in parallel, since it has the longest lead time in the whole onboarding plan and isn't on any other milestone's critical path.

@@ -32,11 +32,21 @@ class Business(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))
-    vertical: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    vertical: Mapped[str | None] = mapped_column(String(100), nullable=True)  # "industry" at signup
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    contact_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     whatsapp_phone_number_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     whatsapp_business_account_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mode: Mapped[str] = mapped_column(String(16), default="assisted")  # assisted | autonomous
+    # created | live — see ONBOARDING_ARCHITECTURE.md §2.1. Only "created" is set
+    # by anything today; "live" is reserved for the future go-live milestone.
+    onboarding_status: Mapped[str] = mapped_column(String(32), default="created")
+    # not_connected | pending_verification | connected — reserved for the future
+    # WhatsApp-connection milestone; nothing sets it beyond the default yet.
+    whatsapp_connection_status: Mapped[str] = mapped_column(String(24), default="not_connected")
+    website_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

@@ -121,6 +121,121 @@ Priority: P0 (critical) · P1 (high) · P2 (medium) · P3 (low).
 
 ---
 
+## High Priority
+
+> Cross-cutting urgent items that don't belong to a single sprint slice.
+
+_Empty — no open high-priority items. The WhatsApp access-token replacement is complete; see Completed (TASK-C007)._
+
+---
+
+## Onboarding
+
+> Self-service onboarding, per `ONBOARDING_IMPLEMENTATION_PLAN.md`. Milestone A is done; B–F are not started.
+
+### ONBOARD-A — Business provisioning ✅ Done (2026-07-05)
+
+- **Description**: Signup creates a real tenant. Adds `POST/GET /api/v1/onboarding/*`, a minimal `/onboarding` form (business name, industry, business email, country, timezone), a dashboard redirect gate for users with no business yet, and a placeholder "getting started" checklist on the dashboard.
+- **Priority**: P1
+- **Category**: Technical
+- **Status**: Done — see `PROGRESS.md` Session 21.
+- **Success criteria**: ✅ A Clerk sign-up with no matching `User` row is redirected to `/onboarding`; submitting the form creates a `Business` + owner `User` and lands on `/dashboard` showing the checklist. 63 backend tests / 14 frontend tests passing.
+
+### ONBOARD-B — Knowledge ingestion pipeline (website/PDF/manual → drafts)
+
+- **Priority**: P2
+- **Category**: Technical
+- **Status**: To Do
+- **Dependencies**: ONBOARD-A
+
+### ONBOARD-C — Knowledge review UI + test-drive playground
+
+- **Priority**: P2
+- **Category**: Technical
+- **Status**: To Do
+- **Dependencies**: ONBOARD-B
+
+### ONBOARD-D — WhatsApp connection (guided-manual, v1)
+
+- **Priority**: P2
+- **Category**: Technical
+- **Status**: To Do
+- **Dependencies**: ONBOARD-A; should not ship before `SEC-1`/`SEC-2` (see `IMPLEMENTATION_PLAN.md` Milestone 0) are done.
+
+### ONBOARD-E — WhatsApp Embedded Signup (v2)
+
+- **Priority**: P2
+- **Category**: Business (external dependency) / Technical
+- **Status**: To Do
+- **Dependencies**: Meta Tech Provider / Embedded Signup approval — an external, non-engineering approval process. Should be kicked off in parallel now; it is the longest lead-time item in the onboarding plan.
+
+### ONBOARD-F — Go-live, resumability, and polish
+
+- **Priority**: P2
+- **Category**: Technical
+- **Status**: To Do
+- **Dependencies**: ONBOARD-A through ONBOARD-D
+
+---
+
+## Infrastructure
+
+> Production-readiness follow-ups, deferred until after MVP/pilot validation (not blocking current WhatsApp loop work, which is live and verified against Meta's Cloud API sandbox/test setup).
+
+### INFRA-001 — Replace ngrok with a permanent HTTPS deployment
+
+- **Description**: Move off the ngrok dev tunnel to a permanent hosted deployment (Railway, Fly.io, Render, or a VPS) with a stable public HTTPS endpoint for the WhatsApp webhook.
+- **Priority**: P2
+- **Category**: Operations
+- **Status**: To Do
+
+### INFRA-002 — Move secrets to a production secrets manager
+
+- **Description**: Replace local `.env`-file secrets (WhatsApp token, Groq key, database URL, Clerk keys) with a managed secrets store appropriate to the chosen hosting platform, for production deployment.
+- **Priority**: P2
+- **Category**: Operations
+- **Status**: To Do
+
+### INFRA-003 — Add webhook health monitoring and alerting
+
+- **Description**: Monitor the WhatsApp webhook endpoint's availability and error rate in production, with alerting on failures (e.g. signature-validation failures, send failures, downtime).
+- **Priority**: P2
+- **Category**: Operations
+- **Status**: To Do
+
+### INFRA-004 — Configure automatic backups for production data
+
+- **Description**: Set up scheduled, automated backups for the production Postgres database (conversations, messages, KB entries, business/customer records).
+- **Priority**: P2
+- **Category**: Operations
+- **Status**: To Do
+
+### INFRA-005 — Add production logging and error monitoring
+
+- **Description**: Add structured application logging and error monitoring/tracing (e.g. Sentry or equivalent) for production, replacing ad-hoc debug logging added during development.
+- **Priority**: P2
+- **Category**: Operations
+- **Status**: To Do
+
+### INFRA-006 — Verify webhook recovery after deployment
+
+- **Description**: The current WhatsApp loop depends on a local development machine and ngrok (see PROGRESS.md Session 19 — 2026-07-04). Once deployed to a permanent HTTPS endpoint (INFRA-001), the full webhook path must be re-verified end-to-end before onboarding real businesses — the deployment target is a different environment than the one the live loop was proven against.
+- **Priority**: P0
+- **Category**: Operations
+- **Estimated effort**: S
+- **Dependencies**: INFRA-001 (permanent HTTPS deployment)
+- **Status**: To Do
+- **Success criteria**:
+  - Deploy to a permanent HTTPS endpoint.
+  - Update Meta webhook callback URL.
+  - Verify webhook GET verification succeeds.
+  - Verify real inbound messages arrive.
+  - Verify outbound replies succeed.
+  - Remove ngrok from the production path.
+- **Reason**: The current deployment depends on a local development machine and ngrok. A production deployment should be verified end-to-end before onboarding real businesses.
+
+---
+
 ## Next Sprint
 
 > Begins only after a vertical is selected (TASK-004) and architecture/stack are finalized. High-priority work immediately following the current sprint. Implementation tasks will be added here once validation gates pass — intentionally not pre-populated to avoid speculative MVP scope.
@@ -167,9 +282,9 @@ _Empty — nothing has cleared validation yet._
 
 ## Technical Debt
 
-> Known improvements intentionally postponed. None yet — no application code exists.
+> Known improvements intentionally postponed.
 
-_Empty._
+Current technical debt is limited to production-infrastructure hardening — see the **Infrastructure** section above (ngrok replacement, secrets manager, webhook health monitoring, automated backups, production logging/error monitoring). The WhatsApp access token has been replaced with a permanent, non-expiring System User token (see Completed, TASK-C007) and is no longer a source of debt. As of 2026-07-04: the WhatsApp end-to-end pipeline (Milestone 4) is complete and live-verified, and all temporary `[WA-DEBUG]` instrumentation added during that debugging session has been removed. No other known debt.
 
 ---
 
@@ -222,3 +337,9 @@ _Empty._
 - **Category**: Operations
 - **Status**: Done (2026-06-29)
 - **Success criteria met**: File populated and approved.
+
+### TASK-C007 — Replace temporary WhatsApp access token with a permanent System User token
+- **Description**: Created a Meta System User and generated a permanent WhatsApp access token with the required permissions, replacing the temporary 24-hour dashboard token in `backend/.env`.
+- **Category**: Operations
+- **Status**: Done (2026-07-04)
+- **Success criteria met**: Meta System User created ✅. Permanent token generated ✅. `WHATSAPP_ACCESS_TOKEN` in `backend/.env` replaced (only that line changed) ✅. Verified via Graph API: `GET /me` → `200` (resolves to `stoneveil-backend`) ✅; `GET /debug_token` confirms `"type":"SYSTEM_USER"`, `"expires_at":0` (non-expiring), scopes `whatsapp_business_management` + `whatsapp_business_messaging` ✅.

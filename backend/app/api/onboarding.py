@@ -1,0 +1,89 @@
+"""Onboarding API (/api/v1/onboarding) — Milestone A: business provisioning only.
+
+Two routes:
+- `GET /status` — does the calling Clerk identity already have a business?
+  Used by the frontend right after login to decide dashboard vs. /onboarding.
+- `POST /business` — create the Business + owner User for a first-time signup.
+
+Both sit behind `get_verified_clerk_user_id`, not `get_current_principal`: a
+brand-new signup has a valid Clerk session but (by definition) no `User` row
+yet, so the stricter dashboard dependency — which 401s on an unknown user —
+would wrongly reject exactly the request this flow needs to allow.
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.auth.dependencies import get_verified_clerk_user_id
+from app.db.session import get_db
+from app.models import Business
+from app.services.provisioning import get_business_for_clerk_user, provision_business
+
+router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
+
+
+class ProvisionBusinessRequest(BaseModel):
+    name: str
+    owner_email: str
+    industry: str | None = None
+    contact_email: str | None = None
+    country: str | None = None
+    timezone: str | None = None
+
+
+def _looks_like_email(value: str) -> bool:
+    return "@" in value and "." in value.split("@")[-1]
+
+
+def _serialize_business(business: Business) -> dict:
+    return {
+        "id": str(business.id),
+        "name": business.name,
+        "industry": business.vertical,
+        "contact_email": business.contact_email,
+        "country": business.country,
+        "timezone": business.timezone,
+        "onboarding_status": business.onboarding_status,
+        "whatsapp_connection_status": business.whatsapp_connection_status,
+    }
+
+
+@router.get("/status")
+def onboarding_status(
+    clerk_user_id: str = Depends(get_verified_clerk_user_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    business = get_business_for_clerk_user(db, clerk_user_id)
+    if business is None:
+        return {"data": {"has_business": False, "business": None}}
+    return {"data": {"has_business": True, "business": _serialize_business(business)}}
+
+
+@router.post("/business", status_code=status.HTTP_201_CREATED)
+def create_business(
+    payload: ProvisionBusinessRequest,
+    clerk_user_id: str = Depends(get_verified_clerk_user_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Business name is required")
+    if not payload.owner_email or not _looks_like_email(payload.owner_email):
+        raise HTTPException(status_code=422, detail="A valid owner email is required")
+    if payload.contact_email and not _looks_like_email(payload.contact_email):
+        raise HTTPException(status_code=422, detail="Business email is not a valid email address")
+
+    business = provision_business(
+        db,
+        clerk_user_id=clerk_user_id,
+        owner_email=payload.owner_email,
+        name=name,
+        industry=(payload.industry or "").strip() or None,
+        contact_email=(payload.contact_email or "").strip() or None,
+        country=(payload.country or "").strip() or None,
+        timezone=(payload.timezone or "").strip() or None,
+    )
+    return {"data": _serialize_business(business)}

@@ -3,15 +3,18 @@
 import { Activity, CheckCheck, MessageSquare, Users } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
+import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { usePending } from "@/hooks/use-pending";
 
 export default function DashboardPage() {
   const { data: pending, isLoading } = usePending();
+  const { data: onboarding } = useOnboardingStatus();
 
   return (
     <>
@@ -19,6 +22,10 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Overview of your AI receptionist."
       />
+
+      {onboarding?.business && onboarding.business.onboarding_status !== "live" && (
+        <OnboardingChecklist businessName={onboarding.business.name} />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard

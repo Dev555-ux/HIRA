@@ -57,3 +57,29 @@ export interface AnalyticsSummary {
   pending_approvals: number;
   avg_response_seconds: number | null;
 }
+
+// Onboarding (Milestone A — business provisioning only).
+export interface Business {
+  id: string;
+  name: string;
+  industry: string | null;
+  contact_email: string | null;
+  country: string | null;
+  timezone: string;
+  onboarding_status: "created" | "live";
+  whatsapp_connection_status: "not_connected" | "pending_verification" | "connected";
+}
+
+export interface OnboardingStatus {
+  has_business: boolean;
+  business: Business | null;
+}
+
+export interface CreateBusinessPayload {
+  name: string;
+  owner_email: string;
+  industry?: string;
+  contact_email?: string;
+  country?: string;
+  timezone?: string;
+}

@@ -1,5 +1,12 @@
 import { API_BASE_URL } from "./config";
-import type { ApiEnvelope, ApproveResult, PendingReply } from "./types";
+import type {
+  ApiEnvelope,
+  ApproveResult,
+  Business,
+  CreateBusinessPayload,
+  OnboardingStatus,
+  PendingReply,
+} from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -57,4 +64,15 @@ export const api = {
       getToken,
       { method: "POST" },
     ).then((r) => r.data),
+
+  getOnboardingStatus: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<OnboardingStatus>>("/api/v1/onboarding/status", getToken).then(
+      (r) => r.data,
+    ),
+
+  createBusiness: (getToken: GetToken, payload: CreateBusinessPayload) =>
+    apiFetch<ApiEnvelope<Business>>("/api/v1/onboarding/business", getToken, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
 };

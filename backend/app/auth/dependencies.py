@@ -37,11 +37,16 @@ def get_token_verifier() -> Callable[[str], dict]:
     return verify_clerk_token
 
 
-def get_current_principal(
+def get_verified_clerk_user_id(
     request: Request,
-    db: Session = Depends(get_db),
     verify: Callable[[str], dict] = Depends(get_token_verifier),
-) -> Principal:
+) -> str:
+    """Verify the bearer token and return the Clerk user id (JWT `sub`).
+
+    Unlike `get_current_principal`, this does *not* require a matching local
+    `User` row — it's the dependency onboarding routes use, since a
+    just-signed-up user has a valid Clerk session but no `User`/`Business` yet.
+    """
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
@@ -49,11 +54,18 @@ def get_current_principal(
     claims = verify(token)  # raises HTTPException(401) on failure
 
     clerk_user_id = claims.get("sub")
-    user = (
-        db.scalars(select(User).where(User.clerk_user_id == clerk_user_id)).first()
-        if clerk_user_id
-        else None
-    )
+    if not clerk_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token"
+        )
+    return clerk_user_id
+
+
+def get_current_principal(
+    clerk_user_id: str = Depends(get_verified_clerk_user_id),
+    db: Session = Depends(get_db),
+) -> Principal:
+    user = db.scalars(select(User).where(User.clerk_user_id == clerk_user_id)).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown user")
 
