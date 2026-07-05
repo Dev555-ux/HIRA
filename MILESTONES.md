@@ -62,7 +62,9 @@ Backend untouched (AI, retrieval, Groq, embeddings, tenant isolation, WhatsApp a
 - [x] All WhatsApp config from `.env`; no hardcoded secrets; `.env.example` updated
 - [x] 50 backend tests pass (incl. autonomous send + status-callback ignore); CI green
 
-**Live round-trip blocker (credentials/account — the founder's to provide):** a real Meta access token, a WhatsApp phone number + its Phone number ID (seeded on a `businesses` row with `mode=autonomous`), and the webhook registered at a public HTTPS URL. See `documentation/WHATSAPP_INTEGRATION.md`.
+- [x] **Live round-trip verified** (2026-07-04) — real customer WhatsApp message → webhook → retrieval → Groq → real outbound send → customer, end to end. See `PROGRESS.md` 2026-07-04 for the two live-config issues found and fixed (WABA app subscription; expired access token).
+
+**Milestone 4 is complete and live-verified.** See `documentation/WHATSAPP_INTEGRATION.md`.
 
 ## After Milestone 3 (deferred)
 Backend endpoints for inbox/customers/KB-list/analytics + reply reject; Clerk user-provisioning webhook; billing; Google Calendar booking. WhatsApp production integration stays paused until a dedicated phone number is available.
