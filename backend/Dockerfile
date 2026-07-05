@@ -24,7 +24,13 @@ RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-smal
 
 ENV PYTHONUNBUFFERED=1
 
-EXPOSE 8000
+# Deliberately no EXPOSE here: the actual listening port is fully dynamic
+# (Railway injects $PORT, e.g. 8080, which does not match a static EXPOSE).
+# A stale/mismatched EXPOSE is misleading at best and, on some PaaS port-
+# detection heuristics, a real source of public-routing/502 mismatches — the
+# only correct source of truth for the port is $PORT itself, read at runtime
+# below. Railway's public networking targets whatever $PORT the container
+# actually binds to; it does not require EXPOSE to route correctly.
 
 # Railway injects $PORT; default to 8000 for local `docker run` without it.
 # Migrations run on every container start (alembic upgrade head is a no-op
