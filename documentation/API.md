@@ -9,8 +9,9 @@ Base path: `/api/v1`. Auth: Clerk JWT (dashboard endpoints) / Meta signature (we
 
 ## Authentication
 
-- **Dashboard endpoints**: `Authorization: Bearer <clerk_jwt>`. Backend validates the JWT, resolves `business_id`, and scopes every query. Missing/invalid → `401`; cross-tenant access attempt → `404` (don't reveal existence).
+- **Dashboard endpoints**: `Authorization: Bearer <clerk_jwt>`. Backend validates the JWT, resolves `business_id`, and scopes every query. Missing/invalid → `401`; cross-tenant access attempt → `404` (don't reveal existence). With `CLERK_JWKS_URL` unset, requests correctly `500` with an actionable error rather than being silently treated as authenticated.
 - **Webhook endpoints**: no JWT; verified by Meta's HMAC signature header and verify-token handshake.
+- **Local dev without a Clerk project**: set `ALLOW_MOCK_AUTH=true` in `backend/.env` (never in production) to accept a fixed `Authorization: Bearer dev-mock-token` in place of a real JWT — mirrors the frontend's own mock auth, which sends this same token when it has no Clerk publishable key. See `app/auth/dependencies.py`.
 
 ## Standard Response Structure
 

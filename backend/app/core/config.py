@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     # Clerk auth (dashboard). JWKS URL from the Clerk dashboard; issuer optional.
     clerk_jwks_url: str = ""
     clerk_issuer: str = ""
+    # Dev-only escape hatch: accept a fixed mock token in place of a real Clerk
+    # JWT when CLERK_JWKS_URL isn't set, mirroring the frontend's mock auth
+    # (frontend/src/components/providers.tsx). Defaults off — Clerk unconfigured
+    # + this unset still fails loudly (500) rather than silently accepting
+    # requests as authenticated. Must never be set in production.
+    allow_mock_auth: bool = False
 
 
 def _load_settings(**overrides) -> Settings:

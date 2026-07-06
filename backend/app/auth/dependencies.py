@@ -20,8 +20,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.clerk import verify_clerk_token
+from app.core.config import settings
 from app.db.session import get_db
 from app.models import User
+
+MOCK_TOKEN = "dev-mock-token"
+MOCK_CLERK_USER_ID = "dev-mock-user"
 
 
 @dataclass
@@ -32,8 +36,26 @@ class Principal:
     role: str
 
 
+def _verify_mock_token(token: str) -> dict:
+    if token != MOCK_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token"
+        )
+    return {"sub": MOCK_CLERK_USER_ID}
+
+
 def get_token_verifier() -> Callable[[str], dict]:
-    """Returns the callable that verifies a token and returns claims. Overridable in tests."""
+    """Returns the callable that verifies a token and returns claims. Overridable in tests.
+
+    Falls back to a fixed dev identity (accepting only the literal token
+    "dev-mock-token") when Clerk isn't configured and `ALLOW_MOCK_AUTH` is
+    explicitly set — mirrors the frontend's mock auth, which sends this same
+    token when it has no Clerk publishable key. With Clerk unconfigured and
+    `ALLOW_MOCK_AUTH` unset (the default), requests still fail loudly via
+    `verify_clerk_token` rather than silently being treated as authenticated.
+    """
+    if not settings.clerk_jwks_url and settings.allow_mock_auth:
+        return _verify_mock_token
     return verify_clerk_token
 
 
