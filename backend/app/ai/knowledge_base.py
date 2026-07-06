@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.chunking import chunk_text
 from app.ai.embeddings import EmbeddingProvider, get_embedding_provider
+from app.db.tenant import get_scoped
 from app.models import KbEntry
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,47 @@ def index_entry(
     db.flush()
     logger.info("Indexed %d KB chunk(s) for business %s", len(entries), business_id)
     return entries
+
+
+def update_entry(
+    db: Session,
+    business_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    *,
+    title: str | None = None,
+    content: str | None = None,
+    provider: EmbeddingProvider | None = None,
+) -> KbEntry | None:
+    """Update a KB entry's title/content, tenant-scoped. Returns None if not found.
+
+    Re-embeds only when `content` actually changes (title-only edits skip the
+    embedding call). Unlike `index_entry`, this does not re-chunk — it updates
+    the single row in place, which is correct for manual entries that are
+    already one chunk (the common case) and an accepted simplification for the
+    rare manually-edited multi-chunk entry (each chunk stays independently
+    editable).
+    """
+    entry = get_scoped(db, KbEntry, business_id, entry_id)
+    if entry is None:
+        return None
+    if title is not None:
+        entry.title = title
+    if content is not None and content != entry.content:
+        provider = provider or get_embedding_provider()
+        entry.content = content
+        entry.embedding = provider.embed_documents([content])[0]
+    db.flush()
+    return entry
+
+
+def delete_entry(db: Session, business_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
+    """Delete a KB entry, tenant-scoped. Returns False if it doesn't exist for this business."""
+    entry = get_scoped(db, KbEntry, business_id, entry_id)
+    if entry is None:
+        return False
+    db.delete(entry)
+    db.flush()
+    return True
 
 
 def search(

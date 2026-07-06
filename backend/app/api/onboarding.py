@@ -1,14 +1,18 @@
-"""Onboarding API (/api/v1/onboarding) — Milestone A: business provisioning only.
+"""Onboarding API (/api/v1/onboarding) — Milestone A (business provisioning)
+plus the AI Playground (ONBOARDING_ARCHITECTURE.md §4.4).
 
-Two routes:
+Routes:
 - `GET /status` — does the calling Clerk identity already have a business?
   Used by the frontend right after login to decide dashboard vs. /onboarding.
 - `POST /business` — create the Business + owner User for a first-time signup.
+- `POST /playground/message` — synchronous AI test-drive (see app/ai/playground.py).
 
-Both sit behind `get_verified_clerk_user_id`, not `get_current_principal`: a
-brand-new signup has a valid Clerk session but (by definition) no `User` row
-yet, so the stricter dashboard dependency — which 401s on an unknown user —
-would wrongly reject exactly the request this flow needs to allow.
+The provisioning routes sit behind `get_verified_clerk_user_id`, not
+`get_current_principal`: a brand-new signup has a valid Clerk session but (by
+definition) no `User` row yet, so the stricter dashboard dependency — which
+401s on an unknown user — would wrongly reject exactly the request this flow
+needs to allow. The playground route requires an existing business, so it uses
+`get_current_principal` like every other dashboard route.
 """
 
 from __future__ import annotations
@@ -17,7 +21,8 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_verified_clerk_user_id
+from app.ai.playground import playground_reply
+from app.auth.dependencies import Principal, get_current_principal, get_verified_clerk_user_id
 from app.db.session import get_db
 from app.models import Business
 from app.services.provisioning import get_business_for_clerk_user, provision_business
@@ -32,6 +37,10 @@ class ProvisionBusinessRequest(BaseModel):
     contact_email: str | None = None
     country: str | None = None
     timezone: str | None = None
+
+
+class PlaygroundMessageRequest(BaseModel):
+    message: str
 
 
 def _looks_like_email(value: str) -> bool:
@@ -87,3 +96,26 @@ def create_business(
         timezone=(payload.timezone or "").strip() or None,
     )
     return {"data": _serialize_business(business)}
+
+
+@router.post("/playground/message")
+def playground_message(
+    payload: PlaygroundMessageRequest,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="Message is required")
+
+    response, retrieved = playground_reply(db, principal.business_id, message)
+    return {
+        "data": {
+            "reply": response.text,
+            "model": response.model,
+            "retrieved": [
+                {"id": str(entry.id), "title": entry.title, "content": entry.content}
+                for entry in retrieved
+            ],
+        }
+    }

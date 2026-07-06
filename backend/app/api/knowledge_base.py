@@ -1,0 +1,163 @@
+"""Knowledge Base API (/api/v1/kb) — manual entry + single-page website import.
+
+An owner types a title + fact, or submits a URL; either way the content is
+chunked and embedded via the existing `EmbeddingProvider` and stored as one or
+more `kb_entries` rows (see app/ai/knowledge_base.py). Website import
+(`POST /website`) fetches and cleans exactly one page (app/ai/web_import.py)
+and indexes it immediately — no multi-page crawl, no PDF extraction, and no
+draft/review staging before content goes live. That fuller pipeline
+(`kb_entry_drafts`, owner approval before anything reaches this table) is
+designed in ONBOARDING_ARCHITECTURE.md Milestone B / TODOS.md ONBOARD-B but
+not built; this endpoint is a smaller, direct-to-live alternative pending a
+decision on whether a review step is still wanted before real customers see
+imported content.
+
+Every route sits behind `get_current_principal`, same as dashboard.py, and
+every query is tenant-scoped via `tenant_query`/`get_scoped` — a business can
+only ever see or modify its own KB entries.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Callable
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, HttpUrl
+from sqlalchemy.orm import Session
+
+from app.ai.embeddings import EmbeddingProvider, get_embedding_provider
+from app.ai.knowledge_base import delete_entry, index_entry, update_entry
+from app.ai.web_import import WebImportError, fetch_page
+from app.auth.dependencies import Principal, get_current_principal
+from app.db.session import get_db
+from app.db.tenant import tenant_query
+from app.models import KbEntry
+
+router = APIRouter(prefix="/api/v1/kb", tags=["knowledge-base"])
+
+
+class CreateKbEntryRequest(BaseModel):
+    title: str
+    content: str
+
+
+class UpdateKbEntryRequest(BaseModel):
+    title: str | None = None
+    content: str | None = None
+
+
+class ImportWebsiteRequest(BaseModel):
+    url: HttpUrl
+
+
+def get_kb_embedding_provider() -> EmbeddingProvider:
+    """The embedding provider used for KB indexing. Overridable in tests."""
+    return get_embedding_provider()
+
+
+def get_web_page_fetcher() -> Callable[[str], tuple[str, str]]:
+    """Fetches (title, readable_text) for a URL. Overridable in tests."""
+    return fetch_page
+
+
+def _serialize(entry: KbEntry) -> dict:
+    return {
+        "id": str(entry.id),
+        "title": entry.title,
+        "content": entry.content,
+        "created_at": entry.created_at.isoformat(),
+        "updated_at": entry.updated_at.isoformat(),
+    }
+
+
+@router.get("")
+def list_entries(
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    stmt = tenant_query(KbEntry, principal.business_id).order_by(KbEntry.title, KbEntry.created_at)
+    rows = db.scalars(stmt).all()
+    return {"data": [_serialize(e) for e in rows]}
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+def create_entry(
+    payload: CreateKbEntryRequest,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    provider: EmbeddingProvider = Depends(get_kb_embedding_provider),
+) -> dict:
+    title = payload.title.strip()
+    content = payload.content.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Title is required")
+    if not content:
+        raise HTTPException(status_code=422, detail="Content is required")
+
+    entries = index_entry(db, principal.business_id, title, content, provider=provider)
+    db.commit()
+    for entry in entries:
+        db.refresh(entry)
+    return {"data": [_serialize(e) for e in entries]}
+
+
+@router.post("/website", status_code=status.HTTP_201_CREATED)
+def import_website(
+    payload: ImportWebsiteRequest,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    provider: EmbeddingProvider = Depends(get_kb_embedding_provider),
+    fetch: Callable[[str], tuple[str, str]] = Depends(get_web_page_fetcher),
+) -> dict:
+    url = str(payload.url)
+    try:
+        title, text = fetch(url)
+    except WebImportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="No readable content found at URL")
+
+    entries = index_entry(db, principal.business_id, title or url, text, provider=provider)
+    db.commit()
+    return {"pages_imported": 1, "entries_created": len(entries)}
+
+
+@router.patch("/{entry_id}")
+def patch_entry(
+    entry_id: uuid.UUID,
+    payload: UpdateKbEntryRequest,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    provider: EmbeddingProvider = Depends(get_kb_embedding_provider),
+) -> dict:
+    title = payload.title.strip() if payload.title is not None else None
+    content = payload.content.strip() if payload.content is not None else None
+    if payload.title is not None and not title:
+        raise HTTPException(status_code=422, detail="Title cannot be blank")
+    if payload.content is not None and not content:
+        raise HTTPException(status_code=422, detail="Content cannot be blank")
+    if title is None and content is None:
+        raise HTTPException(status_code=422, detail="Nothing to update")
+
+    entry = update_entry(
+        db, principal.business_id, entry_id, title=title, content=content, provider=provider
+    )
+    if entry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    db.commit()
+    db.refresh(entry)
+    return {"data": _serialize(entry)}
+
+
+@router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_entry(
+    entry_id: uuid.UUID,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> None:
+    deleted = delete_entry(db, principal.business_id, entry_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    db.commit()
