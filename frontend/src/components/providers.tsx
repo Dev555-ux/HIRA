@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { useState } from "react";
 import { ClerkBridge } from "@/components/auth/clerk-bridge";
+import { ToastProvider } from "@/components/ui/toast";
 import { AuthContext } from "@/lib/auth-context";
 import { authEnabled, isProduction } from "@/lib/config";
 
@@ -72,7 +73,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <QueryClientProvider client={queryClient}>
-        <AuthLayer>{children}</AuthLayer>
+        <ToastProvider>
+          <AuthLayer>{children}</AuthLayer>
+        </ToastProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

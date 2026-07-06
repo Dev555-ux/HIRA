@@ -145,7 +145,7 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 
 - **Priority**: P2
 - **Category**: Technical
-- **Status**: To Do
+- **Status**: Partially built, unreviewed — see PROGRESS.md Session 22 (2026-07-06). `POST /api/v1/kb/website` ships a direct single-URL fetch→clean→chunk→index endpoint (`app/ai/web_import.py`), but indexes straight to live `kb_entries` with **no** `kb_entry_drafts` staging/approval step, conflicting with this task's own design in `ONBOARDING_ARCHITECTURE.md`. **Open decision for the founder**: accept direct-to-live as the permanent design, or add the review step on top. PDF ingestion, manual-drafts, dedup, and confidence-flagging are still not built either way.
 - **Dependencies**: ONBOARD-A
 
 ### ONBOARD-C — Knowledge review UI + test-drive playground

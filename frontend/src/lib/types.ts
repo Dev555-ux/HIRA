@@ -43,12 +43,52 @@ export interface Customer {
   last_message_at: string | null;
 }
 
+// Knowledge Base — manual entry (/api/v1/kb). Each entry may be one of
+// several chunks stored under the same title if the content was long enough
+// to split (see backend/app/ai/chunking.py); manual FAQ-length entries are
+// almost always a single chunk.
 export interface KbEntry {
   id: string;
   title: string;
-  chunk_count: number;
-  embedding_status: "ready" | "pending" | "error";
+  content: string;
+  created_at: string;
   updated_at: string;
+}
+
+export interface CreateKbEntryPayload {
+  title: string;
+  content: string;
+}
+
+export interface UpdateKbEntryPayload {
+  title?: string;
+  content?: string;
+}
+
+// Website import (/api/v1/kb/website) — fetches one page, cleans it, and
+// indexes it the same way a manual entry is. Unlike the other /kb endpoints,
+// the backend returns this shape directly (not wrapped in {data: ...}).
+export interface ImportWebsitePayload {
+  url: string;
+}
+
+export interface ImportWebsiteResult {
+  pages_imported: number;
+  entries_created: number;
+}
+
+// AI Playground (/api/v1/onboarding/playground/message) — a synchronous
+// test-drive of the same generate_reply() pipeline the WhatsApp webhook uses.
+export interface PlaygroundKbEntry {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface PlaygroundResponse {
+  reply: string;
+  model: string;
+  retrieved: PlaygroundKbEntry[];
 }
 
 export interface AnalyticsSummary {

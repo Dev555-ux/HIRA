@@ -1,0 +1,131 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "@/components/ui/toast";
+import { AuthContext, type AuthContextValue } from "@/lib/auth-context";
+import KnowledgeBasePage from "./page";
+
+vi.mock("@/lib/api", () => ({
+  ApiError: class extends Error {},
+  api: {
+    listKbEntries: vi.fn(),
+    createKbEntry: vi.fn(),
+    updateKbEntry: vi.fn(),
+    deleteKbEntry: vi.fn(),
+    importWebsite: vi.fn(),
+  },
+}));
+
+import { api } from "@/lib/api";
+
+const mockAuth: AuthContextValue = {
+  getToken: async () => "test-token",
+  user: null,
+  isLoaded: true,
+  mocked: true,
+};
+
+function renderWithProviders(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <AuthContext.Provider value={mockAuth}>
+        <ToastProvider>{ui}</ToastProvider>
+      </AuthContext.Provider>
+    </QueryClientProvider>,
+  );
+}
+
+describe("KnowledgeBasePage — website import", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.listKbEntries).mockResolvedValue([]);
+  });
+
+  it("shows an Import Website button beside Add entry", async () => {
+    renderWithProviders(<KnowledgeBasePage />);
+    expect(
+      await screen.findByRole("button", { name: /import website/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add entry/i })).toBeInTheDocument();
+  });
+
+  it("opens a dialog with a URL field and Cancel / Import Website actions", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: /import website/i }));
+
+    expect(screen.getByText("Import website")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("https://example.com")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import Website" })).toBeInTheDocument();
+  });
+
+  it("rejects an invalid URL without calling the API", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: /import website/i }));
+    await user.type(screen.getByPlaceholderText("https://example.com"), "not-a-url");
+    await user.click(screen.getByRole("button", { name: "Import Website" }));
+
+    expect(await screen.findByText(/enter a valid url/i)).toBeInTheDocument();
+    expect(api.importWebsite).not.toHaveBeenCalled();
+  });
+
+  it("shows 'Importing website…' and disables controls while the import is pending", async () => {
+    const user = userEvent.setup();
+    let resolveImport!: (value: { pages_imported: number; entries_created: number }) => void;
+    vi.mocked(api.importWebsite).mockReturnValue(
+      new Promise((resolve) => {
+        resolveImport = resolve;
+      }),
+    );
+
+    renderWithProviders(<KnowledgeBasePage />);
+    await user.click(await screen.findByRole("button", { name: /import website/i }));
+    await user.type(screen.getByPlaceholderText("https://example.com"), "https://example.com");
+    await user.click(screen.getByRole("button", { name: "Import Website" }));
+
+    const pendingButton = await screen.findByRole("button", { name: "Importing website…" });
+    expect(pendingButton).toBeDisabled();
+    expect(screen.getAllByText("Importing website…").length).toBeGreaterThan(0);
+    expect(screen.getByPlaceholderText("https://example.com")).toBeDisabled();
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeDisabled();
+
+    resolveImport({ pages_imported: 1, entries_created: 3 });
+  });
+
+  it("shows a success toast with the counts and refreshes the list on success", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.importWebsite).mockResolvedValue({ pages_imported: 1, entries_created: 4 });
+
+    renderWithProviders(<KnowledgeBasePage />);
+    await user.click(await screen.findByRole("button", { name: /import website/i }));
+    await user.type(screen.getByPlaceholderText("https://example.com"), "https://example.com");
+    await user.click(screen.getByRole("button", { name: "Import Website" }));
+
+    expect(await screen.findByText("Imported successfully")).toBeInTheDocument();
+    expect(screen.getByText(/pages imported: 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/knowledge entries created: 4/i)).toBeInTheDocument();
+
+    // Dialog closed after success.
+    expect(screen.queryByText("Import website")).not.toBeInTheDocument();
+
+    // List refreshed: one call on mount, one after the mutation invalidates the query.
+    await waitFor(() => expect(api.listKbEntries).toHaveBeenCalledTimes(2));
+  });
+
+  it("closes the dialog without importing when Cancel is clicked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: /import website/i }));
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(screen.queryByText("Import website")).not.toBeInTheDocument();
+    expect(api.importWebsite).not.toHaveBeenCalled();
+  });
+});

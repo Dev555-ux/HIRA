@@ -4,8 +4,14 @@ import type {
   ApproveResult,
   Business,
   CreateBusinessPayload,
+  CreateKbEntryPayload,
+  ImportWebsitePayload,
+  ImportWebsiteResult,
+  KbEntry,
   OnboardingStatus,
   PendingReply,
+  PlaygroundResponse,
+  UpdateKbEntryPayload,
 } from "./types";
 
 export class ApiError extends Error {
@@ -75,4 +81,35 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }).then((r) => r.data),
+
+  listKbEntries: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<KbEntry[]>>("/api/v1/kb", getToken).then((r) => r.data),
+
+  createKbEntry: (getToken: GetToken, payload: CreateKbEntryPayload) =>
+    apiFetch<ApiEnvelope<KbEntry[]>>("/api/v1/kb", getToken, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  updateKbEntry: (getToken: GetToken, id: string, payload: UpdateKbEntryPayload) =>
+    apiFetch<ApiEnvelope<KbEntry>>(`/api/v1/kb/${id}`, getToken, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  deleteKbEntry: (getToken: GetToken, id: string) =>
+    apiFetch<void>(`/api/v1/kb/${id}`, getToken, { method: "DELETE" }),
+
+  importWebsite: (getToken: GetToken, payload: ImportWebsitePayload) =>
+    apiFetch<ImportWebsiteResult>("/api/v1/kb/website", getToken, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  sendPlaygroundMessage: (getToken: GetToken, message: string) =>
+    apiFetch<ApiEnvelope<PlaygroundResponse>>(
+      "/api/v1/onboarding/playground/message",
+      getToken,
+      { method: "POST", body: JSON.stringify({ message }) },
+    ).then((r) => r.data),
 };
