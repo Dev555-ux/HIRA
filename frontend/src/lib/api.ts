@@ -3,6 +3,7 @@ import type {
   ApiEnvelope,
   ApproveResult,
   Business,
+  BusinessSettings,
   CreateBusinessPayload,
   CreateKbEntryPayload,
   ImportWebsitePayload,
@@ -112,4 +113,15 @@ export const api = {
       getToken,
       { method: "POST", body: JSON.stringify({ message }) },
     ).then((r) => r.data),
+
+  getSettings: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<BusinessSettings>>("/api/v1/settings", getToken).then(
+      (r) => r.data,
+    ),
+
+  updateSettings: (getToken: GetToken, payload: BusinessSettings) =>
+    apiFetch<ApiEnvelope<BusinessSettings>>("/api/v1/settings", getToken, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
 };

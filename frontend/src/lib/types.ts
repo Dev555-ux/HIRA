@@ -123,3 +123,11 @@ export interface CreateBusinessPayload {
   country?: string;
   timezone?: string;
 }
+
+// AI Reply Mode (/api/v1/settings). "assisted" leaves every AI reply pending
+// a human's approval; "autonomous" sends it to the customer immediately.
+export type AiReplyMode = "assisted" | "autonomous";
+
+export interface BusinessSettings {
+  mode: AiReplyMode;
+}

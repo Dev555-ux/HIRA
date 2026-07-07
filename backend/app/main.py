@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.dashboard import router as dashboard_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.onboarding import router as onboarding_router
+from app.api.settings import router as settings_router
 from app.webhooks.whatsapp import router as whatsapp_router
 
 app = FastAPI(title="HIRA Backend", version="0.1.0")
@@ -30,6 +31,7 @@ app.include_router(whatsapp_router)
 app.include_router(dashboard_router)
 app.include_router(knowledge_base_router)
 app.include_router(onboarding_router)
+app.include_router(settings_router)
 
 
 @app.get("/health")

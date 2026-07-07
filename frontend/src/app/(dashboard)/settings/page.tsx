@@ -1,11 +1,18 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/toast";
+import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
+import { ApiError } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
+import type { AiReplyMode } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export default function SettingsPage() {
   const { mocked } = useAuthContext();
@@ -28,12 +35,13 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        <AiReplyModeCard />
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base">AI settings</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <Row label="Mode" value={<Badge variant="secondary">Assisted</Badge>} />
             <Row label="Model" value="llama-3.3-70b-versatile" />
             <Row label="Embeddings" value="local bge-small (384d)" />
           </CardContent>
@@ -61,6 +69,125 @@ export default function SettingsPage() {
         </Card>
       </div>
     </>
+  );
+}
+
+const MODE_OPTIONS: { value: AiReplyMode; title: string; description: string }[] = [
+  {
+    value: "assisted",
+    title: "Assisted",
+    description: "Human approves every reply.",
+  },
+  {
+    value: "autonomous",
+    title: "Autonomous",
+    description: "AI replies immediately on WhatsApp.",
+  },
+];
+
+function AiReplyModeCard() {
+  const { data, isLoading } = useSettings();
+  const updateSettings = useUpdateSettings();
+  const { toast } = useToast();
+  const [selected, setSelected] = useState<AiReplyMode | null>(null);
+
+  useEffect(() => {
+    if (data) setSelected(data.mode);
+  }, [data]);
+
+  const current = selected ?? data?.mode ?? null;
+  const isDirty = data != null && current != null && current !== data.mode;
+  const isSaving = updateSettings.isPending;
+  const controlsDisabled = isLoading || isSaving;
+
+  async function handleSave() {
+    if (current == null) return;
+    try {
+      await updateSettings.mutateAsync({ mode: current });
+      toast({
+        title: "Settings saved",
+        description: "AI Reply Mode updated.",
+        variant: "success",
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't save settings",
+        description:
+          err instanceof ApiError ? err.message : "Something went wrong — please try again.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">AI Reply Mode</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        ) : (
+          <div className="space-y-3" role="radiogroup" aria-label="AI Reply Mode">
+            {MODE_OPTIONS.map((option) => (
+              <ModeOption
+                key={option.value}
+                {...option}
+                checked={current === option.value}
+                disabled={controlsDisabled}
+                onChange={setSelected}
+              />
+            ))}
+          </div>
+        )}
+        <Button size="sm" onClick={handleSave} disabled={controlsDisabled || !isDirty}>
+          {isSaving ? "Saving…" : "Save"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ModeOption({
+  value,
+  title,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  value: AiReplyMode;
+  title: string;
+  description: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (value: AiReplyMode) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex items-start gap-3 rounded-lg border p-4 transition-colors",
+        checked ? "border-primary bg-accent/50" : "border-input hover:bg-accent/30",
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+      )}
+    >
+      <input
+        type="radio"
+        name="ai-reply-mode"
+        value={value}
+        checked={checked}
+        disabled={disabled}
+        onChange={() => onChange(value)}
+        className="mt-1 size-4 accent-primary disabled:cursor-not-allowed"
+      />
+      <span className="space-y-0.5">
+        <span className="block text-sm font-medium">{title}</span>
+        <span className="block text-sm text-muted-foreground">{description}</span>
+      </span>
+    </label>
   );
 }
 
