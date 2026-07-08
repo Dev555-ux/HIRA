@@ -1,8 +1,26 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { Business } from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+// Maps the real backend field (Business.whatsapp_connection_status) to display
+// copy — no status is invented here, only worded for a business owner instead
+// of a developer.
+export function describeWhatsAppConnection(
+  status: Business["whatsapp_connection_status"] | undefined,
+): { label: string; variant: "success" | "warning" | "secondary" } {
+  switch (status) {
+    case "connected":
+      return { label: "Connected", variant: "success" };
+    case "pending_verification":
+      return { label: "Verification pending", variant: "warning" };
+    case "not_connected":
+    default:
+      return { label: "Not connected", variant: "secondary" };
+  }
 }
 
 export function formatRelativeTime(iso: string): string {

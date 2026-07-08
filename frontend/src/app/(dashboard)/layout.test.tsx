@@ -22,6 +22,8 @@ const mockAuth: AuthContextValue = {
   user: { name: "Dev User", email: "dev@hira.local", imageUrl: null },
   isLoaded: true,
   mocked: true,
+  signOut: vi.fn(),
+  openProfile: vi.fn(),
 };
 
 function renderWithProviders(ui: React.ReactElement) {

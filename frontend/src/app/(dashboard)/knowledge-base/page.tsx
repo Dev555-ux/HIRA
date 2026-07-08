@@ -5,6 +5,7 @@ import { BookOpen, Globe, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ export default function KnowledgeBasePage() {
   const [query, setQuery] = useState("");
   const [dialogTarget, setDialogTarget] = useState<DialogTarget>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<KbEntry | null>(null);
 
   const { toast } = useToast();
   const { data: entries, isLoading } = useKbEntries();
@@ -69,9 +71,10 @@ export default function KnowledgeBasePage() {
     );
   }, [entries, query]);
 
-  async function handleDelete(entry: KbEntry) {
-    if (!window.confirm(`Delete "${entry.title}"? This can't be undone.`)) return;
-    await deleteEntry.mutateAsync(entry.id);
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    await deleteEntry.mutateAsync(deleteTarget.id);
+    setDeleteTarget(null);
   }
 
   async function handleSubmit(values: FormValues) {
@@ -182,7 +185,7 @@ export default function KnowledgeBasePage() {
                     size="icon"
                     aria-label="Delete entry"
                     className="text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(entry)}
+                    onClick={() => setDeleteTarget(entry)}
                   >
                     <Trash2 />
                   </Button>
@@ -219,6 +222,16 @@ export default function KnowledgeBasePage() {
           />
         )}
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={deleteTarget ? `Delete "${deleteTarget.title}"?` : ""}
+        description="This can't be undone."
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDelete}
+        isPending={deleteEntry.isPending}
+      />
     </>
   );
 }

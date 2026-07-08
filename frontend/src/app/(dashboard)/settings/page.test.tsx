@@ -17,7 +17,7 @@ function aiReplyModeCard() {
 
 vi.mock("@/lib/api", () => ({
   ApiError: class extends Error {},
-  api: { getSettings: vi.fn(), updateSettings: vi.fn() },
+  api: { getSettings: vi.fn(), updateSettings: vi.fn(), getOnboardingStatus: vi.fn() },
 }));
 
 import { api } from "@/lib/api";
@@ -27,6 +27,8 @@ const mockAuth: AuthContextValue = {
   user: null,
   isLoaded: true,
   mocked: true,
+  signOut: vi.fn(),
+  openProfile: vi.fn(),
 };
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -41,7 +43,10 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 describe("SettingsPage — AI Reply Mode", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.getOnboardingStatus).mockResolvedValue({ has_business: false, business: null });
+  });
 
   it("selects the current mode once settings load", async () => {
     vi.mocked(api.getSettings).mockResolvedValue({ mode: "assisted" });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth, useUser } from "@clerk/nextjs";
+import { useAuth, useClerk, useUser } from "@clerk/nextjs";
 import { useCallback } from "react";
 import { AuthContext } from "@/lib/auth-context";
 
@@ -9,8 +9,11 @@ import { AuthContext } from "@/lib/auth-context";
 export function ClerkBridge({ children }: { children: React.ReactNode }) {
   const { getToken, isLoaded } = useAuth();
   const { user } = useUser();
+  const clerk = useClerk();
 
   const getTokenFn = useCallback(() => getToken(), [getToken]);
+  const signOut = useCallback(() => clerk.signOut({ redirectUrl: "/" }), [clerk]);
+  const openProfile = useCallback(() => clerk.openUserProfile(), [clerk]);
 
   return (
     <AuthContext.Provider
@@ -18,6 +21,8 @@ export function ClerkBridge({ children }: { children: React.ReactNode }) {
         getToken: getTokenFn,
         isLoaded,
         mocked: false,
+        signOut,
+        openProfile,
         user: user
           ? {
               name: user.fullName ?? user.username ?? "User",

@@ -8,14 +8,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
 import type { AiReplyMode } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, describeWhatsAppConnection } from "@/lib/utils";
 
 export default function SettingsPage() {
   const { mocked } = useAuthContext();
+  const { data: onboarding } = useOnboardingStatus();
+  const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
 
   return (
     <>
@@ -54,7 +57,10 @@ export default function SettingsPage() {
           <CardContent className="space-y-3 text-sm">
             <Row label="Clerk auth" value={<Badge variant={mocked ? "warning" : "success"}>{mocked ? "Mock (dev)" : "Connected"}</Badge>} />
             <Row label="Groq" value={<Badge variant="success">Live</Badge>} />
-            <Row label="WhatsApp" value={<Badge variant="secondary">Paused</Badge>} />
+            <Row
+              label="WhatsApp"
+              value={<Badge variant={whatsapp.variant}>{whatsapp.label}</Badge>}
+            />
           </CardContent>
         </Card>
 
@@ -63,8 +69,11 @@ export default function SettingsPage() {
             <CardTitle className="text-base">WhatsApp configuration</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Field label="Phone number ID" placeholder="Awaiting dedicated number" disabled />
-            <Field label="Access token" placeholder="•••••••• (paused)" disabled />
+            <p className="text-sm text-muted-foreground">
+              Connecting your own WhatsApp number is coming soon.
+            </p>
+            <Field label="Phone number ID" placeholder="Not connected yet" disabled />
+            <Field label="Access token" placeholder="Not connected yet" disabled />
           </CardContent>
         </Card>
       </div>

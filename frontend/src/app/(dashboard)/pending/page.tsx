@@ -76,7 +76,7 @@ export default function PendingPage() {
                   >
                     <Send /> Approve &amp; send
                   </Button>
-                  <Button size="sm" variant="outline" disabled title="Reject endpoint coming soon">
+                  <Button size="sm" variant="outline" disabled title="Rejecting replies is coming soon">
                     <X /> Reject
                   </Button>
                 </div>

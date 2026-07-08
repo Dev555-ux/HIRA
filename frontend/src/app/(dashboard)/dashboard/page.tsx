@@ -11,10 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { usePending } from "@/hooks/use-pending";
+import { describeWhatsAppConnection } from "@/lib/utils";
 
 export default function DashboardPage() {
   const { data: pending, isLoading } = usePending();
   const { data: onboarding } = useOnboardingStatus();
+  const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
 
   return (
     <>
@@ -24,7 +26,7 @@ export default function DashboardPage() {
       />
 
       {onboarding?.business && onboarding.business.onboarding_status !== "live" && (
-        <OnboardingChecklist businessName={onboarding.business.name} />
+        <OnboardingChecklist business={onboarding.business} />
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -76,7 +78,12 @@ export default function DashboardPage() {
           <CardContent className="space-y-3 text-sm">
             <StatusRow label="AI provider (Groq)" ok />
             <StatusRow label="Embeddings (local bge-small)" ok />
-            <StatusRow label="WhatsApp integration" ok={false} note="Paused — awaiting number" />
+            <StatusRow
+              label="WhatsApp integration"
+              ok={onboarding?.business?.whatsapp_connection_status === "connected"}
+              note={whatsapp.label}
+              variant={whatsapp.variant}
+            />
           </CardContent>
         </Card>
       </div>
@@ -84,11 +91,23 @@ export default function DashboardPage() {
   );
 }
 
-function StatusRow({ label, ok, note }: { label: string; ok: boolean; note?: string }) {
+function StatusRow({
+  label,
+  ok,
+  note,
+  variant,
+}: {
+  label: string;
+  ok: boolean;
+  note?: string;
+  variant?: "success" | "warning" | "secondary";
+}) {
   return (
     <div className="flex items-center justify-between">
       <span>{label}</span>
-      <Badge variant={ok ? "success" : "secondary"}>{note ?? (ok ? "Operational" : "Off")}</Badge>
+      <Badge variant={variant ?? (ok ? "success" : "secondary")}>
+        {note ?? (ok ? "Operational" : "Off")}
+      </Badge>
     </div>
   );
 }

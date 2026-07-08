@@ -12,7 +12,7 @@ import {
 import { useAuthContext } from "@/lib/auth-context";
 
 export function UserMenu() {
-  const { user, mocked } = useAuthContext();
+  const { user, mocked, signOut, openProfile } = useAuthContext();
   const initials = (user?.name ?? "U")
     .split(" ")
     .map((p) => p[0])
@@ -38,10 +38,10 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={openProfile}>
           <UserIcon className="size-4" /> Profile
         </DropdownMenuItem>
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={() => void signOut()}>
           <LogOut className="size-4" />
           {mocked ? "Sign out (mock)" : "Sign out"}
         </DropdownMenuItem>

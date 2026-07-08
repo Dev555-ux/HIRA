@@ -13,6 +13,8 @@ export interface AuthContextValue {
   user: AuthUser | null;
   isLoaded: boolean;
   mocked: boolean;
+  signOut: () => Promise<void> | void;
+  openProfile: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

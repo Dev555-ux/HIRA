@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cn, formatRelativeTime } from "./utils";
+import { cn, describeWhatsAppConnection, formatRelativeTime } from "./utils";
 
 describe("cn", () => {
   it("merges class names and dedupes conflicting tailwind utilities", () => {
@@ -24,5 +24,29 @@ describe("formatRelativeTime", () => {
 
   it("returns empty string for invalid input", () => {
     expect(formatRelativeTime("not-a-date")).toBe("");
+  });
+});
+
+describe("describeWhatsAppConnection", () => {
+  it("maps each real backend status to honest, non-stale copy", () => {
+    expect(describeWhatsAppConnection("connected")).toEqual({
+      label: "Connected",
+      variant: "success",
+    });
+    expect(describeWhatsAppConnection("pending_verification")).toEqual({
+      label: "Verification pending",
+      variant: "warning",
+    });
+    expect(describeWhatsAppConnection("not_connected")).toEqual({
+      label: "Not connected",
+      variant: "secondary",
+    });
+  });
+
+  it("defaults to 'Not connected' rather than a stale/invented claim", () => {
+    expect(describeWhatsAppConnection(undefined)).toEqual({
+      label: "Not connected",
+      variant: "secondary",
+    });
   });
 });

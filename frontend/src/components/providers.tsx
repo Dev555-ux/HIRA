@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { useState } from "react";
 import { ClerkBridge } from "@/components/auth/clerk-bridge";
-import { ToastProvider } from "@/components/ui/toast";
+import { ToastProvider, useToast } from "@/components/ui/toast";
 import { AuthContext } from "@/lib/auth-context";
 import { authEnabled, isProduction } from "@/lib/config";
 
@@ -15,7 +15,12 @@ const MOCK_USER = {
   imageUrl: null,
 };
 
+// Mock mode has no real session/account to act on — signOut/openProfile still
+// give feedback rather than silently doing nothing, matching the "no dead
+// clicks" standard the rest of the app follows.
 function MockAuthProvider({ children }: { children: React.ReactNode }) {
+  const { toast } = useToast();
+
   return (
     <AuthContext.Provider
       value={{
@@ -23,6 +28,16 @@ function MockAuthProvider({ children }: { children: React.ReactNode }) {
         user: MOCK_USER,
         isLoaded: true,
         mocked: true,
+        signOut: () =>
+          toast({
+            title: "Mock auth",
+            description: "There's no real session to sign out of in local/dev mode.",
+          }),
+        openProfile: () =>
+          toast({
+            title: "Mock auth",
+            description: "Profile management isn't available in local/dev mode.",
+          }),
       }}
     >
       {children}

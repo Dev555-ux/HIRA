@@ -24,6 +24,8 @@ const mockAuth: AuthContextValue = {
   user: null,
   isLoaded: true,
   mocked: true,
+  signOut: vi.fn(),
+  openProfile: vi.fn(),
 };
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -127,5 +129,50 @@ describe("KnowledgeBasePage — website import", () => {
 
     expect(screen.queryByText("Import website")).not.toBeInTheDocument();
     expect(api.importWebsite).not.toHaveBeenCalled();
+  });
+});
+
+describe("KnowledgeBasePage — delete confirmation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.listKbEntries).mockResolvedValue([
+      { id: "1", title: "Office hours", content: "9am-5pm", created_at: "", updated_at: "" },
+    ]);
+  });
+
+  it("uses a styled dialog, not a native confirm(), to confirm deletion", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: /delete entry/i }));
+
+    expect(await screen.findByText('Delete "Office hours"?')).toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it("deletes the entry when the dialog is confirmed", async () => {
+    vi.mocked(api.deleteKbEntry).mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: /delete entry/i }));
+    await screen.findByText('Delete "Office hours"?');
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+
+    await waitFor(() => expect(api.deleteKbEntry).toHaveBeenCalledWith(expect.any(Function), "1"));
+    expect(screen.queryByText('Delete "Office hours"?')).not.toBeInTheDocument();
+  });
+
+  it("does not delete when the dialog is cancelled", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: /delete entry/i }));
+    await screen.findByText('Delete "Office hours"?');
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(screen.queryByText('Delete "Office hours"?')).not.toBeInTheDocument();
+    expect(api.deleteKbEntry).not.toHaveBeenCalled();
   });
 });

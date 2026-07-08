@@ -1,6 +1,7 @@
 "use client";
 
 import { BarChart3, Clock, MessageSquare, CheckCheck } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,19 +33,12 @@ export default function AnalyticsPage() {
               <CardTitle className="text-base">{title}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex h-48 items-end gap-2">
-                {[40, 65, 30, 80, 55, 70, 45].map((h, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 rounded-t bg-muted"
-                    style={{ height: `${h}%` }}
-                    aria-hidden
-                  />
-                ))}
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                Placeholder chart — live data lands with the analytics API.
-              </p>
+              <EmptyState
+                icon={BarChart3}
+                title="Analytics coming soon"
+                description="This chart will appear here once conversation data is available."
+                className="border-0 py-10"
+              />
             </CardContent>
           </Card>
         ))}

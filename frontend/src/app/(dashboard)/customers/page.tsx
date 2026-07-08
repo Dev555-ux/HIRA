@@ -1,15 +1,12 @@
 "use client";
 
 import { Search, Users } from "lucide-react";
-import { useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 export default function CustomersPage() {
-  const [query, setQuery] = useState("");
-
   return (
     <>
       <PageHeader title="Customers" description="People who have messaged your business." />
@@ -19,8 +16,8 @@ export default function CustomersPage() {
         <Input
           className="pl-9"
           placeholder="Search customers…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          disabled
+          title="Search will be available once the customer list is connected."
         />
       </div>
 
@@ -34,8 +31,8 @@ export default function CustomersPage() {
           </div>
           <EmptyState
             icon={Users}
-            title="No customers yet"
-            description="Customers appear here once the customers API is connected."
+            title="Customer list is coming soon"
+            description="Everyone who has messaged your business will show up here."
             className="border-0"
           />
         </CardContent>

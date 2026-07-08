@@ -1,7 +1,6 @@
 "use client";
 
 import { Inbox as InboxIcon, Search } from "lucide-react";
-import { useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -10,11 +9,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 const FILTERS = ["All", "Pending", "Escalated", "Closed"] as const;
+const NOT_CONNECTED_HINT = "Search and filters will be available once the inbox is connected.";
 
 export default function InboxPage() {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
-
   return (
     <>
       <PageHeader
@@ -28,8 +25,8 @@ export default function InboxPage() {
           <Input
             className="pl-9"
             placeholder="Search conversations…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            disabled
+            title={NOT_CONNECTED_HINT}
           />
         </div>
         <div className="flex gap-1">
@@ -37,8 +34,9 @@ export default function InboxPage() {
             <Button
               key={f}
               size="sm"
-              variant={filter === f ? "secondary" : "ghost"}
-              onClick={() => setFilter(f)}
+              variant={f === "All" ? "secondary" : "ghost"}
+              disabled
+              title={NOT_CONNECTED_HINT}
             >
               {f}
             </Button>
@@ -52,8 +50,8 @@ export default function InboxPage() {
             <div className="flex h-full items-center justify-center p-6">
               <EmptyState
                 icon={InboxIcon}
-                title="No conversations yet"
-                description="Conversations will appear once the inbox API is connected."
+                title="Inbox is coming soon"
+                description="You'll be able to see every customer conversation here, in one place."
                 className="border-0"
               />
             </div>
@@ -65,7 +63,7 @@ export default function InboxPage() {
               <Badge variant="secondary" className="mb-3">
                 Message timeline
               </Badge>
-              <p>Select a conversation to view its message timeline.</p>
+              <p>Conversation threads will appear here once the inbox is available.</p>
             </div>
           </CardContent>
         </Card>
