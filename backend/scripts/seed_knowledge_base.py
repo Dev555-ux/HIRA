@@ -1,7 +1,8 @@
 """Additive, idempotent seed of realistic knowledge for the autonomous business.
 
-Uses the existing repository function `index_entry` (chunk + embed + store) — no
-change to retrieval, embeddings, prompts, messaging, or schema. Idempotent:
+Thin wrapper around `app.onboarding.bootstrap.seed_knowledge_base` — see that
+module (and `app.onboarding.knowledge` for the fact list, `app.onboarding.
+verification` for business resolution) for the actual logic. Idempotent:
 facts already present (matched by title) are skipped. Run from backend/:
 
     .venv/bin/python scripts/seed_knowledge_base.py
@@ -18,167 +19,17 @@ number rotations — see scripts/update_business_phone.py). Instead:
 
 import os
 
-from sqlalchemy import select
-
-from app.ai.knowledge_base import index_entry
-from app.db.session import SessionLocal
-from app.models import Business, KbEntry
-
-FACTS: list[tuple[str, str]] = [
-    ("Business name", "This business is HIRA Test Business, a dental and wellness clinic."),
-    (
-        "Business description",
-        "HIRA Test Business is a dental and wellness clinic offering routine check-ups, "
-        "cleanings, and cosmetic dental treatments. Our AI receptionist answers questions "
-        "and books appointments on WhatsApp.",
-    ),
-    (
-        "Office hours",
-        "We are open Monday to Friday from 9:00 AM to 6:00 PM, and Saturday from 10:00 AM "
-        "to 2:00 PM. We are closed on Sundays and public holidays.",
-    ),
-    (
-        "Appointment booking",
-        "You can book an appointment directly here on WhatsApp. Tell us the service you need "
-        "and your preferred day and time, and we will confirm availability. Appointments are "
-        "recommended, but same-day slots are sometimes available.",
-    ),
-    (
-        "Rescheduling appointments",
-        "To reschedule, message us at least 24 hours before your appointment with your name "
-        "and preferred new time, and we will move your booking free of charge.",
-    ),
-    (
-        "Cancellation policy",
-        "Appointments cancelled at least 24 hours in advance are free. Cancellations with less "
-        "than 24 hours notice, or missed appointments, may incur a fee of 20 percent of the "
-        "service price.",
-    ),
-    (
-        "Pricing policy",
-        "A dental consultation costs 50 USD. A standard cleaning costs 80 USD. Teeth whitening "
-        "starts at 200 USD. Final pricing is confirmed after the dentist assesses your needs.",
-    ),
-    (
-        "Refund policy",
-        "Prepaid services that have not been used can be refunded within 14 days of payment. "
-        "Completed treatments are non-refundable. Refunds are processed to the original payment "
-        "method within 7 business days.",
-    ),
-    (
-        "Payment methods",
-        "We accept cash, all major credit and debit cards, and mobile payments. Payment is due "
-        "at the time of service unless otherwise arranged.",
-    ),
-    (
-        "Insurance",
-        "We accept most major dental insurance plans. Please bring your insurance details to "
-        "your visit, and we will help you check your coverage.",
-    ),
-    (
-        "Supported services",
-        "Our services include dental check-ups, cleanings, fillings, tooth extractions, teeth "
-        "whitening, and cosmetic consultations.",
-    ),
-    (
-        "Business location",
-        "We are located at 42 Wellness Avenue, Downtown. Parking is free for patients behind the "
-        "building, and we are a 5 minute walk from the Central metro station.",
-    ),
-    (
-        "Contact information",
-        "You can reach us on WhatsApp at this number, by phone at +1-555-010-2020, or by email "
-        "at hello@hiratestclinic.example.",
-    ),
-    (
-        "Response times",
-        "Our AI receptionist replies instantly, 24 hours a day. Requests that need a human team "
-        "member are answered during office hours, usually within a few hours.",
-    ),
-    (
-        "Languages supported",
-        "We support English and Spanish. Let us know your preferred language and we will assist "
-        "you in it.",
-    ),
-    (
-        "Emergency contact policy",
-        "For a dental emergency during office hours, message us and we will prioritise you. "
-        "Outside office hours, for a severe emergency please call our on-call line at "
-        "+1-555-010-9111 or go to the nearest emergency room.",
-    ),
-    (
-        "Privacy policy summary",
-        "We keep your personal and health information confidential and use it only to provide "
-        "care and manage your appointments. We never sell your data. You can request a copy or "
-        "deletion of your data at any time.",
-    ),
-    (
-        "General FAQ",
-        "New patients are welcome and walk-ins are accepted when slots are free. First visits "
-        "usually take about 45 minutes. Please arrive 10 minutes early to complete registration.",
-    ),
-]
-
-
-def _resolve_business(db) -> Business:
-    """Find the target business: the sole row, or one selected by PHONE_NUMBER_ID.
-
-    Mirrors the webhook's own lookup (app/webhooks/whatsapp.py:
-    `select(Business).where(Business.whatsapp_phone_number_id == phone_number_id)`)
-    rather than hardcoding a number id that goes stale across rotations.
-    """
-    businesses = db.scalars(select(Business)).all()
-    if len(businesses) == 1:
-        return businesses[0]
-
-    phone_number_id = os.environ.get("PHONE_NUMBER_ID")
-    if phone_number_id:
-        business = db.scalars(
-            select(Business).where(Business.whatsapp_phone_number_id == phone_number_id)
-        ).first()
-        if business is None:
-            raise SystemExit(
-                f"No business found with whatsapp_phone_number_id={phone_number_id!r}."
-            )
-        return business
-
-    if not businesses:
-        raise SystemExit("No business found. Run scripts/seed_business.py first.")
-
-    candidates = ", ".join(repr(b.whatsapp_phone_number_id) for b in businesses)
-    raise SystemExit(
-        "Multiple businesses found; set PHONE_NUMBER_ID to disambiguate "
-        f"(candidates: {candidates})."
-    )
+from app.onboarding.bootstrap import seed_knowledge_base
 
 
 def main() -> None:
-    db = SessionLocal()
+    phone_number_id = os.environ.get("PHONE_NUMBER_ID")
     try:
-        business = _resolve_business(db)
+        business, inserted, total = seed_knowledge_base(phone_number_id=phone_number_id)
+    except LookupError as exc:
+        raise SystemExit(str(exc)) from exc
 
-        inserted = 0
-        for title, content in FACTS:
-            already = db.scalars(
-                select(KbEntry).where(
-                    KbEntry.business_id == business.id, KbEntry.title == title
-                )
-            ).first()
-            if already is not None:
-                continue
-            index_entry(db, business.id, title, content)
-            inserted += 1
-
-        db.commit()
-        total = db.scalars(
-            select(KbEntry).where(KbEntry.business_id == business.id)
-        ).all()
-        print(
-            f"inserted {inserted} new fact(s); "
-            f"total kb rows for business {business.id}: {len(total)}"
-        )
-    finally:
-        db.close()
+    print(f"inserted {inserted} new fact(s); total kb rows for business {business.id}: {total}")
 
 
 if __name__ == "__main__":
