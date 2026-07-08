@@ -33,7 +33,17 @@ def get_reply_dispatcher():
     """Returns the callable that schedules reply generation. Overridable in tests."""
 
     def dispatch(background_tasks: BackgroundTasks, conversation_id, user_text: str) -> None:
+        # TEMPORARY DIAGNOSTIC — remove after debugging outbound send.
+        print(f"[DIAG] dispatch() CALLED conversation_id={conversation_id}", flush=True)
+        # TEMPORARY TIER-2 FALLBACK — only uncomment this pair of lines (and
+        # comment out the add_task line below) if tier-1 diagnostics prove
+        # dispatch() runs but generate_and_store_reply()'s first print still
+        # never appears. That would isolate BackgroundTasks execution itself
+        # as the failure point rather than anything upstream of dispatch().
+        #     generate_and_store_reply(conversation_id, user_text)
+        #     return
         background_tasks.add_task(generate_and_store_reply, conversation_id, user_text)
+        print(f"[DIAG] dispatch() add_task() SCHEDULED conversation_id={conversation_id}", flush=True)
 
     return dispatch
 
@@ -67,10 +77,16 @@ async def receive(
 ) -> Response:
     raw_body = await request.body()
     if not _signature_valid(raw_body, request.headers.get("X-Hub-Signature-256")):
+        # TEMPORARY DIAGNOSTIC
+        print("[DIAG] receive(): signature check FAILED -> 403 (nothing downstream runs)", flush=True)
         return Response(status_code=403)
 
     payload = await request.json()
+    # TEMPORARY DIAGNOSTIC
+    print(f"[DIAG] receive(): payload={payload}", flush=True)
     new_inbound = _persist_inbound(db, payload)
+    # TEMPORARY DIAGNOSTIC
+    print(f"[DIAG] receive(): new_inbound count={len(new_inbound)} value={new_inbound!r}", flush=True)
     for conversation_id, user_text in new_inbound:
         dispatch(background_tasks, conversation_id, user_text)
     # Always 200 once persisted, so Meta does not retry.
@@ -86,11 +102,23 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
             value = change.get("value", {})
             # Ignore delivery/status callbacks: they carry "statuses", not "messages".
             if not value.get("messages"):
+                # TEMPORARY DIAGNOSTIC
+                print(
+                    f"[DIAG] _persist_inbound: no 'messages' key (value keys={list(value.keys())}) "
+                    "-> skipping this change",
+                    flush=True,
+                )
                 continue
             phone_number_id = value.get("metadata", {}).get("phone_number_id")
             business = db.scalars(
                 select(Business).where(Business.whatsapp_phone_number_id == phone_number_id)
             ).first()
+            # TEMPORARY DIAGNOSTIC
+            print(
+                f"[DIAG] _persist_inbound: phone_number_id={phone_number_id!r} "
+                f"business_found={business is not None}",
+                flush=True,
+            )
             if business is None:
                 continue  # unknown number — ignore gracefully
 
@@ -102,6 +130,12 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
                 already = db.scalars(
                     select(Message).where(Message.wa_message_id == wa_message_id)
                 ).first()
+                # TEMPORARY DIAGNOSTIC
+                print(
+                    f"[DIAG] _persist_inbound: wa_message_id={wa_message_id!r} "
+                    f"already_exists={already is not None}",
+                    flush=True,
+                )
                 if already is not None:
                     continue  # dedupe
 
@@ -124,6 +158,8 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
                 conversation.last_message_at = now
                 conversation.window_expires_at = now + SERVICE_WINDOW
                 new_inbound.append((conversation.id, body))
+                # TEMPORARY DIAGNOSTIC
+                print(f"[DIAG] _persist_inbound: appended conversation_id={conversation.id}", flush=True)
             db.commit()
     return new_inbound
 
