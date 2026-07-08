@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
+import { POLL_INTERVAL_MS } from "@/lib/config";
 import type { PendingReply } from "@/lib/types";
 
 const PENDING_KEY = ["pending"] as const;
@@ -12,7 +13,7 @@ export function usePending() {
   return useQuery({
     queryKey: PENDING_KEY,
     queryFn: () => api.listPending(getToken),
-    refetchInterval: 15_000,
+    refetchInterval: POLL_INTERVAL_MS,
   });
 }
 

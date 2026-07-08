@@ -37,11 +37,11 @@ src/
 │       ├── loading.tsx      route skeleton
 │       └── error.tsx        route error boundary
 ├── components/              layout (sidebar/topbar/user-menu/mobile nav), ui/ (shadcn-style), providers
-├── hooks/                   TanStack Query hooks (use-pending, use-onboarding, use-knowledge-base, use-settings, use-playground)
+├── hooks/                   TanStack Query hooks (use-pending, use-onboarding, use-knowledge-base, use-settings, use-playground, use-conversations, use-debounced-value)
 ├── lib/                     api client, auth context, config, types, utils, nav
 └── middleware.ts            Clerk middleware (pass-through in dev/mock)
 ```
 
 ## Backend integration status
 
-Live today: **Onboarding** (`POST /api/v1/onboarding/business`), **Pending Replies** (`GET /api/v1/pending`, `POST /api/v1/messages/{id}/approve`), **Knowledge Base** (full CRUD + website import), **Playground** (AI test-drive), **Settings** (AI Reply Mode only — business info/WhatsApp config are not yet backed by an endpoint). Pages that need not-yet-built backend endpoints (Inbox, Customers, Analytics, reply Reject, WhatsApp self-serve connect) render honest "coming soon" placeholder/empty states — controls with no backend are disabled rather than silently doing nothing — with typed client methods ready to connect once those endpoints exist.
+Live today: **Onboarding** (`POST /api/v1/onboarding/business`), **Pending Replies** (`GET /api/v1/pending`, `POST /api/v1/messages/{id}/approve`), **Knowledge Base** (full CRUD + website import), **Playground** (AI test-drive), **Inbox** (`GET /api/v1/conversations`, `/{id}`, `/{id}/messages` — search, status filter, pagination), **Settings** (AI Reply Mode only — business info/WhatsApp config are not yet backed by an endpoint). Pages that need not-yet-built backend endpoints (Customers, Analytics, reply Reject, WhatsApp self-serve connect) render honest "coming soon" placeholder/empty states — controls with no backend are disabled rather than silently doing nothing — with typed client methods ready to connect once those endpoints exist.

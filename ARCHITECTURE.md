@@ -244,19 +244,19 @@ Standard library `logging`, one `logger = logging.getLogger(__name__)` per modul
 
 `middleware.ts` mirrors the same guard at the edge: real `clerkMiddleware()` when configured, a pass-through otherwise.
 
-**API communication**: one typed client, `lib/api.ts`. Every call takes a `getToken` function, attaches `Authorization: Bearer <token>` if present, and throws a typed `ApiError` (with HTTP status) on failure. Currently implements exactly two calls: `listPending` (`GET /api/v1/pending`) and `approveMessage` (`POST /api/v1/messages/{id}/approve`) — the only two backend endpoints that exist.
+**API communication**: one typed client, `lib/api.ts`. Every call takes a `getToken` function, attaches `Authorization: Bearer <token>` if present, and throws a typed `ApiError` (with HTTP status) on failure. As of 2026-07-08 this covers pending/approve, KB CRUD + website import, onboarding, playground, settings (AI Reply Mode), and conversations/messages — this line was last accurate at "exactly two calls" on 2026-07-04 and has not been kept in sync with every endpoint added since; treat the endpoint list in `documentation/API.md` as authoritative over an exhaustive count here.
 
-**Current pages**:
+**Current pages** (this table is known to be stale beyond the rows below — see the note above; not corrected wholesale in this pass):
 
 | Page | Status |
 |---|---|
-| `/dashboard` | Partially live — pending-reply count via `usePending()`; conversation/customer stat tiles show "Endpoint coming soon" |
+| `/dashboard` | Partially live — pending-reply count via `usePending()`; conversation/customer stat tiles show "Coming soon" |
 | `/pending` | **Live** — full list + approve flow against the real API, optimistic updates, 15s polling |
-| `/inbox` | Static UI shell only — search input has no backend query behind it |
-| `/knowledge-base` | Static UI shell — upload button disabled ("Upload endpoint coming soon") |
+| `/inbox` | **Live** (2026-07-08) — two-pane conversation list + message timeline against `GET /api/v1/conversations`, `GET /api/v1/conversations/{id}`, `GET /api/v1/conversations/{id}/messages`; search (debounced), status filter chips (All/Open/Pending/Closed), pagination, 15s polling, mobile master-detail (list ↔ timeline). See `hooks/use-conversations.ts`. |
+| `/knowledge-base` | **Live** — full CRUD + website import |
 | `/customers` | Static UI shell — no backend query |
 | `/analytics` | Static UI shell — all stat tiles show "Coming soon" |
-| `/settings` | Static UI shell — all fields disabled ("Settings API coming soon") |
+| `/settings` | Partially live — AI Reply Mode card is real; business info/WhatsApp config fields remain disabled placeholders |
 | `/onboarding` | **Live** — business-provisioning form (name, industry, business email, country, timezone); posts to `/api/v1/onboarding/business`, redirects to `/dashboard` on success. Outside the `(dashboard)` route group. |
 
 **Future pages**: *Not yet implemented* — none of the above placeholders have a target ship date recorded; they become "future pages" once their backing endpoint exists (see Section 15).
@@ -628,7 +628,7 @@ Per `MILESTONES.md`:
 Recommended next implementation order, reasoning included:
 
 1. **Deployment** (`INFRA-001`, `INFRA-006`) — do this before anything else below. Every feature built on top of a laptop+ngrok setup will need to be re-verified once deployed anyway; deploying first means new features are verified once, not twice.
-2. **Inbox** — wire `/inbox` to a real backend endpoint (list conversations/messages per business). This is the natural next dashboard surface after Pending Replies, and unlocks visibility into what the AI is actually doing without waiting on Analytics.
+2. **Inbox** — **done (2026-07-08)**. `GET /api/v1/conversations` (search, status filter, pagination), `GET /api/v1/conversations/{id}`, `GET /api/v1/conversations/{id}/messages` (`backend/app/api/conversations.py`), and a real two-pane `/inbox` page (`frontend/src/app/(dashboard)/inbox/page.tsx`). No new tables — reads `Conversation`/`Message`/`Customer` as they already existed.
 3. **Human handoff / escalation** — wire the existing (currently unused) `escalations` table into `generate_and_store_reply`'s failure path (Section 7) and into a low-confidence signal from the LLM response. This closes the biggest current reliability gap: right now a failed generation means the customer gets silence.
 4. **Google Calendar** — **internal architecture built (2026-07-08, DEC-028)**: a provider-agnostic `CalendarProvider` interface and `AppointmentService` (`backend/app/calendar/`), tested against an in-memory `MockCalendarProvider`. Still not built: OAuth, token encryption, a real `GoogleCalendarProvider`, API routes, frontend, and AI tool-calling to actually trigger a booking from a conversation. Sequenced after handoff because booking failures should be able to escalate to a human using the same mechanism.
 5. **Conversation memory** — today "memory" is a rolling window of the last 20 raw messages; there is no summarization or long-term customer memory across conversations. Worth revisiting once conversations regularly exceed that window in practice.

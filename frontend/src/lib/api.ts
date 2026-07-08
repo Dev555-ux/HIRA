@@ -4,12 +4,16 @@ import type {
   ApproveResult,
   Business,
   BusinessSettings,
+  Conversation,
+  ConversationStatusFilter,
   CreateBusinessPayload,
   CreateKbEntryPayload,
   ImportWebsitePayload,
   ImportWebsiteResult,
   KbEntry,
+  Message,
   OnboardingStatus,
+  PaginatedEnvelope,
   PendingReply,
   PlaygroundResponse,
   UpdateKbEntryPayload,
@@ -25,6 +29,15 @@ export class ApiError extends Error {
 }
 
 type GetToken = () => Promise<string | null>;
+
+function buildQuery(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
 
 async function apiFetch<T>(
   path: string,
@@ -124,4 +137,33 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }).then((r) => r.data),
+
+  listConversations: (
+    getToken: GetToken,
+    params: {
+      search?: string;
+      status?: ConversationStatusFilter;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ) =>
+    apiFetch<PaginatedEnvelope<Conversation[]>>(
+      `/api/v1/conversations${buildQuery(params)}`,
+      getToken,
+    ),
+
+  getConversation: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<Conversation>>(`/api/v1/conversations/${id}`, getToken).then(
+      (r) => r.data,
+    ),
+
+  listMessages: (
+    getToken: GetToken,
+    id: string,
+    params: { limit?: number; offset?: number } = {},
+  ) =>
+    apiFetch<PaginatedEnvelope<Message[]>>(
+      `/api/v1/conversations/${id}/messages${buildQuery(params)}`,
+      getToken,
+    ),
 };

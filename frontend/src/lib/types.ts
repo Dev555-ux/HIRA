@@ -16,25 +16,49 @@ export interface ApiEnvelope<T> {
   data: T;
 }
 
-// Types for endpoints not yet implemented on the backend (rendered from
-// placeholder/empty states until those endpoints land).
+export interface PaginationMeta {
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PaginatedEnvelope<T> {
+  data: T;
+  meta: PaginationMeta;
+}
+
+// Conversations / Inbox (/api/v1/conversations). Status filter chips map to
+// Conversation.status plus a derived "pending" view (see backend/app/api/
+// conversations.py's module docstring for the exact filter semantics).
+export type ConversationStatusFilter = "open" | "pending" | "closed";
+
+export interface ConversationCustomer {
+  id: string;
+  display_name: string | null;
+  wa_phone: string;
+}
+
 export interface Conversation {
   id: string;
-  customer_name: string | null;
-  customer_phone: string;
   status: "active" | "escalated" | "closed";
+  customer: ConversationCustomer;
   last_message_at: string | null;
-  preview: string;
+  preview: string | null;
+  has_pending_approval: boolean;
+  created_at: string;
 }
 
 export interface Message {
   id: string;
   direction: "inbound" | "outbound";
   body: string;
-  status: string;
+  type: string;
+  status: "received" | "pending_approval" | "sent" | "failed";
   created_at: string;
 }
 
+// Type for the future Customers list endpoint — not yet implemented on the
+// backend (rendered from a placeholder/empty state until it lands).
 export interface Customer {
   id: string;
   display_name: string | null;

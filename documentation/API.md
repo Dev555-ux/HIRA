@@ -3,7 +3,7 @@
 Status: **Accepted** (2026-06-29). See `DECISIONS.md` DEC-014, DEC-025.
 Base path: `/api/v1`. Auth: Clerk JWT (dashboard endpoints) / Meta signature (webhook). All dashboard endpoints are tenant-scoped to the caller's `business_id`.
 
-**Implemented so far** (Milestone 2 — Clerk auth): `GET /api/v1/pending` and `POST /api/v1/messages/{message_id}/approve`, both protected by Clerk JWT via `get_current_principal` (resolves the Clerk user → local `User` → `business_id`). Cross-tenant access returns `404`. Verification: RS256 against Clerk JWKS (`CLERK_JWKS_URL`). Remaining dashboard endpoints below are still to be built.
+**Implemented so far** (as of 2026-07-08): `GET/POST /api/v1/pending`, `/messages/{id}/approve`; `GET/POST/PATCH/DELETE /api/v1/kb` (+ `/kb/website`); `GET/POST /api/v1/onboarding/*` (+ `/playground/message`); `GET/PATCH /api/v1/settings` (AI Reply Mode only); `GET /api/v1/conversations`, `/conversations/{id}`, `/conversations/{id}/messages` (see the Conversations section below for exact query params — this is a smaller slice of the originally-sketched Conversations API: the two `POST` actions there are not built). All protected by Clerk JWT via `get_current_principal` (resolves the Clerk user → local `User` → `business_id`). Cross-tenant access returns `404`. Verification: RS256 against Clerk JWKS (`CLERK_JWKS_URL`). Remaining endpoints below (Escalations, Appointments/Calendar, most of Settings) are still to be built.
 
 ---
 
@@ -35,11 +35,11 @@ Conventions: `2xx` success, `400` validation, `401` unauth, `403` forbidden, `40
 - `POST /webhooks/whatsapp` — inbound messages/status. Verifies signature, dedupes, persists, returns `200` fast, processes async.
 
 ### Conversations / Inbox
-- `GET /conversations` — list (filters: `status`, `escalated`, search). Powers the Inbox.
-- `GET /conversations/{id}` — conversation detail.
-- `GET /conversations/{id}/messages` — message thread (paginated).
-- `POST /conversations/{id}/messages` — human sends a manual reply.
-- `POST /conversations/{id}/close` — close the thread.
+- `GET /conversations` — **implemented** (2026-07-08). Query params: `search` (matches customer display name or WhatsApp number), `status` (`open` → `Conversation.status == "active"`; `closed` → `"closed"`; `pending` → has an outbound message with `status == "pending_approval"`, a derived cross-cutting view, not a `Conversation.status` value — omit for no filter, which also includes `escalated` conversations, which have no dedicated filter chip yet), `limit`/`offset` (pagination, `{"data": [...], "meta": {"total", "limit", "offset"}}`). Each row includes the joined `customer` (id/display_name/wa_phone), `last_message_at`-ordered, a `preview` (latest message body), and `has_pending_approval`.
+- `GET /conversations/{id}` — **implemented**. Same summary shape as the list. Cross-tenant/unknown → `404`.
+- `GET /conversations/{id}/messages` — **implemented**. Paginated (`limit`/`offset`), returns the most recent page in oldest-first order (same convention as `app/ai/orchestrator.py`'s history loader). Cross-tenant/unknown conversation → `404`.
+- `POST /conversations/{id}/messages` — **not implemented** — human sends a manual reply. Originally sketched here; not part of the Inbox v1 scope.
+- `POST /conversations/{id}/close` — **not implemented** — close the thread. Originally sketched here; not part of the Inbox v1 scope.
 
 ### Assisted-Mode Approvals
 - `GET /pending` — messages/actions awaiting approval.

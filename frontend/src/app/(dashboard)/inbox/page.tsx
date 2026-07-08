@@ -1,22 +1,77 @@
 "use client";
 
-import { Inbox as InboxIcon, Search } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Inbox as InboxIcon,
+  MessageSquare,
+  RefreshCw,
+  Search,
+} from "lucide-react";
+import { useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  useConversation,
+  useConversationMessages,
+  useConversations,
+} from "@/hooks/use-conversations";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import type { Conversation, ConversationStatusFilter, Message } from "@/lib/types";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
-const FILTERS = ["All", "Pending", "Escalated", "Closed"] as const;
-const NOT_CONNECTED_HINT = "Search and filters will be available once the inbox is connected.";
+const FILTERS: { label: string; value: ConversationStatusFilter | undefined }[] = [
+  { label: "All", value: undefined },
+  { label: "Open", value: "open" },
+  { label: "Pending", value: "pending" },
+  { label: "Closed", value: "closed" },
+];
+
+const STATUS_BADGE: Record<
+  Conversation["status"],
+  { label: string; variant: "secondary" | "warning" | "outline" }
+> = {
+  active: { label: "Open", variant: "secondary" },
+  escalated: { label: "Escalated", variant: "warning" },
+  closed: { label: "Closed", variant: "outline" },
+};
+
+const MESSAGE_STATUS_BADGE: Partial<
+  Record<Message["status"], { label: string; variant: "warning" | "success" | "destructive" }>
+> = {
+  pending_approval: { label: "Pending approval", variant: "warning" },
+  sent: { label: "Sent", variant: "success" },
+  failed: { label: "Failed", variant: "destructive" },
+};
 
 export default function InboxPage() {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ConversationStatusFilter | undefined>(undefined);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const debouncedQuery = useDebouncedValue(query);
+
+  const { data, isLoading, isError, error, isFetching, refetch } = useConversations({
+    search: debouncedQuery || undefined,
+    status: filter,
+  });
+  const conversations = data?.data ?? [];
+
   return (
     <>
       <PageHeader
         title="Inbox"
         description="Customer conversations from WhatsApp."
+        action={
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className={isFetching ? "animate-spin" : ""} />
+            Refresh
+          </Button>
+        }
       />
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -25,49 +80,263 @@ export default function InboxPage() {
           <Input
             className="pl-9"
             placeholder="Search conversations…"
-            disabled
-            title={NOT_CONNECTED_HINT}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
           />
         </div>
         <div className="flex gap-1">
           {FILTERS.map((f) => (
             <Button
-              key={f}
+              key={f.label}
               size="sm"
-              variant={f === "All" ? "secondary" : "ghost"}
-              disabled
-              title={NOT_CONNECTED_HINT}
+              variant={filter === f.value ? "secondary" : "ghost"}
+              onClick={() => setFilter(f.value)}
             >
-              {f}
+              {f.label}
             </Button>
           ))}
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-        <Card className="min-h-[420px]">
-          <CardContent className="p-0">
-            <div className="flex h-full items-center justify-center p-6">
-              <EmptyState
-                icon={InboxIcon}
-                title="Inbox is coming soon"
-                description="You'll be able to see every customer conversation here, in one place."
-                className="border-0"
-              />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="min-h-[420px]">
-          <CardContent className="flex h-full items-center justify-center p-6">
-            <div className="text-center text-sm text-muted-foreground">
-              <Badge variant="secondary" className="mb-3">
-                Message timeline
-              </Badge>
-              <p>Conversation threads will appear here once the inbox is available.</p>
-            </div>
-          </CardContent>
-        </Card>
+        <ConversationList
+          conversations={conversations}
+          isLoading={isLoading}
+          isError={isError}
+          error={error}
+          onRetry={refetch}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          hasQuery={query.length > 0 || filter !== undefined}
+        />
+        <ConversationDetail conversationId={selectedId} onBack={() => setSelectedId(null)} />
       </div>
     </>
+  );
+}
+
+function ConversationList({
+  conversations,
+  isLoading,
+  isError,
+  error,
+  onRetry,
+  selectedId,
+  onSelect,
+  hasQuery,
+}: {
+  conversations: Conversation[];
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  onRetry: () => void;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  hasQuery: boolean;
+}) {
+  return (
+    <Card className={cn("min-h-[420px]", selectedId !== null ? "hidden lg:block" : "block")}>
+      <CardContent className="p-0">
+        {isLoading && (
+          <div className="space-y-3 p-4">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+        )}
+
+        {isError && (
+          <EmptyState
+            icon={AlertTriangle}
+            title="Couldn't load conversations"
+            description={error instanceof Error ? error.message : "Something went wrong."}
+            action={
+              <Button size="sm" onClick={onRetry}>
+                Retry
+              </Button>
+            }
+            className="border-0 py-16"
+          />
+        )}
+
+        {!isLoading && !isError && conversations.length === 0 && (
+          <EmptyState
+            icon={InboxIcon}
+            title={hasQuery ? "No matches" : "No conversations yet"}
+            description={
+              hasQuery
+                ? "Try a different search term or filter."
+                : "Conversations will appear here once a customer messages your WhatsApp number."
+            }
+            className="border-0 py-16"
+          />
+        )}
+
+        {!isLoading && !isError && conversations.length > 0 && (
+          <ul className="divide-y">
+            {conversations.map((conv) => {
+              const statusBadge = STATUS_BADGE[conv.status];
+              const name = conv.customer.display_name || conv.customer.wa_phone;
+              return (
+                <li key={conv.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(conv.id)}
+                    className={cn(
+                      "flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-accent/50",
+                      selectedId === conv.id && "bg-accent",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium">{name}</span>
+                      {conv.last_message_at && (
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {formatRelativeTime(conv.last_message_at)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {conv.preview ?? "No messages yet"}
+                    </p>
+                    <div className="flex gap-1">
+                      <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
+                      {conv.has_pending_approval && <Badge variant="warning">Pending</Badge>}
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ConversationDetail({
+  conversationId,
+  onBack,
+}: {
+  conversationId: string | null;
+  onBack: () => void;
+}) {
+  const { data: conversation, isLoading: isLoadingConversation } =
+    useConversation(conversationId);
+  const {
+    data: messagesData,
+    isLoading: isLoadingMessages,
+    isError,
+    error,
+    refetch,
+  } = useConversationMessages(conversationId);
+  const messages = messagesData?.data ?? [];
+
+  if (conversationId === null) {
+    return (
+      <Card className="hidden min-h-[420px] lg:flex">
+        <CardContent className="flex h-full w-full items-center justify-center p-6">
+          <div className="text-center text-sm text-muted-foreground">
+            <Badge variant="secondary" className="mb-3">
+              Message timeline
+            </Badge>
+            <p>Select a conversation to view its message timeline.</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const name = conversation?.customer.display_name || conversation?.customer.wa_phone;
+
+  return (
+    <Card className="flex min-h-[420px] flex-col">
+      <div className="flex items-center gap-3 border-b px-4 py-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="lg:hidden"
+          aria-label="Back to conversations"
+          onClick={onBack}
+        >
+          <ArrowLeft />
+        </Button>
+        {isLoadingConversation ? (
+          <Skeleton className="h-5 w-32" />
+        ) : (
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{name}</p>
+            {conversation && (
+              <p className="text-xs text-muted-foreground">{conversation.customer.wa_phone}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <CardContent className="flex-1 space-y-3 overflow-y-auto p-4">
+        {isLoadingMessages && (
+          <div className="space-y-3">
+            <Skeleton className="h-10 w-2/3" />
+            <Skeleton className="ml-auto h-10 w-2/3" />
+            <Skeleton className="h-10 w-1/2" />
+          </div>
+        )}
+
+        {isError && (
+          <EmptyState
+            icon={AlertTriangle}
+            title="Couldn't load messages"
+            description={error instanceof Error ? error.message : "Something went wrong."}
+            action={
+              <Button size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
+            }
+            className="border-0 py-10"
+          />
+        )}
+
+        {!isLoadingMessages && !isError && messages.length === 0 && (
+          <EmptyState
+            icon={MessageSquare}
+            title="No messages yet"
+            description="Messages in this conversation will appear here."
+            className="border-0 py-10"
+          />
+        )}
+
+        {!isLoadingMessages &&
+          !isError &&
+          messages.map((message) => <MessageBubble key={message.id} message={message} />)}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MessageBubble({ message }: { message: Message }) {
+  const statusBadge =
+    message.direction === "outbound" ? MESSAGE_STATUS_BADGE[message.status] : undefined;
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-1",
+        message.direction === "outbound" ? "items-end" : "items-start",
+      )}
+    >
+      <div
+        className={cn(
+          "max-w-[80%] rounded-md px-3 py-2 text-sm",
+          message.direction === "outbound"
+            ? "bg-secondary text-secondary-foreground"
+            : "bg-muted",
+        )}
+      >
+        {message.body}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>{formatRelativeTime(message.created_at)}</span>
+        {statusBadge && <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>}
+      </div>
+    </div>
   );
 }

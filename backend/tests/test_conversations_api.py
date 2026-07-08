@@ -1,0 +1,422 @@
+"""Tests for the Conversations API (Inbox backend): auth, tenant isolation,
+search, status filtering, pagination, and message-thread ordering."""
+
+from datetime import datetime, timedelta, timezone
+
+from fastapi.testclient import TestClient
+
+from app.auth.dependencies import get_token_verifier
+from app.db.session import get_db
+from app.main import app
+from app.models import Business, Conversation, Customer, Message, User
+
+NOW = datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc)
+
+
+def _seed_business(db, name, clerk_user_id, phone="PN1"):
+    biz = Business(name=name, whatsapp_phone_number_id=phone)
+    db.add(biz)
+    db.flush()
+    user = User(business_id=biz.id, clerk_user_id=clerk_user_id, email=f"{name}@x.com")
+    db.add(user)
+    db.flush()
+    return biz, user
+
+
+def _customer(db, business_id, *, wa_phone, display_name=None):
+    customer = Customer(business_id=business_id, wa_phone=wa_phone, display_name=display_name)
+    db.add(customer)
+    db.flush()
+    return customer
+
+
+def _conversation(db, business_id, customer_id, *, conv_status="active", last_message_at=None):
+    conv = Conversation(
+        business_id=business_id,
+        customer_id=customer_id,
+        status=conv_status,
+        last_message_at=last_message_at,
+    )
+    db.add(conv)
+    db.flush()
+    return conv
+
+
+def _message(
+    db,
+    conversation_id,
+    business_id,
+    *,
+    direction="inbound",
+    body="hi",
+    msg_status="received",
+    created_at=None,
+):
+    msg = Message(
+        conversation_id=conversation_id,
+        business_id=business_id,
+        direction=direction,
+        body=body,
+        status=msg_status,
+        created_at=created_at or NOW,
+    )
+    db.add(msg)
+    db.flush()
+    return msg
+
+
+def _client(db_session, *, claims_for_token):
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_token_verifier] = lambda: lambda token: claims_for_token(token)
+    return TestClient(app)
+
+
+def _auth(token="tok"):
+    return {"Authorization": f"Bearer {token}"}
+
+
+# --- auth + tenant isolation ------------------------------------------------
+
+
+def test_list_requires_authentication(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+    resp = client.get("/api/v1/conversations")
+    assert resp.status_code == 401
+    app.dependency_overrides.clear()
+
+
+def test_list_is_tenant_scoped(db_session):
+    biz_a, _ = _seed_business(db_session, "A", "user_a", phone="PN_A")
+    biz_b, _ = _seed_business(db_session, "B", "user_b", phone="PN_B")
+    cust_a = _customer(db_session, biz_a.id, wa_phone="+10000001")
+    cust_b = _customer(db_session, biz_b.id, wa_phone="+10000002")
+    _conversation(db_session, biz_a.id, cust_a.id)
+    _conversation(db_session, biz_b.id, cust_b.id)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth())
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["customer"]["wa_phone"] == "+10000001"
+    app.dependency_overrides.clear()
+
+
+def test_get_conversation_requires_authentication(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    conv = _conversation(db_session, biz.id, cust.id)
+    db_session.commit()
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+    resp = client.get(f"/api/v1/conversations/{conv.id}")
+    assert resp.status_code == 401
+    app.dependency_overrides.clear()
+
+
+def test_cannot_get_another_businesss_conversation(db_session):
+    biz_a, _ = _seed_business(db_session, "A", "user_a", phone="PN_A")
+    biz_b, _ = _seed_business(db_session, "B", "user_b", phone="PN_B")
+    cust_b = _customer(db_session, biz_b.id, wa_phone="+10000002")
+    conv_b = _conversation(db_session, biz_b.id, cust_b.id)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get(f"/api/v1/conversations/{conv_b.id}", headers=_auth())
+
+    assert resp.status_code == 404
+    app.dependency_overrides.clear()
+
+
+def test_get_unknown_conversation_is_404(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations/00000000-0000-0000-0000-000000000000", headers=_auth())
+    assert resp.status_code == 404
+    app.dependency_overrides.clear()
+
+
+def test_cannot_list_messages_of_another_businesss_conversation(db_session):
+    biz_a, _ = _seed_business(db_session, "A", "user_a", phone="PN_A")
+    biz_b, _ = _seed_business(db_session, "B", "user_b", phone="PN_B")
+    cust_b = _customer(db_session, biz_b.id, wa_phone="+10000002")
+    conv_b = _conversation(db_session, biz_b.id, cust_b.id)
+    _message(db_session, conv_b.id, biz_b.id, body="secret")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get(f"/api/v1/conversations/{conv_b.id}/messages", headers=_auth())
+
+    assert resp.status_code == 404
+    app.dependency_overrides.clear()
+
+
+# --- search ------------------------------------------------------------
+
+
+def test_search_matches_display_name(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    alice = _customer(db_session, biz.id, wa_phone="+10000001", display_name="Alice Smith")
+    bob = _customer(db_session, biz.id, wa_phone="+10000002", display_name="Bob Jones")
+    _conversation(db_session, biz.id, alice.id)
+    _conversation(db_session, biz.id, bob.id)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth(), params={"search": "alice"})
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["customer"]["display_name"] == "Alice Smith"
+    app.dependency_overrides.clear()
+
+
+def test_search_matches_phone_number(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    alice = _customer(db_session, biz.id, wa_phone="+15551230000", display_name="Alice")
+    bob = _customer(db_session, biz.id, wa_phone="+15559998888", display_name="Bob")
+    _conversation(db_session, biz.id, alice.id)
+    _conversation(db_session, biz.id, bob.id)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth(), params={"search": "5551230000"})
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["customer"]["wa_phone"] == "+15551230000"
+    app.dependency_overrides.clear()
+
+
+# --- status filtering ----------------------------------------------------
+
+
+def test_filter_open_returns_only_active_conversations(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    _conversation(db_session, biz.id, cust.id, conv_status="active")
+    _conversation(db_session, biz.id, cust.id, conv_status="closed")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth(), params={"status": "open"})
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["status"] == "active"
+    app.dependency_overrides.clear()
+
+
+def test_filter_closed_returns_only_closed_conversations(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    _conversation(db_session, biz.id, cust.id, conv_status="active")
+    _conversation(db_session, biz.id, cust.id, conv_status="closed")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth(), params={"status": "closed"})
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["status"] == "closed"
+    app.dependency_overrides.clear()
+
+
+def test_filter_pending_returns_only_conversations_awaiting_approval(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust_pending = _customer(db_session, biz.id, wa_phone="+10000001")
+    cust_clear = _customer(db_session, biz.id, wa_phone="+10000002")
+    conv_pending = _conversation(db_session, biz.id, cust_pending.id)
+    conv_clear = _conversation(db_session, biz.id, cust_clear.id)
+    _message(db_session, conv_pending.id, biz.id, direction="outbound", msg_status="pending_approval")
+    _message(db_session, conv_clear.id, biz.id, direction="outbound", msg_status="sent")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth(), params={"status": "pending"})
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["id"] == str(conv_pending.id)
+    assert data[0]["has_pending_approval"] is True
+    app.dependency_overrides.clear()
+
+
+def test_has_pending_approval_flag_is_false_without_a_pending_message(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    conv = _conversation(db_session, biz.id, cust.id)
+    _message(db_session, conv.id, biz.id, direction="outbound", msg_status="sent")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth())
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data[0]["has_pending_approval"] is False
+    app.dependency_overrides.clear()
+
+
+# --- ordering, preview, pagination -----------------------------------------
+
+
+def test_list_orders_by_most_recent_activity_first(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust1 = _customer(db_session, biz.id, wa_phone="+10000001")
+    cust2 = _customer(db_session, biz.id, wa_phone="+10000002")
+    older = _conversation(db_session, biz.id, cust1.id, last_message_at=NOW - timedelta(hours=2))
+    newer = _conversation(db_session, biz.id, cust2.id, last_message_at=NOW)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth())
+
+    data = resp.json()["data"]
+    assert [row["id"] for row in data] == [str(newer.id), str(older.id)]
+    app.dependency_overrides.clear()
+
+
+def test_preview_reflects_the_latest_message_body(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    conv = _conversation(db_session, biz.id, cust.id)
+    _message(db_session, conv.id, biz.id, body="First message", created_at=NOW - timedelta(minutes=10))
+    _message(db_session, conv.id, biz.id, body="Second message", created_at=NOW)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth())
+
+    data = resp.json()["data"]
+    assert data[0]["preview"] == "Second message"
+    app.dependency_overrides.clear()
+
+
+def test_pagination_limits_results_and_reports_total(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    for i in range(5):
+        cust = _customer(db_session, biz.id, wa_phone=f"+1000000{i}")
+        _conversation(db_session, biz.id, cust.id, last_message_at=NOW - timedelta(minutes=i))
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth(), params={"limit": 2, "offset": 0})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["data"]) == 2
+    assert body["meta"] == {"total": 5, "limit": 2, "offset": 0}
+
+    resp2 = client.get("/api/v1/conversations", headers=_auth(), params={"limit": 2, "offset": 2})
+    assert len(resp2.json()["data"]) == 2
+    assert resp.json()["data"] != resp2.json()["data"]
+    app.dependency_overrides.clear()
+
+
+# --- conversation detail ------------------------------------------------
+
+
+def test_get_conversation_returns_summary_with_customer_and_pending_flag(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001", display_name="Alice")
+    conv = _conversation(db_session, biz.id, cust.id)
+    _message(db_session, conv.id, biz.id, direction="outbound", msg_status="pending_approval")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get(f"/api/v1/conversations/{conv.id}", headers=_auth())
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["id"] == str(conv.id)
+    assert data["customer"]["display_name"] == "Alice"
+    assert data["has_pending_approval"] is True
+    app.dependency_overrides.clear()
+
+
+# --- message thread -----------------------------------------------------
+
+
+def test_list_messages_returns_oldest_first(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    conv = _conversation(db_session, biz.id, cust.id)
+    first = _message(db_session, conv.id, biz.id, body="First", created_at=NOW - timedelta(minutes=5))
+    second = _message(db_session, conv.id, biz.id, body="Second", created_at=NOW)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get(f"/api/v1/conversations/{conv.id}/messages", headers=_auth())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [m["id"] for m in body["data"]] == [str(first.id), str(second.id)]
+    assert body["meta"]["total"] == 2
+    app.dependency_overrides.clear()
+
+
+def test_list_messages_includes_status_for_ai_reply_state(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    conv = _conversation(db_session, biz.id, cust.id)
+    _message(db_session, conv.id, biz.id, direction="outbound", body="Draft reply", msg_status="pending_approval")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get(f"/api/v1/conversations/{conv.id}/messages", headers=_auth())
+
+    data = resp.json()["data"]
+    assert data[0]["status"] == "pending_approval"
+    assert data[0]["direction"] == "outbound"
+    app.dependency_overrides.clear()
+
+
+def test_list_messages_unknown_conversation_is_404(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get(
+        "/api/v1/conversations/00000000-0000-0000-0000-000000000000/messages", headers=_auth()
+    )
+    assert resp.status_code == 404
+    app.dependency_overrides.clear()
+
+
+def test_list_messages_pagination_keeps_oldest_first_order(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    conv = _conversation(db_session, biz.id, cust.id)
+    for i in range(5):
+        _message(
+            db_session,
+            conv.id,
+            biz.id,
+            body=f"msg-{i}",
+            created_at=NOW - timedelta(minutes=(4 - i)),
+        )
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    # Most recent 2 of 5 (msg-3, msg-4), still returned oldest-first.
+    resp = client.get(
+        f"/api/v1/conversations/{conv.id}/messages", headers=_auth(), params={"limit": 2}
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [m["body"] for m in body["data"]] == ["msg-3", "msg-4"]
+    assert body["meta"]["total"] == 5
+    app.dependency_overrides.clear()

@@ -16,3 +16,8 @@ export const isProduction = process.env.NODE_ENV === "production";
 // the app refuses to render protected content (see AuthLayer) rather than
 // bypassing authentication.
 export const mockAuthAllowed = authEnabled || !isProduction;
+
+// Polling cadence for data that can change from outside the dashboard (a
+// WhatsApp webhook firing asynchronously) — pending replies, conversations,
+// and message threads all use this so refresh behavior stays consistent.
+export const POLL_INTERVAL_MS = 15_000;
