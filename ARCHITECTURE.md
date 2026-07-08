@@ -305,11 +305,11 @@ PostgreSQL with the `pgvector` extension. Every business-owned table carries `bu
 - HNSW index `ix_kb_entries_embedding_hnsw` on `embedding` using `vector_cosine_ops` — fast approximate cosine search.
 - No full-text index; retrieval is embedding-similarity only.
 
-**`appointments`** — schema exists, **zero application code references this table** (confirmed by repo-wide search). Modeled for future Google Calendar booking (Section 15). FKs to `businesses`, `customers`, and optionally `conversations` (`ON DELETE SET NULL`).
+**`appointments`** — schema unchanged, but as of 2026-07-08 is read/written by `app.calendar.service.AppointmentService` (`backend/app/calendar/service.py`), exercised only against `MockCalendarProvider` so far — no real vendor writes to it yet. FKs to `businesses`, `customers`, and optionally `conversations` (`ON DELETE SET NULL`). See DEC-028.
 
 **`escalations`** — schema exists, **zero application code references this table**. Modeled for a future human-handoff flow. FKs to `businesses`, `conversations`, and optionally `users` (`resolved_by`, `ON DELETE SET NULL`).
 
-**`calendar_credentials`** — schema exists, **zero application code references this table**. One row per business (`UNIQUE(business_id)`), intended to hold an encrypted Google OAuth refresh token.
+**`calendar_credentials`** — schema exists, **zero application code references this table**. One row per business (`UNIQUE(business_id)`), intended to hold an encrypted OAuth refresh token. Has no `provider` column yet — flagged in DEC-028 as a required additive migration once a second real calendar vendor is added.
 
 ## Tenant isolation
 
@@ -630,7 +630,7 @@ Recommended next implementation order, reasoning included:
 1. **Deployment** (`INFRA-001`, `INFRA-006`) — do this before anything else below. Every feature built on top of a laptop+ngrok setup will need to be re-verified once deployed anyway; deploying first means new features are verified once, not twice.
 2. **Inbox** — wire `/inbox` to a real backend endpoint (list conversations/messages per business). This is the natural next dashboard surface after Pending Replies, and unlocks visibility into what the AI is actually doing without waiting on Analytics.
 3. **Human handoff / escalation** — wire the existing (currently unused) `escalations` table into `generate_and_store_reply`'s failure path (Section 7) and into a low-confidence signal from the LLM response. This closes the biggest current reliability gap: right now a failed generation means the customer gets silence.
-4. **Google Calendar** — booking/rescheduling via the existing (currently unused) `appointments` and `calendar_credentials` tables. Sequenced after handoff because booking failures should be able to escalate to a human using the same mechanism.
+4. **Google Calendar** — **internal architecture built (2026-07-08, DEC-028)**: a provider-agnostic `CalendarProvider` interface and `AppointmentService` (`backend/app/calendar/`), tested against an in-memory `MockCalendarProvider`. Still not built: OAuth, token encryption, a real `GoogleCalendarProvider`, API routes, frontend, and AI tool-calling to actually trigger a booking from a conversation. Sequenced after handoff because booking failures should be able to escalate to a human using the same mechanism.
 5. **Conversation memory** — today "memory" is a rolling window of the last 20 raw messages; there is no summarization or long-term customer memory across conversations. Worth revisiting once conversations regularly exceed that window in practice.
 6. **Analytics** — real metrics behind `/analytics` (conversation volume, response time, approval rate). Sequenced after Inbox/handoff since those produce the events analytics would report on.
 7. **Multi-tenant onboarding** — **partially done.** Business + owner `User` provisioning is now self-service (`POST /api/v1/onboarding/business`, `/onboarding` page — see `ONBOARDING_IMPLEMENTATION_PLAN.md` Milestone A, done 2026-07-05). Still manual/not built: connecting the business's own WhatsApp number (still only via `scripts/seed_business.py`), knowledge-base ingestion from a website/PDF, and the test-drive playground — tracked as Milestones B–F in the same plan.
@@ -648,4 +648,4 @@ Frontend: full `frontend/src` tree listing, `lib/{api,auth-context,config,nav}.t
 
 Project docs (for cross-reference, not copied uncritically): `.claude/{DECISIONS,PROGRESS,TODOS}.md`, `MILESTONES.md`, `documentation/ARCHITECTURE.md` (confirmed stale/superseded in scope).
 
-Verified directly against running code/config (not assumed): no CORS middleware, no rate limiting, no lifespan/startup hooks, no Dockerfile/Procfile/railway.json/fly.toml, no Clerk user-provisioning code path, zero application references to `Appointment`/`Escalation`/`CalendarCredential` beyond their model definitions.
+Verified directly against running code/config (not assumed): no CORS middleware, no rate limiting, no lifespan/startup hooks, no Dockerfile/Procfile/railway.json/fly.toml, no Clerk user-provisioning code path. As of the original 2026-07-04 audit, `Appointment`/`Escalation`/`CalendarCredential` had zero application references beyond their model definitions; as of 2026-07-08 (DEC-028), `Appointment` is now read/written by `backend/app/calendar/service.py` (against a mock provider only) — `Escalation`/`CalendarCredential` remain unreferenced.
