@@ -5,15 +5,24 @@ change to retrieval, embeddings, prompts, messaging, or schema. Idempotent:
 facts already present (matched by title) are skipped. Run from backend/:
 
     .venv/bin/python scripts/seed_knowledge_base.py
+
+Business resolution has no hardcoded phone number id (that goes stale across
+number rotations — see scripts/update_business_phone.py). Instead:
+  1. If there's exactly one Business row, use it.
+  2. Otherwise, set PHONE_NUMBER_ID to pick one by whatsapp_phone_number_id
+     (the same field/lookup the webhook uses — see app/webhooks/whatsapp.py):
+         PHONE_NUMBER_ID=1270860752766508 .venv/bin/python scripts/seed_knowledge_base.py
+  3. If multiple businesses exist and PHONE_NUMBER_ID isn't set, this exits
+     with an error listing the candidates instead of guessing.
 """
+
+import os
 
 from sqlalchemy import select
 
 from app.ai.knowledge_base import index_entry
 from app.db.session import SessionLocal
 from app.models import Business, KbEntry
-
-PHONE_NUMBER_ID = "1237957929400631"
 
 FACTS: list[tuple[str, str]] = [
     ("Business name", "This business is HIRA Test Business, a dental and wellness clinic."),
@@ -111,14 +120,42 @@ FACTS: list[tuple[str, str]] = [
 ]
 
 
+def _resolve_business(db) -> Business:
+    """Find the target business: the sole row, or one selected by PHONE_NUMBER_ID.
+
+    Mirrors the webhook's own lookup (app/webhooks/whatsapp.py:
+    `select(Business).where(Business.whatsapp_phone_number_id == phone_number_id)`)
+    rather than hardcoding a number id that goes stale across rotations.
+    """
+    businesses = db.scalars(select(Business)).all()
+    if len(businesses) == 1:
+        return businesses[0]
+
+    phone_number_id = os.environ.get("PHONE_NUMBER_ID")
+    if phone_number_id:
+        business = db.scalars(
+            select(Business).where(Business.whatsapp_phone_number_id == phone_number_id)
+        ).first()
+        if business is None:
+            raise SystemExit(
+                f"No business found with whatsapp_phone_number_id={phone_number_id!r}."
+            )
+        return business
+
+    if not businesses:
+        raise SystemExit("No business found. Run scripts/seed_business.py first.")
+
+    candidates = ", ".join(repr(b.whatsapp_phone_number_id) for b in businesses)
+    raise SystemExit(
+        "Multiple businesses found; set PHONE_NUMBER_ID to disambiguate "
+        f"(candidates: {candidates})."
+    )
+
+
 def main() -> None:
     db = SessionLocal()
     try:
-        business = db.scalars(
-            select(Business).where(Business.whatsapp_phone_number_id == PHONE_NUMBER_ID)
-        ).first()
-        if business is None:
-            raise SystemExit("No business found. Run scripts/seed_business.py first.")
+        business = _resolve_business(db)
 
         inserted = 0
         for title, content in FACTS:
