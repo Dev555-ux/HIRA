@@ -21,8 +21,9 @@ Appointment table — the exception simply propagates to the caller.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.calendar.providers.base import (
@@ -34,6 +35,35 @@ from app.calendar.providers.base import (
 from app.calendar.working_hours import filter_by_working_hours
 from app.db.tenant import get_scoped
 from app.models import Appointment
+
+
+def get_upcoming_appointments(
+    db: Session,
+    business_id: uuid.UUID,
+    customer_id: uuid.UUID,
+    *,
+    limit: int | None = None,
+) -> list[Appointment]:
+    """This customer's not-yet-started, non-cancelled appointments, soonest
+    first. A plain local read of already-booked `Appointment` rows — no
+    `CalendarProvider`/stored credentials needed, unlike `list_availability`.
+
+    Shared by app/ai/tools.py (reschedule/cancel dispatch, limit=1) and
+    app/ai/context.py (prompt grounding, limit=3) — DEC-034.
+    """
+    query = (
+        select(Appointment)
+        .where(
+            Appointment.business_id == business_id,
+            Appointment.customer_id == customer_id,
+            Appointment.status.in_(["booked", "rescheduled"]),
+            Appointment.starts_at > datetime.now(timezone.utc),
+        )
+        .order_by(Appointment.starts_at)
+    )
+    if limit is not None:
+        query = query.limit(limit)
+    return list(db.scalars(query).all())
 
 
 class AppointmentService:

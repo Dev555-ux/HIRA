@@ -20,9 +20,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.lead_tools import (
@@ -35,7 +34,7 @@ from app.ai.llm.base import LLMResponse, ToolCall, ToolSchema
 from app.ai.tool_results import ToolExecutionResult
 from app.calendar.factory import get_appointment_service
 from app.calendar.providers.base import CalendarError
-from app.models import Appointment
+from app.calendar.service import get_upcoming_appointments
 
 logger = logging.getLogger(__name__)
 
@@ -160,24 +159,6 @@ def response_to_message_fields(response: LLMResponse) -> tuple[str, str, dict]:
     return "text", response.text, {}
 
 
-def _find_upcoming_appointment(
-    db: Session, business_id: uuid.UUID, customer_id: uuid.UUID
-) -> Appointment | None:
-    """Fallback when the model doesn't supply an appointment_id — a WhatsApp
-    customer doesn't know their appointment's internal id, so reschedule/cancel
-    resolve "the customer's next upcoming appointment" instead."""
-    return db.scalars(
-        select(Appointment)
-        .where(
-            Appointment.business_id == business_id,
-            Appointment.customer_id == customer_id,
-            Appointment.status.in_(["booked", "rescheduled"]),
-            Appointment.starts_at > datetime.now(timezone.utc),
-        )
-        .order_by(Appointment.starts_at)
-    ).first()
-
-
 def execute_tool_call(
     db: Session,
     business_id: uuid.UUID,
@@ -207,9 +188,13 @@ def execute_tool_call(
             return ToolExecutionResult(True, "Appointment booked.", appointment.id)
 
         if tool_call.name in (RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT):
-            appointment = _find_upcoming_appointment(db, business_id, customer_id)
-            if appointment is None:
+            # A WhatsApp customer doesn't know their appointment's internal id,
+            # so reschedule/cancel resolve "the customer's next upcoming
+            # appointment" instead (DEC-034: shared with app/ai/context.py).
+            upcoming = get_upcoming_appointments(db, business_id, customer_id, limit=1)
+            if not upcoming:
                 return ToolExecutionResult(False, "No upcoming appointment found to modify.")
+            appointment = upcoming[0]
 
             if tool_call.name == RESCHEDULE_APPOINTMENT:
                 updated = appointment_service.reschedule_appointment(

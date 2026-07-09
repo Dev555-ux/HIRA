@@ -76,6 +76,20 @@ def _validate_assignee(db: Session, business_id: uuid.UUID, assigned_to: uuid.UU
         raise InvalidAssigneeError("assigned_to must be a user of this business")
 
 
+def get_lead_for_customer(
+    db: Session, business_id: uuid.UUID, customer_id: uuid.UUID
+) -> Lead | None:
+    """This customer's lead, if one exists. One lead per (business, customer)
+    for the MVP (DEC-031) — never more than one row to choose between.
+
+    Shared by create_lead's existence check, app/ai/lead_tools.py, and
+    app/ai/context.py (DEC-034) — the one place this query lives.
+    """
+    return db.scalars(
+        select(Lead).where(Lead.business_id == business_id, Lead.customer_id == customer_id)
+    ).first()
+
+
 def create_lead(
     db: Session,
     business_id: uuid.UUID,
@@ -93,9 +107,7 @@ def create_lead(
     if get_scoped(db, Customer, business_id, customer_id) is None:
         raise CustomerNotFoundError("Customer not found for this business")
 
-    existing = db.scalars(
-        select(Lead).where(Lead.business_id == business_id, Lead.customer_id == customer_id)
-    ).first()
+    existing = get_lead_for_customer(db, business_id, customer_id)
     if existing is not None:
         raise LeadAlreadyExistsError("A lead already exists for this customer")
 

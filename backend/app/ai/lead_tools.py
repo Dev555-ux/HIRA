@@ -20,18 +20,17 @@ import logging
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.llm.base import ToolCall, ToolSchema
 from app.ai.tool_results import ToolExecutionResult
-from app.models import Lead
 from app.services.leads import (
     CustomerNotFoundError,
     InvalidAssigneeError,
     LeadAlreadyExistsError,
     LeadNotFoundError,
     create_lead,
+    get_lead_for_customer,
     update_lead,
 )
 
@@ -124,14 +123,6 @@ def preview_lead_tool_call(tool_call: ToolCall) -> str:
     return f"{tool_call.name}({args})"
 
 
-def _get_lead_for_customer(
-    db: Session, business_id: uuid.UUID, customer_id: uuid.UUID
-) -> Lead | None:
-    return db.scalars(
-        select(Lead).where(Lead.business_id == business_id, Lead.customer_id == customer_id)
-    ).first()
-
-
 def execute_lead_tool_call(
     db: Session,
     business_id: uuid.UUID,
@@ -158,7 +149,7 @@ def execute_lead_tool_call(
             )
             return ToolExecutionResult(True, "Lead logged.", lead_id=lead.id)
 
-        lead = _get_lead_for_customer(db, business_id, customer_id)
+        lead = get_lead_for_customer(db, business_id, customer_id)
         if lead is None:
             return ToolExecutionResult(False, "No lead found for this customer yet.")
 
@@ -173,7 +164,7 @@ def execute_lead_tool_call(
         updated = update_lead(db, business_id, lead.id, {"next_follow_up_at": follow_up_at})
         return ToolExecutionResult(True, "Follow-up scheduled.", lead_id=updated.id)
     except LeadAlreadyExistsError:
-        existing = _get_lead_for_customer(db, business_id, customer_id)
+        existing = get_lead_for_customer(db, business_id, customer_id)
         return ToolExecutionResult(
             False,
             "A lead already exists for this customer.",

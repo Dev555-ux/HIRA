@@ -14,6 +14,12 @@ grounding, now that generate_reply() passes app/ai/tools.py's TOOL_SCHEMAS.
 v3 (Sprint 30, DEC-033): added CRM tool-usage guidance now that TOOL_SCHEMAS
 also includes app/ai/lead_tools.py's create_lead/update_lead_stage/
 set_lead_follow_up.
+
+v4 (Sprint 31, DEC-034): build_system_prompt() now takes a single
+app/ai/context.py::ConversationContext (assembled by the new Context
+Builder) instead of separate retrieved/business params, and injects
+customer/lead/upcoming-appointment context plus the conversation summary
+from app/ai/memory.py.
 """
 
 from __future__ import annotations
@@ -22,10 +28,11 @@ from datetime import datetime
 
 from zoneinfo import ZoneInfo
 
+from app.ai.context import ConversationContext
 from app.ai.llm.base import ChatMessage
-from app.models import Business, KbEntry, Message
+from app.models import Business, KbEntry, Lead, Message
 
-SYSTEM_PROMPT_VERSION = "v3"
+SYSTEM_PROMPT_VERSION = "v4"
 
 _BASE_SYSTEM_PROMPT = """\
 You are HIRA, a professional AI receptionist replying to a customer on WhatsApp \
@@ -58,6 +65,13 @@ if they ask to be contacted again at a specific time.
 - These do not take effect immediately — a human reviews the proposed \
 action first. Never state or imply a CRM change is confirmed until you are \
 told it succeeded.
+
+Using customer context:
+- If a "Customer context" section is given below, use it to personalize your \
+reply and avoid asking for information you already have (e.g. an existing \
+lead stage or an upcoming appointment).
+- If a "Conversation so far" summary is given, treat it as established fact \
+about earlier parts of this conversation — you don't need to re-derive it.
 """
 
 _NO_KNOWLEDGE = "(No relevant knowledge base entries were found for this question.)"
@@ -86,16 +100,49 @@ def _format_scheduling_context(business: Business | None) -> str:
     return "\n".join(lines)
 
 
+def _format_lead(lead: Lead | None) -> str | None:
+    if lead is None:
+        return None
+    parts = [f"stage: {lead.stage}"]
+    if lead.source:
+        parts.append(f"source: {lead.source}")
+    if lead.estimated_value is not None:
+        parts.append(f"estimated value: {lead.estimated_value}")
+    if lead.notes:
+        parts.append(f"notes: {lead.notes}")
+    if lead.next_follow_up_at:
+        parts.append(f"next follow-up: {lead.next_follow_up_at.isoformat()}")
+    return "Lead — " + ", ".join(parts)
+
+
+def _format_customer_context(context: ConversationContext) -> str:
+    lines = []
+    if context.customer.display_name:
+        lines.append(f"Name: {context.customer.display_name}")
+    lead_line = _format_lead(context.lead)
+    if lead_line:
+        lines.append(lead_line)
+    for appt in context.upcoming_appointments:
+        lines.append(
+            f"Upcoming appointment: {appt.starts_at.isoformat()} to {appt.ends_at.isoformat()}"
+        )
+    return "\n".join(lines)
+
+
 def build_system_prompt(
-    retrieved: list[KbEntry],
+    context: ConversationContext,
     *,
-    business: Business | None = None,
     availability_note: str | None = None,
 ) -> str:
-    parts = [_BASE_SYSTEM_PROMPT, f"\nKnowledge base:\n{_format_knowledge(retrieved)}"]
-    scheduling_context = _format_scheduling_context(business)
+    parts = [_BASE_SYSTEM_PROMPT, f"\nKnowledge base:\n{_format_knowledge(context.retrieved_kb)}"]
+    scheduling_context = _format_scheduling_context(context.business)
     if scheduling_context:
         parts.append(f"\nScheduling context:\n{scheduling_context}")
+    customer_context = _format_customer_context(context)
+    if customer_context:
+        parts.append(f"\nCustomer context:\n{customer_context}")
+    if context.summary:
+        parts.append(f"\nConversation so far (summary of earlier messages):\n{context.summary}")
     if availability_note:
         parts.append(f"\nAvailability check result:\n{availability_note}")
     return "\n".join(parts)

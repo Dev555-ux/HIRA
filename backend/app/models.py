@@ -98,6 +98,14 @@ class Conversation(Base):
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | escalated | closed
     window_expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # Rolling summary of this conversation's messages older than the raw
+    # history window fed to the LLM (app/ai/memory.py). NULL = no summary
+    # generated yet (conversation hasn't exceeded the window). See DEC-034.
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Watermark: how many of this conversation's oldest messages `summary`
+    # already covers. Compared against (total messages - HISTORY_LIMIT) to
+    # decide whether the summary needs regenerating. See DEC-034.
+    summary_message_count: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

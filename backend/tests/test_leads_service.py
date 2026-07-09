@@ -14,6 +14,7 @@ from app.services.leads import (
     LeadNotFoundError,
     create_lead,
     delete_lead,
+    get_lead_for_customer,
     update_lead,
 )
 
@@ -287,3 +288,27 @@ def test_delete_lead_is_tenant_scoped(db_session):
 
     assert delete_lead(db_session, biz_b.id, lead.id) is False
     assert db_session.get(Lead, lead.id) is not None
+
+
+# --- get_lead_for_customer (DEC-034 — shared by create_lead, lead_tools.py, context.py) ------
+
+
+def test_get_lead_for_customer_returns_the_lead(db_session):
+    biz, customer = _business_with_customer(db_session)
+    lead = create_lead(db_session, biz.id, customer.id)
+
+    assert get_lead_for_customer(db_session, biz.id, customer.id).id == lead.id
+
+
+def test_get_lead_for_customer_returns_none_when_no_lead_exists(db_session):
+    biz, customer = _business_with_customer(db_session)
+
+    assert get_lead_for_customer(db_session, biz.id, customer.id) is None
+
+
+def test_get_lead_for_customer_is_tenant_scoped(db_session):
+    biz_a, customer_a = _business_with_customer(db_session, "A", phone="PN_A")
+    biz_b, _ = _business_with_customer(db_session, "B", phone="PN_B")
+    create_lead(db_session, biz_a.id, customer_a.id)
+
+    assert get_lead_for_customer(db_session, biz_b.id, customer_a.id) is None

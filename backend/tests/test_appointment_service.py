@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.calendar.providers.base import CalendarConflictError, CalendarEventDraft
 from app.calendar.providers.mock import MockCalendarProvider
-from app.calendar.service import AppointmentService
+from app.calendar.service import AppointmentService, get_upcoming_appointments
 from app.models import Appointment, Business, Customer
 
 NOW = datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc)
@@ -153,3 +153,78 @@ def test_list_availability_delegates_to_provider(db_session):
     assert len(slots) == 1
     assert slots[0].starts_at == starts_at
     assert slots[0].ends_at == ends_at
+
+
+# --- get_upcoming_appointments (DEC-034 — shared by app/ai/tools.py and app/ai/context.py) --
+
+
+def test_get_upcoming_appointments_returns_soonest_first(db_session):
+    biz, customer = _business_and_customer(db_session)
+    service = _service(db_session, biz.id)
+    later = service.book_appointment(
+        customer_id=customer.id,
+        conversation_id=None,
+        starts_at=NOW + timedelta(days=2),
+        ends_at=NOW + timedelta(days=2, minutes=30),
+        summary="Later",
+    )
+    sooner = service.book_appointment(
+        customer_id=customer.id,
+        conversation_id=None,
+        starts_at=NOW + timedelta(hours=1),
+        ends_at=NOW + timedelta(hours=1, minutes=30),
+        summary="Sooner",
+    )
+
+    upcoming = get_upcoming_appointments(db_session, biz.id, customer.id)
+
+    assert [a.id for a in upcoming] == [sooner.id, later.id]
+
+
+def test_get_upcoming_appointments_respects_limit(db_session):
+    biz, customer = _business_and_customer(db_session)
+    service = _service(db_session, biz.id)
+    for i in range(3):
+        service.book_appointment(
+            customer_id=customer.id,
+            conversation_id=None,
+            starts_at=NOW + timedelta(days=i + 1),
+            ends_at=NOW + timedelta(days=i + 1, minutes=30),
+            summary=f"Appt {i}",
+        )
+
+    upcoming = get_upcoming_appointments(db_session, biz.id, customer.id, limit=2)
+
+    assert len(upcoming) == 2
+
+
+def test_get_upcoming_appointments_excludes_past_and_cancelled(db_session):
+    biz, customer = _business_and_customer(db_session)
+    service = _service(db_session, biz.id)
+    cancelled = service.book_appointment(
+        customer_id=customer.id,
+        conversation_id=None,
+        starts_at=NOW + timedelta(hours=1),
+        ends_at=NOW + timedelta(hours=1, minutes=30),
+        summary="Will cancel",
+    )
+    service.cancel_appointment(appointment_id=cancelled.id)
+    past = Appointment(
+        business_id=biz.id,
+        customer_id=customer.id,
+        starts_at=NOW - timedelta(days=1),
+        ends_at=NOW - timedelta(days=1) + timedelta(minutes=30),
+        status="booked",
+    )
+    db_session.add(past)
+    db_session.commit()
+
+    upcoming = get_upcoming_appointments(db_session, biz.id, customer.id)
+
+    assert upcoming == []
+
+
+def test_get_upcoming_appointments_empty_for_customer_with_none(db_session):
+    biz, customer = _business_and_customer(db_session)
+
+    assert get_upcoming_appointments(db_session, biz.id, customer.id) == []
