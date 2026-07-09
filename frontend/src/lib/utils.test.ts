@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { cn, describeWhatsAppConnection, formatRelativeTime, toDateInputValue } from "./utils";
+import {
+  cn,
+  describeWhatsAppConnection,
+  formatRelativeTime,
+  toDateInputValue,
+  toDateTimeInputValue,
+} from "./utils";
 
 describe("cn", () => {
   it("merges class names and dedupes conflicting tailwind utilities", () => {
@@ -62,5 +68,15 @@ describe("toDateInputValue", () => {
 
   it("returns an empty string for an invalid date", () => {
     expect(toDateInputValue("not-a-date")).toBe("");
+  });
+});
+
+describe("toDateTimeInputValue", () => {
+  it("extracts the YYYY-MM-DDTHH:mm portion of an ISO datetime", () => {
+    expect(toDateTimeInputValue("2026-08-01T10:30:00")).toBe("2026-08-01T10:30");
+  });
+
+  it("returns an empty string for an invalid date", () => {
+    expect(toDateTimeInputValue("not-a-date")).toBe("");
   });
 });

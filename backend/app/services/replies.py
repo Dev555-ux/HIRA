@@ -24,8 +24,11 @@ from sqlalchemy.orm import Session
 
 from app.ai.embeddings import EmbeddingProvider
 from app.ai.llm import LLMProvider
+from app.ai.llm.base import ToolCall
 from app.ai.orchestrator import generate_reply
 from app.ai.prompts import SYSTEM_PROMPT_VERSION
+from app.ai.tools import execute_tool_call, response_to_message_fields
+from app.calendar.providers.base import CalendarError
 from app.db.tenant import get_scoped
 from app.models import Business, Conversation, Customer, Escalation, Message
 from app.services.messaging import WhatsAppSendError, send_text
@@ -48,16 +51,41 @@ def approve_and_send(
     *,
     sender: Callable[[str, str, str], str] = send_text,
 ) -> Message:
-    """Send a pending outbound reply to the customer and mark it sent.
+    """Approve a pending reply: if it's a proposed calendar action
+    (message.type == "tool_call" — DEC-032), execute it now, then send the
+    (possibly human-edited) confirmation body to the customer and mark sent.
 
     Raises ValueError if the message isn't an approvable pending reply for this
-    business. Raises WhatsAppSendError (after marking the message failed) if the
-    send fails.
+    business. Raises CalendarError (after marking the message failed) if a
+    proposed tool call fails to execute (e.g. the slot was taken meanwhile).
+    Raises WhatsAppSendError (after marking the message failed) if the send
+    fails.
     """
     message = _get_pending_reply(db, business_id, message_id)
     conversation = db.get(Conversation, message.conversation_id)
     business = db.get(Business, business_id)
     customer = db.get(Customer, conversation.customer_id)
+
+    if message.type == "tool_call":
+        tool_call = ToolCall(
+            id="approved",
+            name=message.ai_meta["tool_name"],
+            arguments=message.ai_meta["tool_arguments"],
+        )
+        result = execute_tool_call(
+            db, business_id, tool_call, customer_id=customer.id, conversation_id=conversation.id
+        )
+        if not result.success:
+            message.status = "failed"
+            db.commit()
+            logger.warning(
+                "Approved tool call %s failed for message %s: %s",
+                tool_call.name,
+                message_id,
+                result.message,
+            )
+            raise CalendarError(result.message)
+        message.ai_meta = {**message.ai_meta, "tool_result": result.message}
 
     try:
         wa_message_id = sender(business.whatsapp_phone_number_id, customer.wa_phone, message.body)
@@ -152,12 +180,15 @@ def regenerate_draft(
     response, retrieved = generate_reply(
         db, conversation, user_message.body, llm=llm, embedding=embedding
     )
-    message.body = response.text
+    message_type, body, extra_ai_meta = response_to_message_fields(response)
+    message.type = message_type
+    message.body = body
     message.ai_meta = {
         "model": response.model,
         "prompt_version": SYSTEM_PROMPT_VERSION,
         "retrieved_count": len(retrieved),
         "regenerated": True,
+        **extra_ai_meta,
     }
     db.commit()
     logger.info("Regenerated draft %s for business %s", message_id, business_id)

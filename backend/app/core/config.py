@@ -71,6 +71,19 @@ class Settings(BaseSettings):
     # requests as authenticated. Must never be set in production.
     allow_mock_auth: bool = False
 
+    # Google Calendar (Sprint 29, DEC-032). Empty by default like the other API
+    # keys above; app/calendar/oauth.py and credentials.py raise a clear,
+    # actionable error if a real connect/encrypt is attempted without these set.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_oauth_redirect_uri: str = ""
+    # Fernet key (cryptography.fernet.Fernet.generate_key()) encrypting stored
+    # refresh tokens at rest; also HMAC-signs the OAuth `state` param.
+    calendar_encryption_key: str = ""
+    # Where the OAuth callback (a Google browser redirect, not an API call)
+    # sends the user back to. Matches main.py's dev CORS origin.
+    frontend_url: str = "http://localhost:3000"
+
 
 def _load_settings(**overrides) -> Settings:
     """Instantiate Settings with a clear, actionable error on failure.

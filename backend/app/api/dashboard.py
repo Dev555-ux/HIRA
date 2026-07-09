@@ -16,7 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.llm import LLMError
+from app.api.calendar import map_calendar_error
 from app.auth.dependencies import Principal, get_current_principal
+from app.calendar.providers.base import CalendarError
 from app.db.session import get_db
 from app.db.tenant import tenant_query
 from app.models import Conversation, Customer, Message
@@ -124,6 +126,10 @@ def approve_message(
     except ValueError as exc:
         # Not this business's pending message (or doesn't exist). Don't reveal which.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found") from exc
+    except CalendarError as exc:
+        # A proposed calendar action (message.type == "tool_call") failed to
+        # execute on approval — e.g. the slot was taken meanwhile (DEC-032).
+        raise map_calendar_error(exc) from exc
     except WhatsAppSendError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to send reply"

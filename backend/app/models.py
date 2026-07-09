@@ -47,6 +47,11 @@ class Business(Base):
     whatsapp_connection_status: Mapped[str] = mapped_column(String(24), default="not_connected")
     website_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     trial_ends_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # {"mon": {"open": "09:00", "close": "17:00"}, ..., "sun": null} — a day's
+    # value is null for "closed". NULL (the column, not a day) means "not
+    # configured yet" — availability filtering skips the working-hours step
+    # rather than blocking all bookings. See DEC-032.
+    working_hours: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

@@ -1,0 +1,246 @@
+"""Booking tool definitions and dispatcher — the AI's calendar actions (DEC-032).
+
+Tool schemas are passed to the LLM alongside the system prompt so the model
+can propose booking/reschedule/cancel actions instead of only generating
+text. `execute_tool_call()` is the only place a proposed action becomes a
+real calendar write, and it always goes through `AppointmentService`
+(`app/calendar/factory.py`), never a vendor SDK directly.
+
+`check_availability` is read-only and always safe to execute immediately
+(see `execute_check_availability`, used by `app/ai/orchestrator.py`).
+`book_appointment`/`reschedule_appointment`/`cancel_appointment` write to the
+calendar — DEC-032 gates those behind the existing Pending Approvals
+workflow in Assisted Mode (see `app/ai/processing.py`); only Autonomous Mode,
+or an already-approved pending draft, calls `execute_tool_call` for these.
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.ai.llm.base import LLMResponse, ToolCall, ToolSchema
+from app.calendar.factory import get_appointment_service
+from app.calendar.providers.base import CalendarError
+from app.models import Appointment
+
+logger = logging.getLogger(__name__)
+
+CHECK_AVAILABILITY = "check_availability"
+BOOK_APPOINTMENT = "book_appointment"
+RESCHEDULE_APPOINTMENT = "reschedule_appointment"
+CANCEL_APPOINTMENT = "cancel_appointment"
+
+TOOL_SCHEMAS = [
+    ToolSchema(
+        name=CHECK_AVAILABILITY,
+        description=(
+            "Check which time slots are free on the business's calendar within a "
+            "date/time range, before proposing a booking. Always call this before "
+            "book_appointment unless the customer already confirmed a specific slot."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "starts_at": {
+                    "type": "string",
+                    "description": "ISO 8601 datetime, start of the range to check",
+                },
+                "ends_at": {
+                    "type": "string",
+                    "description": "ISO 8601 datetime, end of the range to check",
+                },
+            },
+            "required": ["starts_at", "ends_at"],
+        },
+    ),
+    ToolSchema(
+        name=BOOK_APPOINTMENT,
+        description=(
+            "Propose booking a new appointment for the customer, once a specific "
+            "free slot has been confirmed with them. This does not send immediately"
+            " — a human reviews it first."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "starts_at": {
+                    "type": "string",
+                    "description": "ISO 8601 datetime the appointment starts",
+                },
+                "ends_at": {
+                    "type": "string",
+                    "description": "ISO 8601 datetime the appointment ends",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Short description, e.g. 'Dental cleaning'",
+                },
+            },
+            "required": ["starts_at", "ends_at", "summary"],
+        },
+    ),
+    ToolSchema(
+        name=RESCHEDULE_APPOINTMENT,
+        description="Propose moving the customer's existing upcoming appointment to a new time.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "starts_at": {"type": "string", "description": "New ISO 8601 start datetime"},
+                "ends_at": {"type": "string", "description": "New ISO 8601 end datetime"},
+            },
+            "required": ["starts_at", "ends_at"],
+        },
+    ),
+    ToolSchema(
+        name=CANCEL_APPOINTMENT,
+        description="Propose cancelling the customer's existing upcoming appointment.",
+        parameters={"type": "object", "properties": {}},
+    ),
+]
+
+
+@dataclass
+class ToolExecutionResult:
+    success: bool
+    message: str
+    appointment_id: uuid.UUID | None = None
+
+
+def preview_tool_call(tool_call: ToolCall) -> str:
+    """Human-readable, editable preview shown in the Pending queue before approval."""
+    args = tool_call.arguments
+    if tool_call.name == BOOK_APPOINTMENT:
+        return (
+            f"Book: {args.get('summary', 'Appointment')} "
+            f"({args.get('starts_at', '?')} – {args.get('ends_at', '?')})"
+        )
+    if tool_call.name == RESCHEDULE_APPOINTMENT:
+        return f"Reschedule your appointment to {args.get('starts_at', '?')} – {args.get('ends_at', '?')}"
+    if tool_call.name == CANCEL_APPOINTMENT:
+        return "Cancel your upcoming appointment"
+    return f"{tool_call.name}({args})"
+
+
+def response_to_message_fields(response: LLMResponse) -> tuple[str, str, dict]:
+    """(type, body, extra_ai_meta) for storing an LLMResponse as a Message.
+
+    Shared by app/ai/processing.py (initial generation) and
+    app/services/replies.py (regenerate), so a regenerated draft can flip
+    between a plain-text reply and a proposed tool call exactly like the
+    first generation did — no separate code path for each.
+    """
+    if response.tool_calls:
+        tool_call = response.tool_calls[0]  # MVP: one proposed action per turn
+        if tool_call.name == CHECK_AVAILABILITY:
+            # check_availability is read-only and meant to be resolved
+            # entirely inside generate_reply()'s bounded round-trip
+            # (app/ai/orchestrator.py). Reaching here means the model asked
+            # again after that round-trip (observed live with Groq/Llama on
+            # an unconnected calendar) — there's nothing meaningful to
+            # approve for a read-only lookup, so this falls back to plain
+            # text rather than surfacing a confusing "pending" availability
+            # check that approve_and_send couldn't execute anyway.
+            return "text", response.text or "Let me check on that and get back to you.", {}
+        return (
+            "tool_call",
+            preview_tool_call(tool_call),
+            {"tool_name": tool_call.name, "tool_arguments": tool_call.arguments},
+        )
+    return "text", response.text, {}
+
+
+def _find_upcoming_appointment(
+    db: Session, business_id: uuid.UUID, customer_id: uuid.UUID
+) -> Appointment | None:
+    """Fallback when the model doesn't supply an appointment_id — a WhatsApp
+    customer doesn't know their appointment's internal id, so reschedule/cancel
+    resolve "the customer's next upcoming appointment" instead."""
+    return db.scalars(
+        select(Appointment)
+        .where(
+            Appointment.business_id == business_id,
+            Appointment.customer_id == customer_id,
+            Appointment.status.in_(["booked", "rescheduled"]),
+            Appointment.starts_at > datetime.now(timezone.utc),
+        )
+        .order_by(Appointment.starts_at)
+    ).first()
+
+
+def execute_tool_call(
+    db: Session,
+    business_id: uuid.UUID,
+    tool_call: ToolCall,
+    *,
+    customer_id: uuid.UUID,
+    conversation_id: uuid.UUID | None,
+) -> ToolExecutionResult:
+    """Executes a write tool (book/reschedule/cancel) for real.
+
+    Never call this for check_availability — see execute_check_availability.
+    """
+    try:
+        appointment_service = get_appointment_service(db, business_id)
+
+        if tool_call.name == BOOK_APPOINTMENT:
+            appointment = appointment_service.book_appointment(
+                customer_id=customer_id,
+                conversation_id=conversation_id,
+                starts_at=datetime.fromisoformat(tool_call.arguments["starts_at"]),
+                ends_at=datetime.fromisoformat(tool_call.arguments["ends_at"]),
+                summary=tool_call.arguments.get("summary", "Appointment"),
+            )
+            return ToolExecutionResult(True, "Appointment booked.", appointment.id)
+
+        if tool_call.name in (RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT):
+            appointment = _find_upcoming_appointment(db, business_id, customer_id)
+            if appointment is None:
+                return ToolExecutionResult(False, "No upcoming appointment found to modify.")
+
+            if tool_call.name == RESCHEDULE_APPOINTMENT:
+                updated = appointment_service.reschedule_appointment(
+                    appointment_id=appointment.id,
+                    new_starts_at=datetime.fromisoformat(tool_call.arguments["starts_at"]),
+                    new_ends_at=datetime.fromisoformat(tool_call.arguments["ends_at"]),
+                )
+                return ToolExecutionResult(True, "Appointment rescheduled.", updated.id)
+
+            updated = appointment_service.cancel_appointment(appointment_id=appointment.id)
+            return ToolExecutionResult(True, "Appointment cancelled.", updated.id)
+
+        return ToolExecutionResult(False, f"Unknown tool '{tool_call.name}'.")
+    except CalendarError as exc:
+        logger.warning("Tool call %s failed for business %s: %s", tool_call.name, business_id, exc)
+        return ToolExecutionResult(False, str(exc))
+    except (KeyError, ValueError) as exc:
+        logger.warning("Tool call %s had invalid arguments: %s", tool_call.name, exc)
+        return ToolExecutionResult(False, "Could not understand the requested date/time.")
+
+
+def execute_check_availability(db: Session, business_id: uuid.UUID, tool_call: ToolCall) -> str:
+    """Read-only — always safe to execute immediately, regardless of Assisted/
+    Autonomous mode. Returns a short natural-language note for the system
+    prompt (not a ToolExecutionResult — there is nothing here to approve)."""
+    try:
+        appointment_service = get_appointment_service(db, business_id)
+        slots = appointment_service.list_availability(
+            starts_at=datetime.fromisoformat(tool_call.arguments["starts_at"]),
+            ends_at=datetime.fromisoformat(tool_call.arguments["ends_at"]),
+        )
+    except CalendarError as exc:
+        return f"(Calendar unavailable: {exc}. Do not guess availability — offer to have a human follow up.)"
+    except (KeyError, ValueError):
+        return "(Could not understand the requested date/time range.)"
+
+    if not slots:
+        return "(No free slots in the requested range.)"
+    formatted = "; ".join(
+        f"{s.starts_at.isoformat()} to {s.ends_at.isoformat()}" for s in slots[:10]
+    )
+    return f"(Available slots: {formatted})"

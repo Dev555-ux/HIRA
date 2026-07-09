@@ -10,9 +10,18 @@ from __future__ import annotations
 import logging
 import time
 
-from app.ai.llm.base import ChatMessage, LLMError, LLMProvider, LLMResponse
+from app.ai.llm.base import ChatMessage, LLMError, LLMProvider, LLMResponse, ToolCall, ToolSchema
 
 logger = logging.getLogger(__name__)
+
+
+def _to_anthropic_tools(tools: list[ToolSchema]) -> list[dict]:
+    """Anthropic's Messages API tool shape: {"name", "description", "input_schema"}
+    — "input_schema" instead of OpenAI-compatible "parameters"."""
+    return [
+        {"name": tool.name, "description": tool.description, "input_schema": tool.parameters}
+        for tool in tools
+    ]
 
 
 class ClaudeProvider(LLMProvider):
@@ -34,7 +43,12 @@ class ClaudeProvider(LLMProvider):
         self._max_attempts = max_attempts
 
     def generate(
-        self, *, system: str, messages: list[ChatMessage], max_tokens: int | None = None
+        self,
+        *,
+        system: str,
+        messages: list[ChatMessage],
+        max_tokens: int | None = None,
+        tools: list[ToolSchema] | None = None,
     ) -> LLMResponse:
         from anthropic import APIConnectionError, APIStatusError, RateLimitError
 
@@ -48,9 +62,15 @@ class ClaudeProvider(LLMProvider):
                     max_tokens=max_tokens or self._default_max_tokens,
                     system=system,
                     messages=payload_messages,
+                    **({"tools": _to_anthropic_tools(tools)} if tools else {}),
                 )
                 text = "".join(block.text for block in resp.content if block.type == "text")
-                return LLMResponse(text=text, model=self._model, raw=resp)
+                tool_calls = [
+                    ToolCall(id=block.id, name=block.name, arguments=block.input)
+                    for block in resp.content
+                    if block.type == "tool_use"
+                ] or None
+                return LLMResponse(text=text, model=self._model, raw=resp, tool_calls=tool_calls)
             except (APIConnectionError, RateLimitError) as exc:
                 last_error = exc
                 logger.warning("Claude transient error (attempt %d): %s", attempt, exc)

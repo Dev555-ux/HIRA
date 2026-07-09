@@ -17,6 +17,10 @@ dependencies = [
     "groq>=0.11",
     "pyjwt[crypto]>=2.8",
     "beautifulsoup4>=4.12",
+    "cryptography>=43",
+    "google-auth>=2.34",
+    "google-auth-oauthlib>=1.2",
+    "google-api-python-client>=2.146",
 ]
 
 [tool.setuptools.packages.find]

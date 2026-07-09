@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.llm import LLMResponse
 from app.ai.orchestrator import generate_reply
+from app.ai.tools import response_to_message_fields
 from app.models import Conversation, Customer, KbEntry, Message
 
 PLAYGROUND_PHONE = "__playground__"
@@ -50,7 +51,9 @@ def get_or_create_playground_conversation(db: Session, business_id: uuid.UUID) -
         )
     ).first()
     if conversation is None:
-        conversation = Conversation(business_id=business_id, customer_id=customer.id, status="active")
+        conversation = Conversation(
+            business_id=business_id, customer_id=customer.id, status="active"
+        )
         db.add(conversation)
         db.flush()
     return conversation
@@ -58,12 +61,19 @@ def get_or_create_playground_conversation(db: Session, business_id: uuid.UUID) -
 
 def playground_reply(
     db: Session, business_id: uuid.UUID, user_text: str
-) -> tuple[LLMResponse, list[KbEntry]]:
+) -> tuple[LLMResponse, list[KbEntry], str]:
     """Run one playground turn through the unmodified production reply pipeline.
 
-    Returns (response, retrieved_entries) — unlike the architecture doc's
-    sketch, the retrieved entries are surfaced (not discarded) so the
+    Returns (response, retrieved_entries, body) — unlike the architecture
+    doc's sketch, the retrieved entries are surfaced (not discarded) so the
     Playground UI can show which Knowledge Base entries grounded the answer.
+    `body` is the human-readable text actually stored/shown: if the model
+    proposed a calendar action (DEC-032) `response.text` is empty, so this
+    uses the same `response_to_message_fields()` preview `app/ai/processing.py`
+    uses — without it, a proposed booking would show as a blank reply here,
+    a real gap found while live-testing this sprint. The playground never
+    executes a proposed action (no Assisted-Mode approval gate here at all,
+    but there's also no real customer/calendar write to make sense of).
     """
     conversation = get_or_create_playground_conversation(db, business_id)
 
@@ -79,17 +89,18 @@ def playground_reply(
     db.flush()
 
     response, retrieved = generate_reply(db, conversation, user_text)
+    message_type, body, extra_ai_meta = response_to_message_fields(response)
 
     outbound = Message(
         conversation_id=conversation.id,
         business_id=business_id,
         direction="outbound",
-        body=response.text,
-        type="text",
+        body=body,
+        type=message_type,
         status="sent",
-        ai_meta={"model": response.model, "retrieved_count": len(retrieved)},
+        ai_meta={"model": response.model, "retrieved_count": len(retrieved), **extra_ai_meta},
     )
     db.add(outbound)
     db.commit()
 
-    return response, retrieved
+    return response, retrieved, body

@@ -11,10 +11,11 @@ as-is, with the system prompt prepended as a "system" message.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 
-from app.ai.llm.base import ChatMessage, LLMError, LLMProvider, LLMResponse
+from app.ai.llm.base import ChatMessage, LLMError, LLMProvider, LLMResponse, ToolCall, ToolSchema
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,35 @@ def _to_chat_messages(system: str, messages: list[ChatMessage]) -> list[dict]:
     out: list[dict] = [{"role": "system", "content": system}]
     out.extend({"role": m.role, "content": m.content} for m in messages)
     return out
+
+
+def _to_openai_tools(tools: list[ToolSchema]) -> list[dict]:
+    """Groq's chat completions API is OpenAI-compatible — tools use the
+    {"type": "function", "function": {...}} wrapper shape."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
+            },
+        }
+        for tool in tools
+    ]
+
+
+def _parse_tool_calls(message) -> list[ToolCall] | None:
+    if not getattr(message, "tool_calls", None):
+        return None
+    return [
+        ToolCall(
+            id=tc.id,
+            name=tc.function.name,
+            arguments=json.loads(tc.function.arguments) if tc.function.arguments else {},
+        )
+        for tc in message.tool_calls
+    ]
 
 
 class GroqProvider(LLMProvider):
@@ -44,7 +74,12 @@ class GroqProvider(LLMProvider):
         self._max_attempts = max_attempts
 
     def generate(
-        self, *, system: str, messages: list[ChatMessage], max_tokens: int | None = None
+        self,
+        *,
+        system: str,
+        messages: list[ChatMessage],
+        max_tokens: int | None = None,
+        tools: list[ToolSchema] | None = None,
     ) -> LLMResponse:
         from groq import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 
@@ -57,9 +92,15 @@ class GroqProvider(LLMProvider):
                     model=self._model,
                     messages=payload,
                     max_tokens=max_tokens or self._default_max_tokens,
+                    **({"tools": _to_openai_tools(tools)} if tools else {}),
                 )
-                text = resp.choices[0].message.content or ""
-                return LLMResponse(text=text, model=self._model, raw=resp)
+                message = resp.choices[0].message
+                return LLMResponse(
+                    text=message.content or "",
+                    model=self._model,
+                    raw=resp,
+                    tool_calls=_parse_tool_calls(message),
+                )
             except (APIConnectionError, APITimeoutError, RateLimitError) as exc:
                 last_error = exc
                 logger.warning("Groq transient error (attempt %d): %s", attempt, exc)

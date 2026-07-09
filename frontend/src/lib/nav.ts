@@ -1,5 +1,7 @@
 import {
   BarChart3,
+  Calendar,
+  CalendarClock,
   Inbox,
   LayoutDashboard,
   BookOpen,
@@ -23,6 +25,8 @@ export const navItems: NavItem[] = [
   { href: "/knowledge-base", label: "Knowledge Base", icon: BookOpen },
   { href: "/playground", label: "Playground", icon: Sparkles },
   { href: "/customers", label: "Customers", icon: Users },
+  { href: "/appointments", label: "Appointments", icon: CalendarClock },
+  { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

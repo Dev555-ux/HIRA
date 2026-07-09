@@ -22,10 +22,29 @@ class ChatMessage:
 
 
 @dataclass
+class ToolSchema:
+    """A tool the model may call — name/description/JSON-schema parameters,
+    the common shape both OpenAI-compatible (Groq) and Anthropic (Claude)
+    tool-calling APIs accept with minimal reshaping. See app/ai/tools.py."""
+
+    name: str
+    description: str
+    parameters: dict
+
+
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict
+
+
+@dataclass
 class LLMResponse:
     text: str
     model: str
     raw: Any | None = field(default=None, repr=False)
+    tool_calls: list[ToolCall] | None = None
 
 
 class LLMError(RuntimeError):
@@ -35,6 +54,15 @@ class LLMError(RuntimeError):
 class LLMProvider(ABC):
     @abstractmethod
     def generate(
-        self, *, system: str, messages: list[ChatMessage], max_tokens: int | None = None
+        self,
+        *,
+        system: str,
+        messages: list[ChatMessage],
+        max_tokens: int | None = None,
+        tools: list[ToolSchema] | None = None,
     ) -> LLMResponse:
-        """Generate a reply given a system prompt and conversation messages."""
+        """Generate a reply given a system prompt and conversation messages.
+
+        If `tools` is given and the model chooses to call one, the returned
+        LLMResponse.tool_calls is non-empty (LLMResponse.text may be empty).
+        """

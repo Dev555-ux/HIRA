@@ -44,3 +44,12 @@ export function toDateInputValue(iso: string | null): string {
   if (Number.isNaN(date.getTime())) return "";
   return iso.slice(0, 10);
 }
+
+// Converts a backend ISO datetime into the "YYYY-MM-DDTHH:mm" value an
+// <input type="datetime-local"> expects. Used for Appointment.starts_at/ends_at
+// (naive timestamps, so no timezone conversion is needed — see DEC-032).
+export function toDateTimeInputValue(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return iso.slice(0, 16);
+}

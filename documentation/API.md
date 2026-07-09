@@ -3,7 +3,7 @@
 Status: **Accepted** (2026-06-29). See `DECISIONS.md` DEC-014, DEC-025.
 Base path: `/api/v1`. Auth: Clerk JWT (dashboard endpoints) / Meta signature (webhook). All dashboard endpoints are tenant-scoped to the caller's `business_id`.
 
-**Implemented so far** (as of 2026-07-09): `GET /api/v1/pending`; `/messages/{id}/approve`, `/draft` (`PATCH`), `/reject`, `/regenerate`, `/escalate` (see Assisted-Mode Approvals below — Sprint 27); `GET/POST/PATCH/DELETE /api/v1/kb` (+ `/kb/website`); `GET/POST /api/v1/onboarding/*` (+ `/playground/message`); `GET/PATCH /api/v1/settings` (AI Reply Mode only); `GET /api/v1/conversations`, `/conversations/{id}`, `/conversations/{id}/messages` (see the Conversations section below for exact query params — this is a smaller slice of the originally-sketched Conversations API: the two `POST` actions there are not built); `GET/POST/PATCH/DELETE /api/v1/leads` and `GET /api/v1/customers`, `/customers/{id}`, `/customers/{id}/timeline` (CRM Foundation — Sprint 28, see below and DEC-031). All protected by Clerk JWT via `get_current_principal` (resolves the Clerk user → local `User` → `business_id`). Cross-tenant access returns `404`. Verification: RS256 against Clerk JWKS (`CLERK_JWKS_URL`). A dedicated `GET /escalations` list endpoint is still to be built — escalations are created (Sprint 27) but not yet listable. Remaining endpoints below (Appointments/Calendar, most of Settings, Users) are still to be built.
+**Implemented so far** (as of 2026-07-10): `GET /api/v1/pending`; `/messages/{id}/approve`, `/draft` (`PATCH`), `/reject`, `/regenerate`, `/escalate` (see Assisted-Mode Approvals below — Sprint 27); `GET/POST/PATCH/DELETE /api/v1/kb` (+ `/kb/website`); `GET/POST /api/v1/onboarding/*` (+ `/playground/message`); `GET/PATCH /api/v1/settings` (AI Reply Mode only); `GET /api/v1/conversations`, `/conversations/{id}`, `/conversations/{id}/messages` (see the Conversations section below for exact query params — this is a smaller slice of the originally-sketched Conversations API: the two `POST` actions there are not built); `GET/POST/PATCH/DELETE /api/v1/leads` and `GET /api/v1/customers`, `/customers/{id}`, `/customers/{id}/timeline` (CRM Foundation — Sprint 28, see below and DEC-031); `/api/v1/calendar/*` (OAuth connect/callback, status, disconnect, settings, availability) and `GET/POST /api/v1/appointments` (+ `/{id}/reschedule`, `/{id}/cancel`) (Google Calendar Integration — Sprint 29, see below and DEC-032). All protected by Clerk JWT via `get_current_principal` (resolves the Clerk user → local `User` → `business_id`), **except** the calendar OAuth callback, which is a public Google browser redirect authenticated by a signed `state` param instead. Cross-tenant access returns `404`. Verification: RS256 against Clerk JWKS (`CLERK_JWKS_URL`). A dedicated `GET /escalations` list endpoint is still to be built — escalations are created (Sprint 27) but not yet listable. Remaining endpoints below (most of Settings, Users) are still to be built.
 
 ---
 
@@ -67,22 +67,42 @@ The full "Pending Approvals V2" copilot workflow (Sprint 27, 2026-07-09): every 
 
 - `GET /pending` — **implemented**. Outbound messages awaiting approval, oldest first. Each row now also includes `customer` (`id`/`display_name`/`wa_phone`, joined via the conversation) and `conversation_preview` (the most recent inbound message in that conversation) — additive fields, not a breaking change to the existing shape.
 - `PATCH /messages/{id}/draft` — **implemented**. Body: `{"body": "<edited text>"}`. Edits the pending draft's text in place before approval. Validates non-blank (`422`) and a max length of 4096 characters (`422`) — WhatsApp Cloud API's text message body limit, the same boundary `send_text` would eventually hit. Returns the updated `{id, body, status}`.
-- `POST /messages/{id}/approve` — **implemented**. Sends the (possibly just-edited) draft via WhatsApp and marks it `sent`, or `failed` if the send errors (`502`).
-- `POST /messages/{id}/reject` — **implemented**. Marks the message `rejected`; never calls the messaging service. Returns `{id, status}`.
-- `POST /messages/{id}/regenerate` — **implemented**. Re-runs the unmodified `generate_reply()` pipeline (same retrieval + prompt + LLM call the WhatsApp webhook uses) against the customer message that originally triggered this draft, and replaces this message's `body`/`ai_meta` in place — conversation history and the approval workflow are untouched. `502` if the LLM call fails; `404` if there's no customer message to respond to. Returns `{id, body, status}`.
+- `POST /messages/{id}/approve` — **implemented**. If `message.type == "tool_call"` (a proposed calendar action — Sprint 29, DEC-032), executes it via `AppointmentService` first (`409`/`404`/etc. from `map_calendar_error` if that fails, leaving the message `failed`); either way, then sends the (possibly just-edited) `body` via WhatsApp and marks it `sent`, or `failed` if the send errors (`502`).
+- `POST /messages/{id}/reject` — **implemented**. Marks the message `rejected`; never calls the messaging service, never executes a proposed tool call. Returns `{id, status}`.
+- `POST /messages/{id}/regenerate` — **implemented**. Re-runs the unmodified `generate_reply()` pipeline (same retrieval + prompt + LLM call the WhatsApp webhook uses, including the calendar tool schemas as of Sprint 29) against the customer message that originally triggered this draft, and replaces this message's `body`/`type`/`ai_meta` in place — a draft can flip between plain text and a proposed tool call on regenerate. Conversation history and the approval workflow are untouched. `502` if the LLM call fails; `404` if there's no customer message to respond to. Returns `{id, body, status}`.
 - `POST /messages/{id}/escalate` — **implemented**. Marks the message `escalated`, marks the parent `Conversation.status = "escalated"` (a previously-unused, already-modeled status value), and creates an `Escalation` row (`reason="other"` — no UI collects a specific reason yet). Conversation history is untouched. Returns `{id, status, escalation: {id, conversation_id, reason, status, created_at}}`.
 
-`Message.status` values as of Sprint 27: `received | pending_approval | sent | failed | rejected | escalated` — all plain strings (no CHECK constraint / migration needed to add a value, per `DATABASE.md`).
+`Message.status` values as of Sprint 27: `received | pending_approval | sent | failed | rejected | escalated` — all plain strings (no CHECK constraint / migration needed to add a value, per `DATABASE.md`). `Message.type` gained `tool_call` in Sprint 29 (DEC-032) alongside the original `text` — a pending `tool_call` message's `body` is a human-readable, editable preview/confirmation string, and `ai_meta` carries `{tool_name, tool_arguments}`.
 
 ### Escalations
 - `GET /escalations?status=open` — **not implemented**. `Escalation` rows are created by `POST /messages/{id}/escalate` (above) but there is no list/detail endpoint yet — see `.claude/DECISIONS.md` DEC-030.
 - `POST /escalations/{id}/resolve` — **not implemented**.
 
-### Appointments / Calendar
-- `GET /appointments?from=&to=` — calendar view.
-- `POST /appointments` — manual create.
-- `PATCH /appointments/{id}` — reschedule/cancel.
-- `GET /calendar/availability?date=` — free slots (proxies Google Calendar).
+### Calendar
+
+Google Calendar Integration (Sprint 29, 2026-07-10, see DEC-032). Booking always goes through `AppointmentService` (`app/calendar/factory.py::get_appointment_service`) — there is no local-only appointment path; a business with no connected calendar gets `409` on every write below. `CalendarError` subtypes map to HTTP statuses uniformly across this section and Appointments (`app/api/calendar.py::map_calendar_error`): not-configured (missing `GOOGLE_CLIENT_ID`/`CALENDAR_ENCRYPTION_KEY`) → `503`; not-connected / auth failure (expired or revoked token) / slot conflict → `409`; event not found → `404`; provider unavailable → `502`.
+
+- `GET /calendar/settings` — **implemented**. Returns `{timezone, working_hours}` (see `Business.working_hours` in `DATABASE.md`/`ARCHITECTURE.md`; `null` means not configured).
+- `PATCH /calendar/settings` — **implemented**. Body: any subset of `{timezone, working_hours}`; at least one required (`422` on an empty body). `timezone` validated as a real IANA zone (`zoneinfo`); `working_hours` validated per-day (`HH:MM` 24-hour format, unknown day keys rejected) — both `422` on failure.
+- `GET /calendar/oauth/connect` — **implemented**. Authenticated; returns `{authorization_url}` — the Google consent-screen URL to redirect the browser to, with an HMAC-signed `state` param encoding the business id (10-minute expiry). `503` if OAuth isn't configured on this deployment.
+- `GET /calendar/oauth/callback` — **implemented**. **Public** — Google redirects the user's browser here directly after consent, with no Clerk session; authenticated instead by verifying `state`'s signature (same pattern as the WhatsApp webhook's HMAC signature, not a Bearer token). Exchanges the authorization `code` for a refresh token, encrypts and stores it, then **redirects** (not a JSON response) to `{FRONTEND_URL}/calendar?calendar=connected` or `?calendar=error&message=...`.
+- `GET /calendar/status` — **implemented**. `{connected: bool, calendar_id: string | null}`.
+- `DELETE /calendar/disconnect` — **implemented**. Removes the stored `CalendarCredential`. `204` whether or not one existed.
+- `GET /calendar/availability?starts_at=&ends_at=` — **implemented**. Free slots (`[{starts_at, ends_at}, ...]`) within the given window — from `AppointmentService.list_availability()`, which computes Google's real free/busy and then clips it to the business's `working_hours`/`timezone` if configured. `422` if `ends_at <= starts_at`.
+
+### Appointments
+
+- `GET /appointments?from=&to=` — **implemented**. Both optional; filters `Appointment.starts_at`. No pagination — the date range is the natural bound (unlike the paginated list endpoints elsewhere in this API).
+- `POST /appointments` — **implemented**. Body: `{customer_id, starts_at, ends_at, summary, conversation_id?}`. `404` if `customer_id` doesn't belong to this business; `422` if `ends_at <= starts_at`; `409` if the calendar isn't connected or the slot is taken (`GoogleCalendarProvider.create_event` pre-checks `freebusy` before inserting, since Google's API doesn't reject overlaps on its own).
+- `GET /appointments/{id}` — **implemented**.
+- `POST /appointments/{id}/reschedule` — **implemented**. Body: `{starts_at, ends_at}`. `404` if not found/another business's; `422` if `ends_at <= starts_at`.
+- `POST /appointments/{id}/cancel` — **implemented**. No body.
+
+`Appointment.status` values: `booked | rescheduled | cancelled` (unchanged since the original schema — DEC-013).
+
+### AI booking tools
+
+The orchestrator (`app/ai/orchestrator.py::generate_reply`) passes four tool schemas to the LLM (`app/ai/tools.py`): `check_availability`, `book_appointment`, `reschedule_appointment`, `cancel_appointment`. `check_availability` is read-only and resolved automatically inside `generate_reply` (executed immediately, its result fed back for one bounded follow-up model call — never surfaced as something to approve). A **write** action the model proposes is *not* executed inline — see Assisted-Mode Approvals below: in Assisted Mode it becomes a `pending_approval` message with `type="tool_call"`; approving it (`POST /messages/{id}/approve`) executes the tool via `AppointmentService` before sending the confirmation, returning `409`/`404`/etc. (via the same `map_calendar_error`) if execution fails. In Autonomous Mode the tool executes immediately, same as autonomous text-sending (DEC-027).
 
 ### Knowledge Base
 - `GET /kb` — list entries.
@@ -91,10 +111,10 @@ The full "Pending Approvals V2" copilot workflow (Sprint 27, 2026-07-09): every 
 - `DELETE /kb/{id}` — remove.
 
 ### Settings
-- `GET /business` / `PATCH /business` — profile, timezone, `mode` (assisted/autonomous).
-- `POST /integrations/google/connect` — start Google OAuth.
-- `GET /integrations/google/callback` — OAuth callback, stores encrypted refresh token.
-- `GET /integrations/whatsapp` / `PATCH /integrations/whatsapp` — WhatsApp number config.
+- `GET/PATCH /settings` — **implemented**, AI Reply Mode (`mode`) only so far.
+- Business profile fields (name, etc.) — **not implemented**.
+- Google OAuth connect/callback and timezone/working-hours — **implemented**, but under `/calendar/*` (see the Calendar section above), not `/integrations/google/*` as originally sketched here.
+- `GET /integrations/whatsapp` / `PATCH /integrations/whatsapp` — **not implemented** — WhatsApp number config (still only via `scripts/seed_business.py`/`update_business_phone.py`).
 
 ### Users
 - `GET /users` — staff in the business.

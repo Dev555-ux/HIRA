@@ -2,10 +2,15 @@ import { API_BASE_URL } from "./config";
 import type {
   ApiEnvelope,
   ApproveResult,
+  Appointment,
+  AvailabilitySlot,
   Business,
   BusinessSettings,
+  CalendarSettings,
+  CalendarStatus,
   Conversation,
   ConversationStatusFilter,
+  CreateAppointmentPayload,
   CreateBusinessPayload,
   CreateKbEntryPayload,
   CreateLeadPayload,
@@ -24,7 +29,9 @@ import type {
   PlaygroundResponse,
   RegenerateResult,
   RejectResult,
+  RescheduleAppointmentPayload,
   TimelineItem,
+  UpdateCalendarSettingsPayload,
   UpdateDraftResult,
   UpdateKbEntryPayload,
   UpdateLeadPayload,
@@ -248,4 +255,65 @@ export const api = {
       `/api/v1/customers/${id}/timeline${buildQuery(params)}`,
       getToken,
     ),
+
+  getCalendarSettings: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<CalendarSettings>>("/api/v1/calendar/settings", getToken).then(
+      (r) => r.data,
+    ),
+
+  updateCalendarSettings: (getToken: GetToken, payload: UpdateCalendarSettingsPayload) =>
+    apiFetch<ApiEnvelope<CalendarSettings>>("/api/v1/calendar/settings", getToken, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  startCalendarConnect: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<{ authorization_url: string }>>(
+      "/api/v1/calendar/oauth/connect",
+      getToken,
+    ).then((r) => r.data),
+
+  getCalendarStatus: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<CalendarStatus>>("/api/v1/calendar/status", getToken).then(
+      (r) => r.data,
+    ),
+
+  disconnectCalendar: (getToken: GetToken) =>
+    apiFetch<void>("/api/v1/calendar/disconnect", getToken, { method: "DELETE" }),
+
+  getAvailability: (getToken: GetToken, params: { starts_at: string; ends_at: string }) =>
+    apiFetch<ApiEnvelope<AvailabilitySlot[]>>(
+      `/api/v1/calendar/availability${buildQuery(params)}`,
+      getToken,
+    ).then((r) => r.data),
+
+  listAppointments: (
+    getToken: GetToken,
+    params: { from?: string; to?: string } = {},
+  ) => apiFetch<ApiEnvelope<Appointment[]>>(
+    `/api/v1/appointments${buildQuery(params)}`,
+    getToken,
+  ).then((r) => r.data),
+
+  createAppointment: (getToken: GetToken, payload: CreateAppointmentPayload) =>
+    apiFetch<ApiEnvelope<Appointment>>("/api/v1/appointments", getToken, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  getAppointment: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<Appointment>>(`/api/v1/appointments/${id}`, getToken).then(
+      (r) => r.data,
+    ),
+
+  rescheduleAppointment: (getToken: GetToken, id: string, payload: RescheduleAppointmentPayload) =>
+    apiFetch<ApiEnvelope<Appointment>>(`/api/v1/appointments/${id}/reschedule`, getToken, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  cancelAppointment: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<Appointment>>(`/api/v1/appointments/${id}/cancel`, getToken, {
+      method: "POST",
+    }).then((r) => r.data),
 };

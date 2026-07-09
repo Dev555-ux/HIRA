@@ -31,6 +31,7 @@ from app.calendar.providers.base import (
     CalendarProvider,
     TimeSlot,
 )
+from app.calendar.working_hours import filter_by_working_hours
 from app.db.tenant import get_scoped
 from app.models import Appointment
 
@@ -42,16 +43,26 @@ class AppointmentService:
         business_id: uuid.UUID,
         provider: CalendarProvider,
         calendar_id: str,
+        *,
+        timezone: str = "UTC",
+        working_hours: dict | None = None,
     ):
         self._db = db
         self._business_id = business_id
         self._provider = provider
         self._calendar_id = calendar_id
+        self._timezone = timezone
+        self._working_hours = working_hours
 
     def list_availability(self, *, starts_at: datetime, ends_at: datetime) -> list[TimeSlot]:
-        return self._provider.get_availability(
+        """Free slots within [starts_at, ends_at], clipped to the business's
+        working hours (see DEC-032) if configured — untouched if not."""
+        slots = self._provider.get_availability(
             calendar_id=self._calendar_id,
             window=TimeSlot(starts_at=starts_at, ends_at=ends_at),
+        )
+        return filter_by_working_hours(
+            slots, working_hours=self._working_hours, timezone=self._timezone
         )
 
     def book_appointment(

@@ -4,7 +4,12 @@ import uuid
 
 import pytest
 
+from app.ai.llm.base import ToolCall
 from app.ai.llm.mock import MockProvider
+from app.ai.tools import BOOK_APPOINTMENT
+from app.calendar.providers.base import CalendarError
+from app.calendar.providers.mock import MockCalendarProvider
+from app.calendar.service import AppointmentService
 from app.models import Business, Conversation, Customer, Escalation, Message
 from app.services.messaging import WhatsAppSendError
 from app.services.replies import (
@@ -225,6 +230,132 @@ def test_regenerate_draft_fails_without_a_customer_message(db_session):
         regenerate_draft(
             db_session, biz.id, msg.id, llm=MockProvider(), embedding=FakeEmbeddingProvider()
         )
+
+
+def test_regenerate_draft_can_flip_a_text_draft_into_a_tool_call(db_session):
+    biz, _, msg = _pending_reply_with_history(db_session)
+    tool_call = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T14:00:00",
+            "ends_at": "2026-08-05T15:00:00",
+            "summary": "Cleaning",
+        },
+    )
+
+    result = regenerate_draft(
+        db_session,
+        biz.id,
+        msg.id,
+        llm=MockProvider(fixed_reply="", fixed_tool_calls=[tool_call]),
+        embedding=FakeEmbeddingProvider(),
+    )
+
+    assert result.type == "tool_call"
+    assert "Cleaning" in result.body
+    assert result.ai_meta["tool_name"] == BOOK_APPOINTMENT
+    assert result.ai_meta["tool_arguments"] == tool_call.arguments
+
+
+def test_regenerate_draft_can_flip_a_tool_call_draft_back_to_text(db_session):
+    biz, customer, msg = _pending_reply_with_history(db_session)
+    msg.type = "tool_call"
+    msg.ai_meta = {"tool_name": BOOK_APPOINTMENT, "tool_arguments": {"starts_at": "x"}}
+    db_session.flush()
+
+    result = regenerate_draft(
+        db_session,
+        biz.id,
+        msg.id,
+        llm=MockProvider(fixed_reply="Sorry, that time isn't available."),
+        embedding=FakeEmbeddingProvider(),
+    )
+
+    assert result.type == "text"
+    assert result.body == "Sorry, that time isn't available."
+    assert "tool_name" not in result.ai_meta
+
+
+# --- approve_and_send with a proposed tool call (Sprint 29, DEC-032) ---------
+
+
+def _pending_tool_call_reply(db, *, business_phone="PN1"):
+    biz = Business(name="Clinic A", whatsapp_phone_number_id=business_phone)
+    db.add(biz)
+    db.flush()
+    customer = Customer(business_id=biz.id, wa_phone="+15551230000")
+    db.add(customer)
+    db.flush()
+    conv = Conversation(business_id=biz.id, customer_id=customer.id)
+    db.add(conv)
+    db.flush()
+    msg = Message(
+        conversation_id=conv.id,
+        business_id=biz.id,
+        direction="outbound",
+        body="Book: Cleaning (2026-08-05T14:00:00 – 2026-08-05T15:00:00)",
+        type="tool_call",
+        status="pending_approval",
+        ai_meta={
+            "tool_name": BOOK_APPOINTMENT,
+            "tool_arguments": {
+                "starts_at": "2026-08-05T14:00:00",
+                "ends_at": "2026-08-05T15:00:00",
+                "summary": "Cleaning",
+            },
+        },
+    )
+    db.add(msg)
+    db.flush()
+    return biz, customer, msg
+
+
+def test_approve_tool_call_executes_then_sends(db_session, monkeypatch):
+    biz, customer, msg = _pending_tool_call_reply(db_session)
+    monkeypatch.setattr(
+        "app.ai.tools.get_appointment_service",
+        lambda db, business_id: AppointmentService(
+            db, business_id, MockCalendarProvider(), calendar_id="primary"
+        ),
+    )
+    captured = {}
+
+    def fake_sender(phone_number_id, to, body):
+        captured.update(phone_number_id=phone_number_id, to=to, body=body)
+        return "wamid.out1"
+
+    result = approve_and_send(db_session, biz.id, msg.id, sender=fake_sender)
+
+    assert result.status == "sent"
+    assert result.ai_meta["tool_result"] == "Appointment booked."
+    assert captured["body"] == msg.body
+    from app.models import Appointment
+
+    assert db_session.query(Appointment).count() == 1
+
+
+def test_approve_tool_call_marks_failed_when_execution_fails(db_session, monkeypatch):
+    biz, _, msg = _pending_tool_call_reply(db_session)
+
+    def _fails(db, business_id, tool_call, *, customer_id, conversation_id):
+        from app.ai.tools import ToolExecutionResult
+
+        return ToolExecutionResult(False, "slot no longer available")
+
+    monkeypatch.setattr("app.services.replies.execute_tool_call", _fails)
+    sender_called = {"called": False}
+
+    def fake_sender(*args):
+        sender_called["called"] = True
+        return "wamid.out1"
+
+    with pytest.raises(CalendarError):
+        approve_and_send(db_session, biz.id, msg.id, sender=fake_sender)
+
+    db_session.refresh(msg)
+    assert msg.status == "failed"
+    assert sender_called["called"] is False  # never attempted to send
 
 
 # --- escalate_reply (Phase 4) --------------------------------------------------

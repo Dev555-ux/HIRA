@@ -108,10 +108,10 @@ def playground_message(
     if not message:
         raise HTTPException(status_code=422, detail="Message is required")
 
-    response, retrieved = playground_reply(db, principal.business_id, message)
+    response, retrieved, body = playground_reply(db, principal.business_id, message)
     return {
         "data": {
-            "reply": response.text,
+            "reply": body,
             "model": response.model,
             "retrieved": [
                 {"id": str(entry.id), "title": entry.title, "content": entry.content}

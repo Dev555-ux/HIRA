@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 
+from app.api.appointments import router as appointments_router
+from app.api.calendar import router as calendar_router
 from app.api.conversations import router as conversations_router
 from app.api.customers import router as customers_router
 from app.api.dashboard import router as dashboard_router
@@ -38,6 +40,8 @@ app.include_router(settings_router)
 app.include_router(conversations_router)
 app.include_router(leads_router)
 app.include_router(customers_router)
+app.include_router(calendar_router)
+app.include_router(appointments_router)
 
 
 @app.get("/health")

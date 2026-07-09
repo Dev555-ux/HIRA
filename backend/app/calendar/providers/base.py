@@ -63,6 +63,14 @@ class CalendarProviderUnavailableError(CalendarError):
     """Transient failure (network/5xx) — retryable."""
 
 
+class CalendarNotConfiguredError(CalendarError):
+    """Google OAuth client / encryption key isn't configured on this deployment."""
+
+
+class CalendarNotConnectedError(CalendarError):
+    """This business hasn't connected a calendar yet."""
+
+
 class CalendarProvider(ABC):
     @abstractmethod
     def get_availability(self, *, calendar_id: str, window: TimeSlot) -> list[TimeSlot]:

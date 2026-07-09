@@ -7,14 +7,21 @@ is passed as prior messages.
 
 Prompt version is recorded so AI behaviour can be traced to a specific prompt
 (CLAUDE.md §11). Bump SYSTEM_PROMPT_VERSION when the prompt changes.
+
+v2 (Sprint 29, DEC-032): added booking-tool guidance + optional availability
+grounding, now that generate_reply() passes app/ai/tools.py's TOOL_SCHEMAS.
 """
 
 from __future__ import annotations
 
-from app.ai.llm.base import ChatMessage
-from app.models import KbEntry, Message
+from datetime import datetime
 
-SYSTEM_PROMPT_VERSION = "v1"
+from zoneinfo import ZoneInfo
+
+from app.ai.llm.base import ChatMessage
+from app.models import Business, KbEntry, Message
+
+SYSTEM_PROMPT_VERSION = "v2"
 
 _BASE_SYSTEM_PROMPT = """\
 You are HIRA, a professional AI receptionist replying to a customer on WhatsApp \
@@ -26,6 +33,17 @@ Rules:
 sure and that you'll have a team member follow up.
 - Be concise, friendly, and professional. Keep replies short — this is WhatsApp.
 - Never invent prices, hours, availability, or policies.
+
+Booking appointments:
+- Use the check_availability tool before proposing a specific time, unless the \
+customer already confirmed one.
+- Use book_appointment / reschedule_appointment / cancel_appointment once a \
+specific slot is confirmed with the customer. These do not take effect \
+immediately — a human reviews the proposed action first.
+- Never state or imply that a booking, reschedule, or cancellation is \
+confirmed until you are told it succeeded.
+- All appointment times you propose must be within the business's current \
+date/time and, if working hours are given below, within them.
 """
 
 _NO_KNOWLEDGE = "(No relevant knowledge base entries were found for this question.)"
@@ -37,8 +55,36 @@ def _format_knowledge(entries: list[KbEntry]) -> str:
     return "\n\n".join(f"- {e.title}: {e.content}" for e in entries)
 
 
-def build_system_prompt(retrieved: list[KbEntry]) -> str:
-    return f"{_BASE_SYSTEM_PROMPT}\n\nKnowledge base:\n{_format_knowledge(retrieved)}"
+def _format_scheduling_context(business: Business | None) -> str:
+    if business is None:
+        return ""
+    tz = ZoneInfo(business.timezone)
+    now_local = datetime.now(tz)
+    lines = [
+        f"Current date/time for this business: {now_local.isoformat()} ({business.timezone}).",
+    ]
+    if business.working_hours:
+        hours = ", ".join(
+            f"{day}: {value['open']}-{value['close']}" if value else f"{day}: closed"
+            for day, value in business.working_hours.items()
+        )
+        lines.append(f"Working hours: {hours}.")
+    return "\n".join(lines)
+
+
+def build_system_prompt(
+    retrieved: list[KbEntry],
+    *,
+    business: Business | None = None,
+    availability_note: str | None = None,
+) -> str:
+    parts = [_BASE_SYSTEM_PROMPT, f"\nKnowledge base:\n{_format_knowledge(retrieved)}"]
+    scheduling_context = _format_scheduling_context(business)
+    if scheduling_context:
+        parts.append(f"\nScheduling context:\n{scheduling_context}")
+    if availability_note:
+        parts.append(f"\nAvailability check result:\n{availability_note}")
+    return "\n".join(parts)
 
 
 def build_messages(history: list[Message], user_text: str) -> list[ChatMessage]:

@@ -206,6 +206,70 @@ export interface TimelineLeadEventItem {
 
 export type TimelineItem = TimelineMessageItem | TimelineLeadEventItem;
 
+// Calendar (/api/v1/calendar). Sprint 29 — see DEC-032. working_hours is a
+// day -> {open, close} map ("HH:MM" 24-hour), a day's value null for closed;
+// the whole field is null when the business hasn't configured hours yet.
+export interface WorkingHoursDay {
+  open: string;
+  close: string;
+}
+
+export type WorkingHours = Partial<Record<
+  "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun",
+  WorkingHoursDay | null
+>>;
+
+export interface CalendarSettings {
+  timezone: string;
+  working_hours: WorkingHours | null;
+}
+
+export interface UpdateCalendarSettingsPayload {
+  timezone?: string;
+  working_hours?: WorkingHours | null;
+}
+
+export interface CalendarStatus {
+  connected: boolean;
+  calendar_id: string | null;
+}
+
+export interface AvailabilitySlot {
+  starts_at: string;
+  ends_at: string;
+}
+
+// Appointments (/api/v1/appointments).
+export interface AppointmentCustomer {
+  id: string;
+  display_name: string | null;
+  wa_phone: string;
+}
+
+export interface Appointment {
+  id: string;
+  customer: AppointmentCustomer | null;
+  conversation_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  status: "booked" | "rescheduled" | "cancelled";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAppointmentPayload {
+  customer_id: string;
+  starts_at: string;
+  ends_at: string;
+  summary: string;
+  conversation_id?: string;
+}
+
+export interface RescheduleAppointmentPayload {
+  starts_at: string;
+  ends_at: string;
+}
+
 // Knowledge Base — manual entry (/api/v1/kb). Each entry may be one of
 // several chunks stored under the same title if the content was long enough
 // to split (see backend/app/ai/chunking.py); manual FAQ-length entries are
