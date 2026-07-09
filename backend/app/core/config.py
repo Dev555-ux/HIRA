@@ -81,7 +81,9 @@ class Settings(BaseSettings):
     # refresh tokens at rest; also HMAC-signs the OAuth `state` param.
     calendar_encryption_key: str = ""
     # Where the OAuth callback (a Google browser redirect, not an API call)
-    # sends the user back to. Matches main.py's dev CORS origin.
+    # sends the user back to. Also included in main.py's CORS allow_origins
+    # (Sprint 34) — set this to the real deployed frontend domain in
+    # production, or that origin is CORS-blocked.
     frontend_url: str = "http://localhost:3000"
 
 

@@ -18,16 +18,25 @@ from app.api.knowledge_base import router as knowledge_base_router
 from app.api.leads import router as leads_router
 from app.api.onboarding import router as onboarding_router
 from app.api.settings import router as settings_router
+from app.core.config import settings
 from app.webhooks.whatsapp import router as whatsapp_router
 
 app = FastAPI(title="HIRA Backend", version="0.1.0")
+
+# Fixed localhost dev ports, plus settings.frontend_url so a deployed
+# frontend isn't CORS-blocked once FRONTEND_URL is set to the real domain
+# (Sprint 34) — previously hardcoded to only the three dev ports below, with
+# no path from FRONTEND_URL into this list despite config.py's own comment
+# claiming they were kept in sync.
+_CORS_ORIGINS = {
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    settings.frontend_url,
+}
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-    ],
+    allow_origins=sorted(_CORS_ORIGINS),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
