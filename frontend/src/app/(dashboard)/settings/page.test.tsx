@@ -6,13 +6,8 @@ import { AuthContext, type AuthContextValue } from "@/lib/auth-context";
 import { ToastProvider } from "@/components/ui/toast";
 import SettingsPage from "./page";
 
-// The AI Reply Mode card is the only one with a radiogroup; scope Save-button
-// queries to it since the (disabled, unrelated) Business Information card also
-// renders a button named "Save".
 function aiReplyModeCard() {
-  return screen
-    .getByRole("radiogroup", { name: /ai reply mode/i })
-    .closest<HTMLElement>(".rounded-xl")!;
+  return screen.getByText("AI Reply Mode").closest<HTMLElement>(".rounded-xl")!;
 }
 
 vi.mock("@/lib/api", () => ({
@@ -121,5 +116,45 @@ describe("SettingsPage — AI Reply Mode", () => {
     await waitFor(() =>
       expect(screen.getByText("Couldn't save settings")).toBeInTheDocument(),
     );
+  });
+
+  it("shows a retryable error state when AI Reply Mode fails to load", async () => {
+    vi.mocked(api.getSettings).mockRejectedValue(new Error("Network error"));
+    renderWithProviders(<SettingsPage />);
+
+    expect(
+      await within(aiReplyModeCard()).findByText("Couldn't load AI Reply Mode"),
+    ).toBeInTheDocument();
+    expect(within(aiReplyModeCard()).queryByRole("radiogroup")).not.toBeInTheDocument();
+  });
+});
+
+describe("SettingsPage — Business information", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.getSettings).mockResolvedValue({ mode: "assisted" });
+  });
+
+  it("shows the real business name, industry, and timezone read-only", async () => {
+    vi.mocked(api.getOnboardingStatus).mockResolvedValue({
+      has_business: true,
+      business: {
+        id: "biz-1",
+        name: "Acme Dental Clinic",
+        industry: "Dental Clinic",
+        contact_email: null,
+        country: null,
+        timezone: "America/New_York",
+        onboarding_status: "live",
+        whatsapp_connection_status: "not_connected",
+      },
+    });
+
+    renderWithProviders(<SettingsPage />);
+
+    expect(await screen.findByText("Acme Dental Clinic")).toBeInTheDocument();
+    expect(screen.getByText("Dental Clinic")).toBeInTheDocument();
+    expect(screen.getByText("America/New_York")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /change/i })).toHaveAttribute("href", "/calendar");
   });
 });

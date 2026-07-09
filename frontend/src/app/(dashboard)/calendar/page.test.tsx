@@ -160,4 +160,21 @@ describe("CalendarPage", () => {
     await screen.findByText("Monday");
     expect(screen.queryAllByText("Closed")).toHaveLength(6);
   });
+
+  it("shows a retryable error state when the connection status fails to load", async () => {
+    vi.mocked(api.getCalendarStatus).mockReset();
+    vi.mocked(api.getCalendarStatus).mockRejectedValue(new Error("Network error"));
+    renderWithProviders(<CalendarPage />);
+
+    expect(await screen.findByText("Couldn't load calendar status")).toBeInTheDocument();
+    expect(screen.queryByText("Not connected")).not.toBeInTheDocument();
+  });
+
+  it("shows a retryable error state when calendar settings fail to load", async () => {
+    vi.mocked(api.getCalendarSettings).mockReset();
+    vi.mocked(api.getCalendarSettings).mockRejectedValue(new Error("Network error"));
+    renderWithProviders(<CalendarPage />);
+
+    expect(await screen.findByText("Couldn't load calendar settings")).toBeInTheDocument();
+  });
 });

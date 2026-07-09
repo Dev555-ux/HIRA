@@ -1,13 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CalendarCheck, ExternalLink, Unlink } from "lucide-react";
+import { AlertTriangle, CalendarCheck, ExternalLink, Unlink } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,7 +98,7 @@ export default function CalendarPage() {
 
 function ConnectionCard() {
   const { toast } = useToast();
-  const { data: status, isLoading } = useCalendarStatus();
+  const { data: status, isLoading, isError, refetch } = useCalendarStatus();
   const startConnect = useStartCalendarConnect();
   const disconnect = useDisconnectCalendar();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
@@ -133,7 +134,7 @@ function ConnectionCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">Google Calendar</CardTitle>
-        {!isLoading && (
+        {!isLoading && !isError && (
           <Badge variant={status?.connected ? "success" : "secondary"}>
             {status?.connected ? "Connected" : "Not connected"}
           </Badge>
@@ -142,6 +143,18 @@ function ConnectionCard() {
       <CardContent>
         {isLoading ? (
           <Skeleton className="h-9 w-40" />
+        ) : isError ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title="Couldn't load calendar status"
+            description="Something went wrong — please try again."
+            action={
+              <Button size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
+            }
+            className="border-0 py-6"
+          />
         ) : status?.connected ? (
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">
@@ -178,8 +191,31 @@ function ConnectionCard() {
 
 function SettingsCard() {
   const { toast } = useToast();
-  const { data: settings, isLoading } = useCalendarSettings();
+  const { data: settings, isLoading, isError, refetch } = useCalendarSettings();
   const updateSettings = useUpdateCalendarSettings();
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Timezone &amp; working hours</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <EmptyState
+            icon={AlertTriangle}
+            title="Couldn't load calendar settings"
+            description="Something went wrong — please try again."
+            action={
+              <Button size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
+            }
+            className="border-0 py-6"
+          />
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isLoading || !settings) {
     return (

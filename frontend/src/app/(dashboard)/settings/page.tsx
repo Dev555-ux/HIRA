@@ -1,6 +1,9 @@
 "use client";
 
+import { AlertTriangle } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +22,7 @@ export default function SettingsPage() {
   const { mocked } = useAuthContext();
   const { data: onboarding } = useOnboardingStatus();
   const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
+  const business = onboarding?.business;
 
   return (
     <>
@@ -30,11 +34,23 @@ export default function SettingsPage() {
             <CardTitle className="text-base">Business information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Field label="Business name" placeholder="Acme Clinic" />
-            <Field label="Timezone" placeholder="UTC" />
-            <Button size="sm" disabled title="Settings API coming soon">
-              Save
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              Editing business name and industry is coming soon — for now these are set at
+              signup.
+            </p>
+            <Row label="Business name" value={business?.name ?? "—"} />
+            <Row label="Industry" value={business?.industry ?? "Not set"} />
+            <Row
+              label="Timezone"
+              value={
+                <span className="flex items-center gap-2">
+                  {business?.timezone ?? "UTC"}
+                  <Button asChild size="sm" variant="ghost" className="h-auto p-0 underline">
+                    <Link href="/calendar">Change</Link>
+                  </Button>
+                </span>
+              }
+            />
           </CardContent>
         </Card>
 
@@ -95,7 +111,7 @@ const MODE_OPTIONS: { value: AiReplyMode; title: string; description: string }[]
 ];
 
 function AiReplyModeCard() {
-  const { data, isLoading } = useSettings();
+  const { data, isLoading, isError, refetch } = useSettings();
   const updateSettings = useUpdateSettings();
   const { toast } = useToast();
   const [selected, setSelected] = useState<AiReplyMode | null>(null);
@@ -139,6 +155,18 @@ function AiReplyModeCard() {
             <Skeleton className="h-16 w-full" />
             <Skeleton className="h-16 w-full" />
           </div>
+        ) : isError ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title="Couldn't load AI Reply Mode"
+            description="Something went wrong — please try again."
+            action={
+              <Button size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
+            }
+            className="border-0 py-6"
+          />
         ) : (
           <div className="space-y-3" role="radiogroup" aria-label="AI Reply Mode">
             {MODE_OPTIONS.map((option) => (
@@ -152,9 +180,11 @@ function AiReplyModeCard() {
             ))}
           </div>
         )}
-        <Button size="sm" onClick={handleSave} disabled={controlsDisabled || !isDirty}>
-          {isSaving ? "Saving…" : "Save"}
-        </Button>
+        {!isError && (
+          <Button size="sm" onClick={handleSave} disabled={controlsDisabled || !isDirty}>
+            {isSaving ? "Saving…" : "Save"}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

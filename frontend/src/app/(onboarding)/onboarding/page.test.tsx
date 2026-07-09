@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "@/components/ui/toast";
 import { AuthContext, type AuthContextValue } from "@/lib/auth-context";
 import OnboardingPage from "./page";
 
@@ -30,7 +31,9 @@ function renderWithProviders(ui: React.ReactElement, auth: AuthContextValue = mo
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <AuthContext.Provider value={auth}>{ui}</AuthContext.Provider>
+      <AuthContext.Provider value={auth}>
+        <ToastProvider>{ui}</ToastProvider>
+      </AuthContext.Provider>
     </QueryClientProvider>,
   );
 }
@@ -83,6 +86,7 @@ describe("OnboardingPage", () => {
       }),
     );
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
+    expect(screen.getByText("You're all set!")).toBeInTheDocument();
   });
 
   it("blocks submission and explains when the account has no email", () => {

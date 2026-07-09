@@ -8,6 +8,8 @@ import { ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { useToast } from "@/components/ui/toast";
 import { useCreateBusiness } from "@/hooks/use-onboarding";
 import { useAuthContext } from "@/lib/auth-context";
 
@@ -38,6 +40,7 @@ type FormValues = z.infer<typeof schema>;
 export default function OnboardingPage() {
   const router = useRouter();
   const { user } = useAuthContext();
+  const { toast } = useToast();
   const createBusiness = useCreateBusiness();
   const {
     register,
@@ -55,6 +58,11 @@ export default function OnboardingPage() {
         contact_email: values.contactEmail,
         country: values.country || undefined,
         timezone: values.timezone || undefined,
+      });
+      toast({
+        title: "You're all set!",
+        description: "Let's get your AI receptionist ready.",
+        variant: "success",
       });
       router.replace("/dashboard");
     } catch {
@@ -83,11 +91,7 @@ export default function OnboardingPage() {
           </Field>
 
           <Field label="Industry" error={errors.industry?.message}>
-            <select
-              defaultValue=""
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              {...register("industry")}
-            >
+            <Select defaultValue="" {...register("industry")}>
               <option value="" disabled>
                 Select one
               </option>
@@ -96,7 +100,7 @@ export default function OnboardingPage() {
                   {industry}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           <Field label="Business email" error={errors.contactEmail?.message}>
