@@ -1,15 +1,54 @@
 // Types mirroring the backend API contracts (documentation/API.md).
 
+export interface PendingReplyCustomer {
+  id: string;
+  display_name: string | null;
+  wa_phone: string;
+}
+
 export interface PendingReply {
   id: string;
   conversation_id: string;
   body: string;
   created_at: string;
+  customer: PendingReplyCustomer | null;
+  conversation_preview: string | null;
 }
 
 export interface ApproveResult {
   id: string;
   status: "sent" | "failed" | "pending_approval";
+}
+
+export interface UpdateDraftResult {
+  id: string;
+  body: string;
+  status: "pending_approval";
+}
+
+export interface RejectResult {
+  id: string;
+  status: "rejected";
+}
+
+export interface RegenerateResult {
+  id: string;
+  body: string;
+  status: "pending_approval";
+}
+
+export interface EscalationInfo {
+  id: string;
+  conversation_id: string;
+  reason: string;
+  status: string;
+  created_at: string;
+}
+
+export interface EscalateResult {
+  id: string;
+  status: "escalated";
+  escalation: EscalationInfo;
 }
 
 export interface ApiEnvelope<T> {

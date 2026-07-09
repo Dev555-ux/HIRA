@@ -8,6 +8,7 @@ import type {
   ConversationStatusFilter,
   CreateBusinessPayload,
   CreateKbEntryPayload,
+  EscalateResult,
   ImportWebsitePayload,
   ImportWebsiteResult,
   KbEntry,
@@ -16,6 +17,9 @@ import type {
   PaginatedEnvelope,
   PendingReply,
   PlaygroundResponse,
+  RegenerateResult,
+  RejectResult,
+  UpdateDraftResult,
   UpdateKbEntryPayload,
 } from "./types";
 
@@ -81,6 +85,34 @@ export const api = {
   approveMessage: (getToken: GetToken, messageId: string) =>
     apiFetch<ApiEnvelope<ApproveResult>>(
       `/api/v1/messages/${messageId}/approve`,
+      getToken,
+      { method: "POST" },
+    ).then((r) => r.data),
+
+  updateDraft: (getToken: GetToken, messageId: string, body: string) =>
+    apiFetch<ApiEnvelope<UpdateDraftResult>>(
+      `/api/v1/messages/${messageId}/draft`,
+      getToken,
+      { method: "PATCH", body: JSON.stringify({ body }) },
+    ).then((r) => r.data),
+
+  rejectMessage: (getToken: GetToken, messageId: string) =>
+    apiFetch<ApiEnvelope<RejectResult>>(
+      `/api/v1/messages/${messageId}/reject`,
+      getToken,
+      { method: "POST" },
+    ).then((r) => r.data),
+
+  regenerateMessage: (getToken: GetToken, messageId: string) =>
+    apiFetch<ApiEnvelope<RegenerateResult>>(
+      `/api/v1/messages/${messageId}/regenerate`,
+      getToken,
+      { method: "POST" },
+    ).then((r) => r.data),
+
+  escalateMessage: (getToken: GetToken, messageId: string) =>
+    apiFetch<ApiEnvelope<EscalateResult>>(
+      `/api/v1/messages/${messageId}/escalate`,
       getToken,
       { method: "POST" },
     ).then((r) => r.data),

@@ -22,7 +22,7 @@ Anything not implemented is explicitly marked **Not yet implemented** rather tha
 - Retrieve relevant knowledge-base entries for that business via semantic search (pgvector).
 - Generate a grounded reply using an LLM (Groq, live).
 - Either send the reply immediately (**Autonomous Mode**) or hold it for human approval via a dashboard (**Assisted Mode**, the default).
-- A Next.js dashboard with Clerk authentication, tenant-scoped API, and a live "Pending Replies" approval screen.
+- A Next.js dashboard with Clerk authentication, tenant-scoped API, and a live "Pending Replies" copilot screen (Sprint 27, 2026-07-09): an operator can edit an AI draft before sending, approve & send, reject, regenerate (re-runs the same LLM pipeline), or escalate to a human, all against the running conversation's real context.
 
 **Current production maturity**: **pre-production / single-tenant validation stage.** The full loop has been verified live end-to-end against Meta's real Cloud API with one test business and one test WhatsApp number, run from a developer's local machine via `uvicorn --reload`, tunneled through ngrok. There is:
 - No deployed backend or frontend (no hosting, no Dockerfile, no CI deploy step).
@@ -30,7 +30,7 @@ Anything not implemented is explicitly marked **Not yet implemented** rather tha
 - No monitoring, alerting, or error tracking.
 - No automated database backups.
 - No CORS configuration, no rate limiting on the webhook endpoint.
-- Several database tables (`appointments`, `escalations`, `calendar_credentials`) exist in the schema but have **zero application code** using them yet.
+- `appointments` and `calendar_credentials` exist in the schema but have **zero application code** using them yet (`calendar_credentials` — no OAuth built; see DEC-028). `escalations` gained its first application code in Sprint 27 (2026-07-09): `POST /messages/{id}/escalate` creates rows, but there is still no list/resolve endpoint or dashboard surface to view them (see DEC-030).
 
 This is an intentional MVP-first sequencing (see `.claude/DECISIONS.md`): prove the core AI loop works against real infrastructure before investing in production hardening. Section 12 and 13 describe exactly what's left to close that gap.
 
@@ -106,16 +106,17 @@ backend/
 │   │   └── embeddings/          # EmbeddingProvider interface + local BGE implementation
 │   ├── services/
 │   │   ├── messaging.py         # send_text(): outbound WhatsApp Cloud API call
-│   │   ├── replies.py           # approve_and_send(): Assisted-Mode approval → send
+│   │   ├── replies.py           # approve_and_send(), update_draft(), reject_reply(),
+│   │   │                        # regenerate_draft(), escalate_reply() — every pending-draft action
 │   │   └── provisioning.py      # provision_business(): signup → Business + owner User
 │   ├── auth/
 │   │   ├── clerk.py             # Clerk JWT verification against JWKS
 │   │   └── dependencies.py      # get_verified_clerk_user_id(), get_current_principal()
 │   └── api/
-│       ├── dashboard.py         # /api/v1/pending, /api/v1/messages/{id}/approve
+│       ├── dashboard.py         # /api/v1/pending, /api/v1/messages/{id}/{approve,draft,reject,regenerate,escalate}
 │       └── onboarding.py        # /api/v1/onboarding/status, /api/v1/onboarding/business
 ├── alembic/                      # DB migrations
-├── tests/                        # pytest suite (63 tests, all passing)
+├── tests/                        # pytest suite (195 tests, all passing, as of Sprint 27)
 └── scripts/                      # One-off operational scripts (seeding, phone-number updates)
 ```
 
@@ -251,7 +252,7 @@ Standard library `logging`, one `logger = logging.getLogger(__name__)` per modul
 | Page | Status |
 |---|---|
 | `/dashboard` | Partially live — pending-reply count via `usePending()`; conversation/customer stat tiles show "Coming soon" |
-| `/pending` | **Live** — full list + approve flow against the real API, optimistic updates, 15s polling |
+| `/pending` | **Live** (Sprint 27, 2026-07-09) — editable AI draft (dirty-state tracking, character counter, unsaved-edit confirm dialog), approve & send, reject, regenerate, escalate, against the real API; optimistic updates, 15s polling. See `components/pending-reply-card.tsx`. |
 | `/inbox` | **Live** (2026-07-08) — two-pane conversation list + message timeline against `GET /api/v1/conversations`, `GET /api/v1/conversations/{id}`, `GET /api/v1/conversations/{id}/messages`; search (debounced), status filter chips (All/Open/Pending/Closed), pagination, 15s polling, mobile master-detail (list ↔ timeline). See `hooks/use-conversations.ts`. |
 | `/knowledge-base` | **Live** — full CRUD + website import |
 | `/customers` | Static UI shell — no backend query |
@@ -288,14 +289,14 @@ PostgreSQL with the `pgvector` extension. Every business-owned table carries `bu
 
 **`conversations`** — one active thread per customer per business (get-or-create by "most recent active" on inbound).
 - FKs: `business_id` (indexed), `customer_id → customers.id` (`ON DELETE CASCADE`).
-- `status`: `active` | `escalated` | `closed` (only `active` is set anywhere in code today — `escalated`/`closed` are modeled but never assigned).
+- `status`: `active` | `escalated` | `closed` (`closed` is still never assigned by anything; `escalated` is now set by `POST /messages/{id}/escalate` as of Sprint 27, 2026-07-09 — see `app/services/replies.py::escalate_reply`).
 - `window_expires_at` — tracks Meta's 24-hour customer-service window (set on every inbound message; **not currently enforced anywhere** before an outbound send).
 - Composite index `ix_conversations_business_status_last (business_id, status, last_message_at)` — supports the get-or-create-most-recent-active query.
 
 **`messages`** — every inbound/outbound message.
 - FKs: `conversation_id → conversations.id` (`ON DELETE CASCADE`), `business_id` (indexed, denormalized off the conversation for direct tenant-scoped queries).
 - `wa_message_id` unique, nullable — the dedupe key for inbound messages; null for outbound messages that haven't been sent yet.
-- `direction`: `inbound` | `outbound`. `status`: `received` | `pending_approval` | `sent` | `failed`.
+- `direction`: `inbound` | `outbound`. `status`: `received` | `pending_approval` | `sent` | `failed` | `rejected` | `escalated` (the last two added Sprint 27, 2026-07-09 — plain strings, no CHECK constraint, so no migration was needed).
 - `ai_meta` (JSONB, nullable) — records `{model, prompt_version, retrieved_count}` for AI-generated replies, enabling traceability of which prompt/model produced a given reply.
 - Composite index `ix_messages_conversation_created (conversation_id, created_at)` — supports the rolling-history query (last 20 messages, oldest-first).
 
@@ -307,7 +308,7 @@ PostgreSQL with the `pgvector` extension. Every business-owned table carries `bu
 
 **`appointments`** — schema unchanged, but as of 2026-07-08 is read/written by `app.calendar.service.AppointmentService` (`backend/app/calendar/service.py`), exercised only against `MockCalendarProvider` so far — no real vendor writes to it yet. FKs to `businesses`, `customers`, and optionally `conversations` (`ON DELETE SET NULL`). See DEC-028.
 
-**`escalations`** — schema exists, **zero application code references this table**. Modeled for a future human-handoff flow. FKs to `businesses`, `conversations`, and optionally `users` (`resolved_by`, `ON DELETE SET NULL`).
+**`escalations`** — schema unchanged; gained its first application code Sprint 27 (2026-07-09): `POST /messages/{id}/escalate` (`app/services/replies.py::escalate_reply`) creates a row (`status="open"`, `reason="other"` — no UI collects a specific reason yet) whenever a human escalates a pending draft. There is still no list/resolve endpoint or dashboard surface to view or act on open escalations (see DEC-030) — `resolved_by`/`resolved_at` are set by nothing. FKs to `businesses`, `conversations`, and optionally `users` (`resolved_by`, `ON DELETE SET NULL`).
 
 **`calendar_credentials`** — schema exists, **zero application code references this table**. One row per business (`UNIQUE(business_id)`), intended to hold an encrypted OAuth refresh token. Has no `provider` column yet — flagged in DEC-028 as a required additive migration once a second real calendar vendor is added.
 
@@ -484,9 +485,9 @@ erDiagram
 
 **Autonomous mode**: a per-business flag (`businesses.mode`). `"assisted"` (default) stores the reply as `pending_approval` for dashboard review. `"autonomous"` calls `send_text()` immediately inside the same background task and marks the message `sent`/`failed`.
 
-**Fallback behaviour**: if anything in `generate_and_store_reply` raises, the exception is logged and the DB session rolled back — there is **no user-facing fallback message** ("sorry, I couldn't process that") and **no automatic escalation** to a human, despite the `escalations` table existing in the schema. **Fallback-on-failure and escalation are not yet implemented.**
+**Fallback behaviour**: if anything in `generate_and_store_reply` raises, the exception is logged and the DB session rolled back — there is **no user-facing fallback message** ("sorry, I couldn't process that") and **no automatic escalation** to a human on a generation failure. **Automatic fallback-on-failure escalation is still not implemented.** What Sprint 27 (2026-07-09) *did* add is the other half of human handoff: once a draft has successfully generated and reached `pending_approval`, an operator can manually escalate it via `POST /messages/{id}/escalate` — see the Assisted-Mode Approvals section of `documentation/API.md`. The two are independent: a generation failure still produces silence, not an escalation.
 
-**Future improvements** (see also Section 15): intent classification (currently every message goes through the same grounded-FAQ path — no routing to booking/escalation/other flows), tool use for appointment booking, wiring the `escalations` table into an actual low-confidence/failure-triggered handoff, reranking or a relevance threshold on retrieval, response validation/guardrails, non-text message handling.
+**Future improvements** (see also Section 15): intent classification (currently every message goes through the same grounded-FAQ path — no routing to booking/escalation/other flows), tool use for appointment booking, wiring a low-confidence/generation-failure signal into an *automatic* escalation (the manual, human-triggered path exists as of Sprint 27; the automatic one doesn't), reranking or a relevance threshold on retrieval, response validation/guardrails, non-text message handling.
 
 ---
 
@@ -616,7 +617,7 @@ Per `MILESTONES.md`:
 
 - **Milestone 1 — First Working AI Receptionist**: ✅ Complete. Full loop (receive → verify → store → retrieve → generate → reply) implemented and live-verified with Groq.
 - **Milestone 2 — Clerk Authentication**: ✅ Complete (built & tested). Live use requires Clerk app credentials in `.env` and a `User` row per Clerk user (provisioning is manual — see Section 15).
-- **Milestone 3 — Next.js Dashboard UI**: ✅ Complete. Full app shell, 7 pages, only `/pending` (and partially `/dashboard`) wired to live data; the rest are placeholders pending backend endpoints.
+- **Milestone 3 — Next.js Dashboard UI**: ✅ Complete. Full app shell, 7 pages; `/pending` (full copilot workflow as of Sprint 27, 2026-07-09), `/inbox`, `/knowledge-base`, `/onboarding`, and partially `/dashboard`/`/settings` are wired to live data; `/customers`/`/analytics` remain placeholders pending backend endpoints.
 - **Milestone 4 — WhatsApp Cloud API (autonomous loop)**: ✅ Complete and **live-verified** (2026-07-04) — real customer message → webhook → retrieval → Groq → real outbound send → customer, confirmed end-to-end against Meta's live Cloud API.
 
 **Current project maturity**: all four MVP milestones are functionally complete against a single real test business. The system has not been deployed, has not handled more than one real tenant concurrently, and has no production operational tooling (monitoring, backups, secrets management). This is best characterized as **"MVP proven, pre-production."**
@@ -629,7 +630,7 @@ Recommended next implementation order, reasoning included:
 
 1. **Deployment** (`INFRA-001`, `INFRA-006`) — do this before anything else below. Every feature built on top of a laptop+ngrok setup will need to be re-verified once deployed anyway; deploying first means new features are verified once, not twice.
 2. **Inbox** — **done (2026-07-08)**. `GET /api/v1/conversations` (search, status filter, pagination), `GET /api/v1/conversations/{id}`, `GET /api/v1/conversations/{id}/messages` (`backend/app/api/conversations.py`), and a real two-pane `/inbox` page (`frontend/src/app/(dashboard)/inbox/page.tsx`). No new tables — reads `Conversation`/`Message`/`Customer` as they already existed.
-3. **Human handoff / escalation** — wire the existing (currently unused) `escalations` table into `generate_and_store_reply`'s failure path (Section 7) and into a low-confidence signal from the LLM response. This closes the biggest current reliability gap: right now a failed generation means the customer gets silence.
+3. **Human handoff / escalation** — **half done (Sprint 27, 2026-07-09).** The manual half is built: `POST /messages/{id}/escalate` lets an operator hand off a pending draft from the dashboard, creating an `Escalation` row and marking the conversation `escalated`. Still open: a list/resolve endpoint or dashboard surface for open escalations (see DEC-030); wiring the *automatic* half — `generate_and_store_reply`'s failure path (Section 7) and a low-confidence signal from the LLM response — into the same `escalate_reply()` mechanism. That automatic half still closes the biggest reliability gap: right now a failed generation means the customer gets silence, with no escalation of any kind.
 4. **Google Calendar** — **internal architecture built (2026-07-08, DEC-028)**: a provider-agnostic `CalendarProvider` interface and `AppointmentService` (`backend/app/calendar/`), tested against an in-memory `MockCalendarProvider`. Still not built: OAuth, token encryption, a real `GoogleCalendarProvider`, API routes, frontend, and AI tool-calling to actually trigger a booking from a conversation. Sequenced after handoff because booking failures should be able to escalate to a human using the same mechanism.
 5. **Conversation memory** — today "memory" is a rolling window of the last 20 raw messages; there is no summarization or long-term customer memory across conversations. Worth revisiting once conversations regularly exceed that window in practice.
 6. **Analytics** — real metrics behind `/analytics` (conversation volume, response time, approval rate). Sequenced after Inbox/handoff since those produce the events analytics would report on.

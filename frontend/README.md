@@ -36,7 +36,7 @@ src/
 │       ├── layout.tsx       AppShell + ErrorBoundary
 │       ├── loading.tsx      route skeleton
 │       └── error.tsx        route error boundary
-├── components/              layout (sidebar/topbar/user-menu/mobile nav), ui/ (shadcn-style), providers
+├── components/              layout (sidebar/topbar/user-menu/mobile nav), ui/ (shadcn-style), pending-reply-card, providers
 ├── hooks/                   TanStack Query hooks (use-pending, use-onboarding, use-knowledge-base, use-settings, use-playground, use-conversations, use-debounced-value)
 ├── lib/                     api client, auth context, config, types, utils, nav
 └── middleware.ts            Clerk middleware (pass-through in dev/mock)
@@ -44,4 +44,8 @@ src/
 
 ## Backend integration status
 
-Live today: **Onboarding** (`POST /api/v1/onboarding/business`), **Pending Replies** (`GET /api/v1/pending`, `POST /api/v1/messages/{id}/approve`), **Knowledge Base** (full CRUD + website import), **Playground** (AI test-drive), **Inbox** (`GET /api/v1/conversations`, `/{id}`, `/{id}/messages` — search, status filter, pagination), **Settings** (AI Reply Mode only — business info/WhatsApp config are not yet backed by an endpoint). Pages that need not-yet-built backend endpoints (Customers, Analytics, reply Reject, WhatsApp self-serve connect) render honest "coming soon" placeholder/empty states — controls with no backend are disabled rather than silently doing nothing — with typed client methods ready to connect once those endpoints exist.
+Live today: **Onboarding** (`POST /api/v1/onboarding/business`), **Pending Replies** (Sprint 27, 2026-07-09 — `GET /api/v1/pending` with customer + conversation preview, editable draft via `PATCH /messages/{id}/draft`, `POST /messages/{id}/{approve,reject,regenerate,escalate}`), **Knowledge Base** (full CRUD + website import), **Playground** (AI test-drive), **Inbox** (`GET /api/v1/conversations`, `/{id}`, `/{id}/messages` — search, status filter, pagination), **Settings** (AI Reply Mode only — business info/WhatsApp config are not yet backed by an endpoint). Pages that need not-yet-built backend endpoints (Customers, Analytics, WhatsApp self-serve connect) render honest "coming soon" placeholder/empty states — controls with no backend are disabled rather than silently doing nothing — with typed client methods ready to connect once those endpoints exist.
+
+### Pending Replies (`/pending`) — the AI copilot workflow
+
+`PendingReplyCard` (`components/pending-reply-card.tsx`) turns each pending draft into: customer + conversation preview, an editable `Textarea` (dirty-state indicator, character counter against the backend's 4096-char limit), and four actions — **Approve & send** (saves an edited draft first if dirty, then approves; disabled while saving/sending or while the draft is empty), **Regenerate** (re-runs the same LLM pipeline via `POST /messages/{id}/regenerate`), **Reject**, and **Escalate**. Regenerate/Reject/Escalate all discard any unsaved edit, so if the draft is dirty they route through a `ConfirmDialog` ("Discard your edits?") instead of a browser `confirm()`. All four actions use the existing optimistic-update convention (`useApprove`'s pattern in `hooks/use-pending.ts`) and surface result/error state via the shared `useToast()`, never a dead or placeholder button.

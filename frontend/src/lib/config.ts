@@ -21,3 +21,7 @@ export const mockAuthAllowed = authEnabled || !isProduction;
 // WhatsApp webhook firing asynchronously) — pending replies, conversations,
 // and message threads all use this so refresh behavior stays consistent.
 export const POLL_INTERVAL_MS = 15_000;
+
+// WhatsApp Cloud API's text message body limit — matches the backend's
+// PATCH /messages/{id}/draft validation (backend/app/api/dashboard.py).
+export const MAX_DRAFT_LENGTH = 4096;

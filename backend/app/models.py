@@ -113,7 +113,7 @@ class Message(Base):
     type: Mapped[str] = mapped_column(String(32), default="text")
     status: Mapped[str] = mapped_column(
         String(24), default="received"
-    )  # received | pending_approval | sent | failed
+    )  # received | pending_approval | sent | failed | rejected | escalated
     ai_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
