@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BookOpen, Globe, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Globe, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -56,7 +56,7 @@ export default function KnowledgeBasePage() {
   const [deleteTarget, setDeleteTarget] = useState<KbEntry | null>(null);
 
   const { toast } = useToast();
-  const { data: entries, isLoading } = useKbEntries();
+  const { data: entries, isLoading, isError, error, refetch } = useKbEntries();
   const createEntry = useCreateKbEntry();
   const updateEntry = useUpdateKbEntry();
   const deleteEntry = useDeleteKbEntry();
@@ -140,7 +140,21 @@ export default function KnowledgeBasePage() {
             </div>
           )}
 
-          {!isLoading && filtered.length === 0 && (
+          {isError && (
+            <EmptyState
+              icon={AlertTriangle}
+              title="Couldn't load knowledge base"
+              description={error instanceof Error ? error.message : "Something went wrong."}
+              action={
+                <Button size="sm" onClick={() => refetch()}>
+                  Retry
+                </Button>
+              }
+              className="border-0"
+            />
+          )}
+
+          {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
               icon={BookOpen}
               title={entries?.length ? "No matches" : "No knowledge entries yet"}
@@ -161,6 +175,7 @@ export default function KnowledgeBasePage() {
           )}
 
           {!isLoading &&
+            !isError &&
             filtered.map((entry) => (
               <div
                 key={entry.id}

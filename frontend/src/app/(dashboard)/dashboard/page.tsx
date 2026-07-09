@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, CheckCheck, MessageSquare, Users } from "lucide-react";
+import { Activity, AlertTriangle, CheckCheck, MessageSquare, Users } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
@@ -16,13 +16,19 @@ import { usePending } from "@/hooks/use-pending";
 import { describeWhatsAppConnection } from "@/lib/utils";
 
 export default function DashboardPage() {
-  const { data: pending, isLoading } = usePending();
+  const { data: pending, isLoading, isError: isPendingError, refetch: refetchPending } = usePending();
   const { data: onboarding } = useOnboardingStatus();
   // limit: 1 — only meta.total is needed here, not the rows themselves.
-  const { data: conversations, isLoading: isLoadingConversations } = useConversations({
-    limit: 1,
-  });
-  const { data: customers, isLoading: isLoadingCustomers } = useCustomers({ limit: 1 });
+  const {
+    data: conversations,
+    isLoading: isLoadingConversations,
+    isError: isConversationsError,
+  } = useConversations({ limit: 1 });
+  const {
+    data: customers,
+    isLoading: isLoadingCustomers,
+    isError: isCustomersError,
+  } = useCustomers({ limit: 1 });
   const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
 
   return (
@@ -39,24 +45,24 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Pending approvals"
-          value={pending?.length ?? 0}
+          value={isPendingError ? "—" : (pending?.length ?? 0)}
           icon={CheckCheck}
           loading={isLoading}
-          hint="Replies awaiting review"
+          hint={isPendingError ? "Couldn't load" : "Replies awaiting review"}
         />
         <StatCard
           label="Conversations"
-          value={conversations?.meta.total ?? 0}
+          value={isConversationsError ? "—" : (conversations?.meta.total ?? 0)}
           icon={MessageSquare}
           loading={isLoadingConversations}
-          hint="Total conversations"
+          hint={isConversationsError ? "Couldn't load" : "Total conversations"}
         />
         <StatCard
           label="Customers"
-          value={customers?.meta.total ?? 0}
+          value={isCustomersError ? "—" : (customers?.meta.total ?? 0)}
           icon={Users}
           loading={isLoadingCustomers}
-          hint="People who have messaged you"
+          hint={isCustomersError ? "Couldn't load" : "People who have messaged you"}
         />
         <StatCard label="AI activity" value="Live" icon={Activity} hint="Groq · llama-3.3-70b" />
       </div>
@@ -70,7 +76,19 @@ export default function DashboardPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            {(pending?.length ?? 0) === 0 ? (
+            {isPendingError ? (
+              <EmptyState
+                icon={AlertTriangle}
+                title="Couldn't load pending approvals"
+                description="Something went wrong — please try again."
+                action={
+                  <Button size="sm" onClick={() => refetchPending()}>
+                    Retry
+                  </Button>
+                }
+                className="py-10"
+              />
+            ) : (pending?.length ?? 0) === 0 ? (
               <EmptyState
                 icon={CheckCheck}
                 title="Nothing pending"

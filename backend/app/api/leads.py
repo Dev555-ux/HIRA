@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -44,7 +44,7 @@ class CreateLeadRequest(BaseModel):
     customer_id: uuid.UUID
     stage: LeadStage = "new"
     source: str | None = None
-    estimated_value: float | None = None
+    estimated_value: float | None = Field(default=None, ge=0)
     notes: str | None = None
     next_follow_up_at: datetime | None = None
     assigned_to: uuid.UUID | None = None
@@ -53,7 +53,7 @@ class CreateLeadRequest(BaseModel):
 class UpdateLeadRequest(BaseModel):
     stage: LeadStage | None = None
     source: str | None = None
-    estimated_value: float | None = None
+    estimated_value: float | None = Field(default=None, ge=0)
     notes: str | None = None
     next_follow_up_at: datetime | None = None
     assigned_to: uuid.UUID | None = None

@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_current_principal
@@ -71,6 +71,15 @@ class WorkingHoursDay(BaseModel):
         except ValueError as exc:
             raise ValueError("Time must be HH:MM in 24-hour format") from exc
         return value
+
+    @model_validator(mode="after")
+    def _close_after_open(self) -> "WorkingHoursDay":
+        # Found in Sprint 35's audit: nothing previously checked ordering, so
+        # a business could save backwards hours (e.g. close before open),
+        # silently producing an inverted availability filter for bookings.
+        if self.close <= self.open:
+            raise ValueError("close must be after open")
+        return self
 
 
 class UpdateCalendarSettingsRequest(BaseModel):

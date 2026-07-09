@@ -1,8 +1,8 @@
 # Production Readiness Checklist
 
-Status: Living checklist, first written **2026-07-10 (Sprint 34)**. Reflects an audit of the codebase as it exists today, not a plan — items marked **Done** were verified by reading the actual code/tests, not assumed. See `.claude/DECISIONS.md` and `ARCHITECTURE.md` for the reasoning behind anything referenced here.
+Status: Living checklist, first written **2026-07-10 (Sprint 34)**, updated **2026-07-10 (Sprint 35 — full application audit)**. Reflects an audit of the codebase as it exists today, not a plan — items marked **Done** were verified by reading the actual code/tests, not assumed. See `.claude/DECISIONS.md` and `ARCHITECTURE.md` for the reasoning behind anything referenced here.
 
-This is a checklist, not a design doc — it exists to answer "can we put a real beta business on this today, and if not, what's blocking it." For narrative architecture detail, see `ARCHITECTURE.md`; for the raw backlog, see `.claude/TODOS.md`'s Infrastructure section (INFRA-001 through INFRA-007).
+This is a checklist, not a design doc — it exists to answer "can we put a real beta business on this today, and if not, what's blocking it." For narrative architecture detail, see `ARCHITECTURE.md`; for the raw backlog, see `.claude/TODOS.md`'s Infrastructure section (INFRA-001 through INFRA-007) and its Technical Debt section (Sprint 35's Medium/Low audit findings).
 
 ---
 
@@ -12,6 +12,30 @@ This is a checklist, not a design doc — it exists to answer "can we put a real
 - [ ] **Production secrets manager.** All secrets (`WHATSAPP_ACCESS_TOKEN`, `GROQ_API_KEY`/`ANTHROPIC_API_KEY`, `DATABASE_URL`, `CALENDAR_ENCRYPTION_KEY`, Clerk keys) live in a local, git-ignored `.env` file today (`INFRA-002`). Fine for one founder's laptop; not fine for a real deployment.
 - [ ] **`FRONTEND_URL` set to the real domain** once deployed. Confirmed this sprint: the backend's CORS policy (`app/main.py`) and the Google OAuth callback redirect (`app/api/calendar.py`) both derive from `settings.frontend_url`, which defaults to `http://localhost:3000`. Leaving it unset in production means the deployed dashboard is silently CORS-blocked from calling its own API. (Fixed this sprint: CORS previously had *no* path from this setting into `allow_origins` at all — see below.)
 - [ ] **Re-verify the WhatsApp webhook end-to-end against the deployed URL** (`INFRA-006`) — the current live-verified round-trip (`PROGRESS.md`, 2026-07-04) was proven against ngrok, a different network path than a real deployment.
+
+## Sprint 35 audit (2026-07-10) — ranked findings
+
+A full application audit (backend + frontend) for "would this stop a small business owner from successfully using HIRA every day." Findings, ranked:
+
+**Critical**: none found.
+
+**High** (fixed this sprint):
+
+- **`/dashboard` had no error handling at all.** `usePending()`/`useConversations()`/`useCustomers()` failures silently rendered `0` on the app's main landing page — a business owner could see "0 pending approvals" and think everything's fine when it's actually a network failure. Fixed: retryable error states on all three tiles and the pending-list card.
+- **`/knowledge-base` had no error handling.** A failed fetch showed the same "No knowledge entries yet" empty state as an actually-empty KB — indistinguishable from data loss. Fixed: retryable error state.
+- **Appointment forms didn't validate end-after-start client-side.** Both "New appointment" and "Reschedule" only checked the two datetime fields were non-empty; swapping them round-tripped to the backend for a technical-sounding 422 (`"ends_at must be after starts_at"`) instead of an immediate, friendly inline error. Fixed: added a zod `.refine()` to both forms.
+- **Calendar working hours had no ordering validation.** `WorkingHoursDay` validated `open`/`close` individually but never checked `close > open` — a business could save backwards hours (e.g. close before open), silently corrupting the availability filter used for every AI-proposed booking. Fixed: a `model_validator` now rejects `close <= open`.
+- **Lead `estimated_value` had no non-negative constraint.** A lead's pipeline value could be saved as negative. Fixed: `Field(ge=0)` on both create and update.
+- **`/analytics` showed a fake "Coming soon" for data that already existed.** "Total conversations" had shown a placeholder since before Sprint 32, even though `/dashboard` wired the identical `GET /conversations` total to a real number that same sprint — a real, visible inconsistency between two pages. Fixed: reused the exact same hook/pattern; also gained a retryable error state.
+
+**Medium** (documented in `.claude/TODOS.md`, not fixed — see "Technical Debt"):
+
+- `/analytics`' "Pending approvals" tile still has no error handling (lower stakes — the page is still mostly placeholder).
+- Appointment booking doesn't prevent picking a start time in the past.
+
+**Low**: none found beyond what's already tracked (Dashboard's unconditional "AI activity: Live" tile, Settings' WhatsApp placeholders — both pre-existing, reconfirmed still accurate, not new).
+
+**End-to-end owner journey — re-verified after fixes**: signup → business setup → (WhatsApp connection — honest "Coming soon," no self-serve path yet) → Calendar connection → knowledge upload → customer conversation → lead creation → appointment booking → approval flow → dashboard update. Live-verified the specific new validations for real (not just via the test suite): negative `estimated_value` rejected/zero and positive accepted, backwards working hours rejected/valid hours accepted, and the CORS fix's actual header behavior against a running server (`localhost:3000` echoed back, an unrecognized origin gets no `Access-Control-Allow-Origin`). No broken links or dead ends found beyond what's listed above.
 
 ## Fixed this sprint (Sprint 34)
 

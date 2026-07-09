@@ -5,17 +5,29 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useConversations } from "@/hooks/use-conversations";
 import { usePending } from "@/hooks/use-pending";
 
 export default function AnalyticsPage() {
   const { data: pending, isLoading } = usePending();
+  // limit: 1 — only meta.total is needed here, not the rows themselves. Same
+  // data /dashboard already shows live (Sprint 32) — this tile showed a fake
+  // "Coming soon" for it too until Sprint 35's audit caught the inconsistency.
+  const { data: conversations, isLoading: isLoadingConversations, isError: isConversationsError } =
+    useConversations({ limit: 1 });
 
   return (
     <>
       <PageHeader title="Analytics" description="How your AI receptionist is performing." />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total conversations" value="—" icon={MessageSquare} hint="Coming soon" />
+        <StatCard
+          label="Total conversations"
+          value={isConversationsError ? "—" : (conversations?.meta.total ?? 0)}
+          icon={MessageSquare}
+          loading={isLoadingConversations}
+          hint={isConversationsError ? "Couldn't load" : undefined}
+        />
         <StatCard label="Messages today" value="—" icon={BarChart3} hint="Coming soon" />
         <StatCard
           label="Pending approvals"

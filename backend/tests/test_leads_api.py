@@ -109,6 +109,22 @@ def test_create_lead_rejects_invalid_stage(db_session):
     app.dependency_overrides.clear()
 
 
+def test_create_lead_rejects_negative_estimated_value(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/leads",
+        json={"customer_id": str(cust.id), "estimated_value": -100},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
 def test_create_lead_for_unknown_customer_is_404(db_session):
     _seed_business(db_session, "A", "user_a")
     db_session.commit()
@@ -328,6 +344,22 @@ def test_patch_lead_rejects_invalid_stage(db_session):
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
 
     resp = client.patch(f"/api/v1/leads/{lead.id}", json={"stage": "not_a_stage"}, headers=_auth())
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
+def test_patch_lead_rejects_negative_estimated_value(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    lead = Lead(business_id=biz.id, customer_id=cust.id)
+    db_session.add(lead)
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(
+        f"/api/v1/leads/{lead.id}", json={"estimated_value": -50}, headers=_auth()
+    )
 
     assert resp.status_code == 422
     app.dependency_overrides.clear()

@@ -176,3 +176,29 @@ describe("KnowledgeBasePage — delete confirmation", () => {
     expect(api.deleteKbEntry).not.toHaveBeenCalled();
   });
 });
+
+describe("KnowledgeBasePage — error state", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows a retryable error instead of a misleading 'No knowledge entries yet' on fetch failure", async () => {
+    vi.mocked(api.listKbEntries).mockRejectedValue(new Error("Network error"));
+    renderWithProviders(<KnowledgeBasePage />);
+
+    expect(await screen.findByText("Couldn't load knowledge base")).toBeInTheDocument();
+    expect(screen.getByText("Network error")).toBeInTheDocument();
+    expect(screen.queryByText("No knowledge entries yet")).not.toBeInTheDocument();
+  });
+
+  it("retries the fetch when Retry is clicked", async () => {
+    vi.mocked(api.listKbEntries).mockRejectedValueOnce(new Error("Network error"));
+    vi.mocked(api.listKbEntries).mockResolvedValueOnce([]);
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: /retry/i }));
+
+    expect(await screen.findByText("No knowledge entries yet")).toBeInTheDocument();
+  });
+});

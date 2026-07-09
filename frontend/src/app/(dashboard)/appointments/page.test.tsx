@@ -149,6 +149,26 @@ describe("AppointmentsPage", () => {
     expect(await screen.findByText("Appointment rescheduled")).toBeInTheDocument();
   });
 
+  it("rejects rescheduling to an end time before the start time", async () => {
+    vi.mocked(api.listAppointments).mockResolvedValue([appointment()]);
+    const user = userEvent.setup();
+    renderWithProviders(<AppointmentsPage />);
+
+    await user.click(await screen.findByRole("button", { name: /reschedule/i }));
+    const dialog = await screen.findByText("Reschedule appointment");
+    const form = dialog.closest("[role=dialog]") as HTMLElement;
+    const [startInput, endInput] = form.querySelectorAll("input[type=datetime-local]");
+    await user.clear(endInput as HTMLElement);
+    await user.type(endInput as HTMLElement, "2026-08-05T13:00");
+    await user.clear(startInput as HTMLElement);
+    await user.type(startInput as HTMLElement, "2026-08-05T14:00");
+
+    await user.click(within(form).getByRole("button", { name: /^reschedule$/i }));
+
+    expect(await screen.findByText("End time must be after start time")).toBeInTheDocument();
+    expect(api.rescheduleAppointment).not.toHaveBeenCalled();
+  });
+
   it("opens the new-appointment dialog and searches for a customer", async () => {
     vi.mocked(api.listAppointments).mockResolvedValue([]);
     vi.mocked(api.listCustomers).mockResolvedValue({
@@ -195,5 +215,31 @@ describe("AppointmentsPage", () => {
       ),
     );
     expect(await screen.findByText("Appointment booked")).toBeInTheDocument();
+  });
+
+  it("rejects booking a new appointment with an end time before the start time", async () => {
+    vi.mocked(api.listAppointments).mockResolvedValue([]);
+    vi.mocked(api.listCustomers).mockResolvedValue({
+      data: [customer()],
+      meta: { total: 1, limit: 5, offset: 0 },
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<AppointmentsPage />);
+
+    await screen.findByText("No upcoming appointments");
+    await user.click(screen.getAllByRole("button", { name: /new appointment/i })[0]);
+    await user.type(screen.getByPlaceholderText(/search customers/i), "Sam");
+    await user.click(await screen.findByText("Sam Patel"));
+    await user.type(screen.getByPlaceholderText(/dental cleaning/i), "Consultation");
+
+    const dialog = screen.getByRole("dialog");
+    const timeInputs = dialog.querySelectorAll("input[type=datetime-local]");
+    await user.type(timeInputs[0] as HTMLInputElement, "2026-08-05T15:00");
+    await user.type(timeInputs[1] as HTMLInputElement, "2026-08-05T14:00");
+
+    await user.click(within(dialog).getByRole("button", { name: /book appointment/i }));
+
+    expect(await screen.findByText("End time must be after start time")).toBeInTheDocument();
+    expect(api.createAppointment).not.toHaveBeenCalled();
   });
 });

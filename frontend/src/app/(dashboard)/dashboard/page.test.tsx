@@ -100,4 +100,34 @@ describe("DashboardPage", () => {
 
     expect(await screen.findByText("Yes, we're open!")).toBeInTheDocument();
   });
+
+  it("shows a retryable error instead of a misleading zero when pending approvals fail to load", async () => {
+    vi.mocked(api.listPending).mockRejectedValue(new Error("Network error"));
+    vi.mocked(api.listConversations).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 1, offset: 0 },
+    });
+    vi.mocked(api.listCustomers).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 1, offset: 0 },
+    });
+
+    renderWithProviders(<DashboardPage />);
+
+    expect(await screen.findByText("Couldn't load pending approvals")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing pending")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Couldn't load").length).toBeGreaterThan(0);
+  });
+
+  it("shows a dash instead of a misleading zero when conversation/customer totals fail to load", async () => {
+    vi.mocked(api.listPending).mockResolvedValue([]);
+    vi.mocked(api.listConversations).mockRejectedValue(new Error("Network error"));
+    vi.mocked(api.listCustomers).mockRejectedValue(new Error("Network error"));
+
+    renderWithProviders(<DashboardPage />);
+
+    await screen.findByText("Nothing pending");
+    expect(await screen.findAllByText("—")).toHaveLength(2);
+    expect(await screen.findAllByText("Couldn't load")).toHaveLength(2);
+  });
 });

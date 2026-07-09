@@ -206,10 +206,15 @@ function AppointmentRow({ appointment }: { appointment: Appointment }) {
   );
 }
 
-const rescheduleSchema = z.object({
-  starts_at: z.string().min(1, "Start time is required"),
-  ends_at: z.string().min(1, "End time is required"),
-});
+const rescheduleSchema = z
+  .object({
+    starts_at: z.string().min(1, "Start time is required"),
+    ends_at: z.string().min(1, "End time is required"),
+  })
+  .refine((values) => new Date(values.ends_at) > new Date(values.starts_at), {
+    message: "End time must be after start time",
+    path: ["ends_at"],
+  });
 
 type RescheduleFormValues = z.infer<typeof rescheduleSchema>;
 
@@ -222,7 +227,11 @@ function RescheduleForm({
 }) {
   const { toast } = useToast();
   const reschedule = useRescheduleAppointment();
-  const { register, handleSubmit } = useForm<RescheduleFormValues>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<RescheduleFormValues>({
     resolver: zodResolver(rescheduleSchema),
     defaultValues: {
       starts_at: toDateTimeInputValue(appointment.starts_at),
@@ -253,10 +262,16 @@ function RescheduleForm({
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">New start</span>
           <Input type="datetime-local" {...register("starts_at")} />
+          {errors.starts_at && (
+            <span className="block text-xs text-destructive">{errors.starts_at.message}</span>
+          )}
         </label>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">New end</span>
           <Input type="datetime-local" {...register("ends_at")} />
+          {errors.ends_at && (
+            <span className="block text-xs text-destructive">{errors.ends_at.message}</span>
+          )}
         </label>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onDone} disabled={reschedule.isPending}>
@@ -271,11 +286,16 @@ function RescheduleForm({
   );
 }
 
-const createSchema = z.object({
-  starts_at: z.string().min(1, "Start time is required"),
-  ends_at: z.string().min(1, "End time is required"),
-  summary: z.string().trim().min(1, "Summary is required"),
-});
+const createSchema = z
+  .object({
+    starts_at: z.string().min(1, "Start time is required"),
+    ends_at: z.string().min(1, "End time is required"),
+    summary: z.string().trim().min(1, "Summary is required"),
+  })
+  .refine((values) => new Date(values.ends_at) > new Date(values.starts_at), {
+    message: "End time must be after start time",
+    path: ["ends_at"],
+  });
 
 type CreateFormValues = z.infer<typeof createSchema>;
 

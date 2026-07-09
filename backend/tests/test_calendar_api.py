@@ -136,6 +136,23 @@ def test_patch_calendar_settings_rejects_invalid_time_format(db_session):
     app.dependency_overrides.clear()
 
 
+def test_patch_calendar_settings_rejects_close_before_open(db_session):
+    """Sprint 35 audit: nothing previously checked ordering, so a business
+    could save backwards hours that would silently corrupt availability."""
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(
+        "/api/v1/calendar/settings",
+        json={"working_hours": {"mon": {"open": "17:00", "close": "09:00"}}},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
 def test_patch_calendar_settings_rejects_unknown_day_key(db_session):
     _seed_business(db_session, "A", "user_a")
     db_session.commit()
