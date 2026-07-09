@@ -9,6 +9,8 @@ import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useConversations } from "@/hooks/use-conversations";
+import { useCustomers } from "@/hooks/use-customers";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { usePending } from "@/hooks/use-pending";
 import { describeWhatsAppConnection } from "@/lib/utils";
@@ -16,6 +18,11 @@ import { describeWhatsAppConnection } from "@/lib/utils";
 export default function DashboardPage() {
   const { data: pending, isLoading } = usePending();
   const { data: onboarding } = useOnboardingStatus();
+  // limit: 1 — only meta.total is needed here, not the rows themselves.
+  const { data: conversations, isLoading: isLoadingConversations } = useConversations({
+    limit: 1,
+  });
+  const { data: customers, isLoading: isLoadingCustomers } = useCustomers({ limit: 1 });
   const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
 
   return (
@@ -37,8 +44,20 @@ export default function DashboardPage() {
           loading={isLoading}
           hint="Replies awaiting review"
         />
-        <StatCard label="Conversations" value="—" icon={MessageSquare} hint="Endpoint coming soon" />
-        <StatCard label="Customers" value="—" icon={Users} hint="Endpoint coming soon" />
+        <StatCard
+          label="Conversations"
+          value={conversations?.meta.total ?? 0}
+          icon={MessageSquare}
+          loading={isLoadingConversations}
+          hint="Total conversations"
+        />
+        <StatCard
+          label="Customers"
+          value={customers?.meta.total ?? 0}
+          icon={Users}
+          loading={isLoadingCustomers}
+          hint="People who have messaged you"
+        />
         <StatCard label="AI activity" value="Live" icon={Activity} hint="Groq · llama-3.3-70b" />
       </div>
 

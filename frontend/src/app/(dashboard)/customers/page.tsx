@@ -12,20 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCustomers } from "@/hooks/use-customers";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { STAGE_LABEL } from "@/lib/leads";
 import type { Customer } from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
-
-const STAGE_LABEL: Record<string, string> = {
-  new: "New",
-  contacted: "Contacted",
-  qualified: "Qualified",
-  proposal_sent: "Proposal sent",
-  negotiation: "Negotiation",
-  won: "Won",
-  lost: "Lost",
-};
 
 export default function CustomersPage() {
   const [query, setQuery] = useState("");

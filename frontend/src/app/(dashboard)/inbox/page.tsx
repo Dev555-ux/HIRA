@@ -9,6 +9,7 @@ import {
   Search,
 } from "lucide-react";
 import { useState } from "react";
+import { ChannelBadge } from "@/components/channel-badge";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -199,6 +200,7 @@ function ConversationList({
                       {conv.preview ?? "No messages yet"}
                     </p>
                     <div className="flex gap-1">
+                      <ChannelBadge />
                       <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
                       {conv.has_pending_approval && <Badge variant="warning">Pending</Badge>}
                     </div>
@@ -264,7 +266,10 @@ function ConversationDetail({
           <Skeleton className="h-5 w-32" />
         ) : (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{name}</p>
+            <div className="flex items-center gap-2">
+              <p className="truncate text-sm font-medium">{name}</p>
+              {conversation && <ChannelBadge />}
+            </div>
             {conversation && (
               <p className="text-xs text-muted-foreground">{conversation.customer.wa_phone}</p>
             )}

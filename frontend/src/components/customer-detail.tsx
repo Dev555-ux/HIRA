@@ -18,37 +18,9 @@ import { useToast } from "@/components/ui/toast";
 import { useCustomer, useCustomerTimeline } from "@/hooks/use-customers";
 import { useCreateLead, useDeleteLead, useUpdateLead } from "@/hooks/use-leads";
 import { ApiError } from "@/lib/api";
-import type {
-  CustomerLead,
-  LeadEventType,
-  LeadStage,
-  TimelineItem,
-  TimelineLeadEventItem,
-} from "@/lib/types";
+import { LEAD_STAGES, STAGE_BADGE_VARIANT } from "@/lib/leads";
+import type { CustomerLead, LeadEventType, TimelineItem, TimelineLeadEventItem } from "@/lib/types";
 import { cn, formatRelativeTime, toDateInputValue } from "@/lib/utils";
-
-const LEAD_STAGES: { value: LeadStage; label: string }[] = [
-  { value: "new", label: "New" },
-  { value: "contacted", label: "Contacted" },
-  { value: "qualified", label: "Qualified" },
-  { value: "proposal_sent", label: "Proposal sent" },
-  { value: "negotiation", label: "Negotiation" },
-  { value: "won", label: "Won" },
-  { value: "lost", label: "Lost" },
-];
-
-const STAGE_BADGE_VARIANT: Record<
-  LeadStage,
-  "secondary" | "warning" | "success" | "destructive" | "outline"
-> = {
-  new: "secondary",
-  contacted: "outline",
-  qualified: "warning",
-  proposal_sent: "warning",
-  negotiation: "warning",
-  won: "success",
-  lost: "destructive",
-};
 
 const TIMELINE_PAGE_SIZE = 20;
 

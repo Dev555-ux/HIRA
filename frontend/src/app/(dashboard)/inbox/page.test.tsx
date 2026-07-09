@@ -98,6 +98,7 @@ describe("InboxPage", () => {
     // second match in each case.
     expect(screen.getAllByText("Open")).toHaveLength(2);
     expect(screen.getAllByText("Pending")).toHaveLength(2);
+    expect(screen.getByText("WhatsApp")).toBeInTheDocument();
   });
 
   it("debounces search input, then calls the API with the search term", async () => {
@@ -159,6 +160,8 @@ describe("InboxPage", () => {
     expect(screen.getByText("Pending approval")).toBeInTheDocument();
     expect(api.getConversation).toHaveBeenCalledWith(expect.any(Function), "conv-1");
     expect(api.listMessages).toHaveBeenCalledWith(expect.any(Function), "conv-1");
+    // WhatsApp badge appears in both the list row and the detail header.
+    expect(screen.getAllByText("WhatsApp")).toHaveLength(2);
   });
 
   it("returns to the conversation list from the back button", async () => {
