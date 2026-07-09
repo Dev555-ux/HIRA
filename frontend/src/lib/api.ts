@@ -8,10 +8,15 @@ import type {
   ConversationStatusFilter,
   CreateBusinessPayload,
   CreateKbEntryPayload,
+  CreateLeadPayload,
+  CustomerDetail,
+  Customer,
   EscalateResult,
   ImportWebsitePayload,
   ImportWebsiteResult,
   KbEntry,
+  Lead,
+  LeadStage,
   Message,
   OnboardingStatus,
   PaginatedEnvelope,
@@ -19,8 +24,10 @@ import type {
   PlaygroundResponse,
   RegenerateResult,
   RejectResult,
+  TimelineItem,
   UpdateDraftResult,
   UpdateKbEntryPayload,
+  UpdateLeadPayload,
 } from "./types";
 
 export class ApiError extends Error {
@@ -196,6 +203,49 @@ export const api = {
   ) =>
     apiFetch<PaginatedEnvelope<Message[]>>(
       `/api/v1/conversations/${id}/messages${buildQuery(params)}`,
+      getToken,
+    ),
+
+  listLeads: (
+    getToken: GetToken,
+    params: { search?: string; stage?: LeadStage; limit?: number; offset?: number } = {},
+  ) => apiFetch<PaginatedEnvelope<Lead[]>>(`/api/v1/leads${buildQuery(params)}`, getToken),
+
+  createLead: (getToken: GetToken, payload: CreateLeadPayload) =>
+    apiFetch<ApiEnvelope<Lead>>("/api/v1/leads", getToken, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  getLead: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<Lead>>(`/api/v1/leads/${id}`, getToken).then((r) => r.data),
+
+  updateLead: (getToken: GetToken, id: string, payload: UpdateLeadPayload) =>
+    apiFetch<ApiEnvelope<Lead>>(`/api/v1/leads/${id}`, getToken, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  deleteLead: (getToken: GetToken, id: string) =>
+    apiFetch<void>(`/api/v1/leads/${id}`, getToken, { method: "DELETE" }),
+
+  listCustomers: (
+    getToken: GetToken,
+    params: { search?: string; limit?: number; offset?: number } = {},
+  ) => apiFetch<PaginatedEnvelope<Customer[]>>(`/api/v1/customers${buildQuery(params)}`, getToken),
+
+  getCustomer: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<CustomerDetail>>(`/api/v1/customers/${id}`, getToken).then(
+      (r) => r.data,
+    ),
+
+  getCustomerTimeline: (
+    getToken: GetToken,
+    id: string,
+    params: { limit?: number; offset?: number } = {},
+  ) =>
+    apiFetch<PaginatedEnvelope<TimelineItem[]>>(
+      `/api/v1/customers/${id}/timeline${buildQuery(params)}`,
       getToken,
     ),
 };

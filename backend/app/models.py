@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -176,6 +176,56 @@ class Escalation(Base):
     )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+class Lead(Base):
+    __tablename__ = "leads"
+    __table_args__ = (
+        UniqueConstraint("business_id", "customer_id", name="uq_lead_business_customer"),
+        Index("ix_leads_business_stage", "business_id", "stage"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"))
+    # new | contacted | qualified | proposal_sent | negotiation | won | lost
+    # Plain string (no CHECK constraint), matching Message.status/Conversation.status;
+    # validated at the API boundary instead (see app/api/leads.py's LeadStage Literal).
+    stage: Mapped[str] = mapped_column(String(32), default="new")
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    estimated_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_follow_up_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    assigned_to: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class LeadEvent(Base):
+    """Append-only history for a Lead — timeline/audit trail only, never mutated.
+
+    Deliberately has no business_id: every query reaches this table by joining
+    through Lead.business_id (see app/services/leads.py), since it's always
+    accessed in the context of a specific, already-tenant-scoped lead.
+    """
+
+    __tablename__ = "lead_events"
+    __table_args__ = (Index("ix_lead_events_lead_created", "lead_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("leads.id", ondelete="CASCADE"), index=True
+    )
+    # lead_created | stage_change | notes_updated | follow_up_set | assigned
+    type: Mapped[str] = mapped_column(String(32))
+    from_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    to_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class CalendarCredential(Base):

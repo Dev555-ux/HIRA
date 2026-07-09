@@ -35,3 +35,12 @@ export function formatRelativeTime(iso: string): string {
   const days = Math.round(hours / 24);
   return `${days}d ago`;
 }
+
+// Converts a backend ISO datetime (or null) into the "YYYY-MM-DD" value an
+// <input type="date"> expects. Used for Lead.next_follow_up_at.
+export function toDateInputValue(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return iso.slice(0, 10);
+}

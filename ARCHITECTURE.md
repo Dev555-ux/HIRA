@@ -30,7 +30,7 @@ Anything not implemented is explicitly marked **Not yet implemented** rather tha
 - No monitoring, alerting, or error tracking.
 - No automated database backups.
 - No CORS configuration, no rate limiting on the webhook endpoint.
-- `appointments` and `calendar_credentials` exist in the schema but have **zero application code** using them yet (`calendar_credentials` — no OAuth built; see DEC-028). `escalations` gained its first application code in Sprint 27 (2026-07-09): `POST /messages/{id}/escalate` creates rows, but there is still no list/resolve endpoint or dashboard surface to view them (see DEC-030).
+- `appointments` and `calendar_credentials` exist in the schema but have **zero application code** using them yet (`calendar_credentials` — no OAuth built; see DEC-028). `escalations` gained its first application code in Sprint 27 (2026-07-09): `POST /messages/{id}/escalate` creates rows, but there is still no list/resolve endpoint or dashboard surface to view them (see DEC-030). `leads`/`lead_events` (CRM Foundation, Sprint 28, 2026-07-09) are new tables with full CRUD, a service layer, an API, and a live Customers page — see DEC-031.
 
 This is an intentional MVP-first sequencing (see `.claude/DECISIONS.md`): prove the core AI loop works against real infrastructure before investing in production hardening. Section 12 and 13 describe exactly what's left to close that gap.
 
@@ -108,15 +108,19 @@ backend/
 │   │   ├── messaging.py         # send_text(): outbound WhatsApp Cloud API call
 │   │   ├── replies.py           # approve_and_send(), update_draft(), reject_reply(),
 │   │   │                        # regenerate_draft(), escalate_reply() — every pending-draft action
-│   │   └── provisioning.py      # provision_business(): signup → Business + owner User
+│   │   ├── provisioning.py      # provision_business(): signup → Business + owner User
+│   │   ├── leads.py             # create_lead()/update_lead()/delete_lead() — CRM pipeline actions + LeadEvent logging
+│   │   └── timeline.py          # get_customer_timeline(): merges Message + LeadEvent history
 │   ├── auth/
 │   │   ├── clerk.py             # Clerk JWT verification against JWKS
 │   │   └── dependencies.py      # get_verified_clerk_user_id(), get_current_principal()
 │   └── api/
 │       ├── dashboard.py         # /api/v1/pending, /api/v1/messages/{id}/{approve,draft,reject,regenerate,escalate}
-│       └── onboarding.py        # /api/v1/onboarding/status, /api/v1/onboarding/business
+│       ├── onboarding.py        # /api/v1/onboarding/status, /api/v1/onboarding/business
+│       ├── leads.py             # /api/v1/leads (CRUD) — Sprint 28
+│       └── customers.py         # /api/v1/customers, /{id}, /{id}/timeline — Sprint 28
 ├── alembic/                      # DB migrations
-├── tests/                        # pytest suite (195 tests, all passing, as of Sprint 27)
+├── tests/                        # pytest suite (259 tests, all passing, as of Sprint 28)
 └── scripts/                      # One-off operational scripts (seeding, phone-number updates)
 ```
 
@@ -237,7 +241,7 @@ Standard library `logging`, one `logger = logging.getLogger(__name__)` per modul
 
 **Framework**: Next.js 15 (App Router), TypeScript, React 19, Tailwind CSS v4. Hand-authored shadcn-style UI primitives on top of Radix (not the shadcn CLI).
 
-**Routing**: file-based via the App Router. Authenticated dashboard pages live under the `(dashboard)` route group, sharing one layout (`app-shell` + sidebar nav + `ErrorBoundary`). Route: `/`, `/dashboard`, `/inbox`, `/pending`, `/knowledge-base`, `/customers`, `/analytics`, `/settings`. A separate `(onboarding)` route group (its own minimal layout, no sidebar) serves `/onboarding` — the business-provisioning form (Milestone A). `(dashboard)/layout.tsx` is a client component that calls `GET /api/v1/onboarding/status` on load and redirects a business-less user to `/onboarding`; `(onboarding)/layout.tsx` does the inverse (redirects an already-provisioned business to `/dashboard`).
+**Routing**: file-based via the App Router. Authenticated dashboard pages live under the `(dashboard)` route group, sharing one layout (`app-shell` + sidebar nav + `ErrorBoundary`). Route: `/`, `/dashboard`, `/inbox`, `/pending`, `/knowledge-base`, `/customers`, `/analytics`, `/settings`. `/customers` is now a live two-pane list/detail view (Sprint 28, 2026-07-09) — see the page-status table below. A separate `(onboarding)` route group (its own minimal layout, no sidebar) serves `/onboarding` — the business-provisioning form (Milestone A). `(dashboard)/layout.tsx` is a client component that calls `GET /api/v1/onboarding/status` on load and redirects a business-less user to `/onboarding`; `(onboarding)/layout.tsx` does the inverse (redirects an already-provisioned business to `/dashboard`).
 
 **Authentication**: `AuthContext` (`lib/auth-context.tsx`) is the single abstraction every page/component uses — `useAuthContext()` returns `{ getToken, user, isLoaded, mocked }`. Two implementations select at runtime (`components/providers.tsx`):
 - **Real Clerk** (`ClerkProvider` + `ClerkBridge`) when `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set.
@@ -255,7 +259,7 @@ Standard library `logging`, one `logger = logging.getLogger(__name__)` per modul
 | `/pending` | **Live** (Sprint 27, 2026-07-09) — editable AI draft (dirty-state tracking, character counter, unsaved-edit confirm dialog), approve & send, reject, regenerate, escalate, against the real API; optimistic updates, 15s polling. See `components/pending-reply-card.tsx`. |
 | `/inbox` | **Live** (2026-07-08) — two-pane conversation list + message timeline against `GET /api/v1/conversations`, `GET /api/v1/conversations/{id}`, `GET /api/v1/conversations/{id}/messages`; search (debounced), status filter chips (All/Open/Pending/Closed), pagination, 15s polling, mobile master-detail (list ↔ timeline). See `hooks/use-conversations.ts`. |
 | `/knowledge-base` | **Live** — full CRUD + website import |
-| `/customers` | Static UI shell — no backend query |
+| `/customers` | **Live** (Sprint 28, 2026-07-09) — two-pane searchable/paginated customer list + detail view: customer profile, an editable Lead card (stage/source/estimated value/notes/next follow-up, create/edit/delete), and a Timeline aggregating message history with Lead activity. See `components/customer-detail.tsx`, `hooks/use-customers.ts`/`use-leads.ts`. |
 | `/analytics` | Static UI shell — all stat tiles show "Coming soon" |
 | `/settings` | Partially live — AI Reply Mode card is real; business info/WhatsApp config fields remain disabled placeholders |
 | `/onboarding` | **Live** — business-provisioning form (name, industry, business email, country, timezone); posts to `/api/v1/onboarding/business`, redirects to `/dashboard` on success. Outside the `(dashboard)` route group. |
@@ -286,6 +290,19 @@ PostgreSQL with the `pgvector` extension. Every business-owned table carries `bu
 **`customers`** — a business's end customers, identified by WhatsApp number.
 - FK: `business_id → businesses.id` (`ON DELETE CASCADE`), indexed.
 - `UNIQUE(business_id, wa_phone)` — the same phone number can exist as separate `Customer` rows under different businesses (correct: a phone number isn't globally unique across tenants), but only once per business.
+
+**`leads`** — CRM Foundation (Sprint 28, 2026-07-09, DEC-031). One row per `(business, customer)`.
+- FKs: `business_id → businesses.id` (`ON DELETE CASCADE`, indexed), `customer_id → customers.id` (`ON DELETE CASCADE`), `assigned_to → users.id` (`ON DELETE SET NULL`, nullable — same shape as `escalations.resolved_by`).
+- `UNIQUE(business_id, customer_id)` — one lead per customer for the MVP; a repeat inquiry updates the existing lead in place rather than creating a second one.
+- `stage`: `new | contacted | qualified | proposal_sent | negotiation | won | lost` — plain string, no CHECK constraint (matches `messages.status`/`conversations.status`); validated instead at the API layer (`app/api/leads.py`'s `LeadStage` Pydantic `Literal`).
+- `source` (nullable, free text, not validated against a fixed set — unlike `stage`), `estimated_value` (`NUMERIC(12,2)`, nullable), `notes` (nullable), `next_follow_up_at` (nullable, stored as naive UTC like every other timestamp in this schema).
+- Composite index `ix_leads_business_stage (business_id, stage)` for pipeline-board-style "list leads in stage X" queries, mirroring `ix_conversations_business_status_last`.
+
+**`lead_events`** — append-only history for a `Lead`; the "CRM events" half of the Customer timeline (Sprint 28, DEC-031).
+- FK: `lead_id → leads.id` (`ON DELETE CASCADE`, indexed). **No `business_id` column** — the first tenant-owned-adjacent table without one; every query reaches it by joining through `Lead.business_id` (`app/services/leads.py`/`app/services/timeline.py`), never `tenant_query`/`get_scoped` directly.
+- `type`: `lead_created | stage_change | notes_updated | follow_up_set | assigned`. `from_value`/`to_value` (`Text`, nullable — full note content can be stored here, not just short codes). `note` (`Text`, nullable, reserved — nothing writes it yet).
+- Application code only ever inserts rows here; nothing updates or deletes one once written (a row disappears only via `ON DELETE CASCADE` from its parent `Lead`).
+- Composite index `ix_lead_events_lead_created (lead_id, created_at)` — supports the timeline's newest-first per-lead history query.
 
 **`conversations`** — one active thread per customer per business (get-or-create by "most recent active" on inbound).
 - FKs: `business_id` (indexed), `customer_id → customers.id` (`ON DELETE CASCADE`).
@@ -617,7 +634,7 @@ Per `MILESTONES.md`:
 
 - **Milestone 1 — First Working AI Receptionist**: ✅ Complete. Full loop (receive → verify → store → retrieve → generate → reply) implemented and live-verified with Groq.
 - **Milestone 2 — Clerk Authentication**: ✅ Complete (built & tested). Live use requires Clerk app credentials in `.env` and a `User` row per Clerk user (provisioning is manual — see Section 15).
-- **Milestone 3 — Next.js Dashboard UI**: ✅ Complete. Full app shell, 7 pages; `/pending` (full copilot workflow as of Sprint 27, 2026-07-09), `/inbox`, `/knowledge-base`, `/onboarding`, and partially `/dashboard`/`/settings` are wired to live data; `/customers`/`/analytics` remain placeholders pending backend endpoints.
+- **Milestone 3 — Next.js Dashboard UI**: ✅ Complete. Full app shell, 7 pages; `/pending` (full copilot workflow as of Sprint 27), `/inbox`, `/knowledge-base`, `/onboarding`, `/customers` (full CRM view as of Sprint 28, 2026-07-09), and partially `/dashboard`/`/settings` are wired to live data; `/analytics` remains a placeholder pending backend endpoints.
 - **Milestone 4 — WhatsApp Cloud API (autonomous loop)**: ✅ Complete and **live-verified** (2026-07-04) — real customer message → webhook → retrieval → Groq → real outbound send → customer, confirmed end-to-end against Meta's live Cloud API.
 
 **Current project maturity**: all four MVP milestones are functionally complete against a single real test business. The system has not been deployed, has not handled more than one real tenant concurrently, and has no production operational tooling (monitoring, backups, secrets management). This is best characterized as **"MVP proven, pre-production."**
@@ -636,8 +653,9 @@ Recommended next implementation order, reasoning included:
 6. **Analytics** — real metrics behind `/analytics` (conversation volume, response time, approval rate). Sequenced after Inbox/handoff since those produce the events analytics would report on.
 7. **Multi-tenant onboarding** — **partially done.** Business + owner `User` provisioning is now self-service (`POST /api/v1/onboarding/business`, `/onboarding` page — see `ONBOARDING_IMPLEMENTATION_PLAN.md` Milestone A, done 2026-07-05). Still manual/not built: connecting the business's own WhatsApp number (still only via `scripts/seed_business.py`), knowledge-base ingestion from a website/PDF, and the test-drive playground — tracked as Milestones B–F in the same plan.
 8. **Billing** — no billing model, no Stripe/payment integration exists anywhere in the codebase today. Sequenced last: billing only matters once there's more than one paying tenant, which depends on Multi-tenant onboarding above.
+9. **CRM Foundation** — **done (Sprint 28, 2026-07-09).** `Lead`/`LeadEvent` tables (DEC-031), full CRUD (`/api/v1/leads`), and a live `/customers` list/detail page (editable Lead card + a Timeline aggregating message history with CRM activity, `GET /customers/{id}/timeline`). Sequenced ahead of Analytics (#6) since pipeline/conversion metrics need lead data to exist first. Still open: a dedicated Leads/pipeline board view (Kanban-style, grouped by stage — only the Customer-centric view was built this sprint), and an assignee picker in the frontend (the backend/API fully support `assigned_to`, but there's no `GET /api/v1/users` staff-list endpoint yet to populate a picker with).
 
-All items in this section are **Not yet implemented**.
+Items 4, 5, 6, and 8 above remain **not yet implemented**; 2, 3, 7, and 9 have completed or partial work, annotated inline above.
 
 ---
 

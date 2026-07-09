@@ -3,7 +3,7 @@
 Status: **Accepted** (2026-06-29). See `DECISIONS.md` DEC-014, DEC-025.
 Base path: `/api/v1`. Auth: Clerk JWT (dashboard endpoints) / Meta signature (webhook). All dashboard endpoints are tenant-scoped to the caller's `business_id`.
 
-**Implemented so far** (as of 2026-07-09): `GET /api/v1/pending`; `/messages/{id}/approve`, `/draft` (`PATCH`), `/reject`, `/regenerate`, `/escalate` (see Assisted-Mode Approvals below — Sprint 27); `GET/POST/PATCH/DELETE /api/v1/kb` (+ `/kb/website`); `GET/POST /api/v1/onboarding/*` (+ `/playground/message`); `GET/PATCH /api/v1/settings` (AI Reply Mode only); `GET /api/v1/conversations`, `/conversations/{id}`, `/conversations/{id}/messages` (see the Conversations section below for exact query params — this is a smaller slice of the originally-sketched Conversations API: the two `POST` actions there are not built). All protected by Clerk JWT via `get_current_principal` (resolves the Clerk user → local `User` → `business_id`). Cross-tenant access returns `404`. Verification: RS256 against Clerk JWKS (`CLERK_JWKS_URL`). A dedicated `GET /escalations` list endpoint is still to be built — escalations are created (Sprint 27) but not yet listable. Remaining endpoints below (Appointments/Calendar, most of Settings) are still to be built.
+**Implemented so far** (as of 2026-07-09): `GET /api/v1/pending`; `/messages/{id}/approve`, `/draft` (`PATCH`), `/reject`, `/regenerate`, `/escalate` (see Assisted-Mode Approvals below — Sprint 27); `GET/POST/PATCH/DELETE /api/v1/kb` (+ `/kb/website`); `GET/POST /api/v1/onboarding/*` (+ `/playground/message`); `GET/PATCH /api/v1/settings` (AI Reply Mode only); `GET /api/v1/conversations`, `/conversations/{id}`, `/conversations/{id}/messages` (see the Conversations section below for exact query params — this is a smaller slice of the originally-sketched Conversations API: the two `POST` actions there are not built); `GET/POST/PATCH/DELETE /api/v1/leads` and `GET /api/v1/customers`, `/customers/{id}`, `/customers/{id}/timeline` (CRM Foundation — Sprint 28, see below and DEC-031). All protected by Clerk JWT via `get_current_principal` (resolves the Clerk user → local `User` → `business_id`). Cross-tenant access returns `404`. Verification: RS256 against Clerk JWKS (`CLERK_JWKS_URL`). A dedicated `GET /escalations` list endpoint is still to be built — escalations are created (Sprint 27) but not yet listable. Remaining endpoints below (Appointments/Calendar, most of Settings, Users) are still to be built.
 
 ---
 
@@ -40,6 +40,26 @@ Conventions: `2xx` success, `400` validation, `401` unauth, `403` forbidden, `40
 - `GET /conversations/{id}/messages` — **implemented**. Paginated (`limit`/`offset`), returns the most recent page in oldest-first order (same convention as `app/ai/orchestrator.py`'s history loader). Cross-tenant/unknown conversation → `404`.
 - `POST /conversations/{id}/messages` — **not implemented** — human sends a manual reply. Originally sketched here; not part of the Inbox v1 scope.
 - `POST /conversations/{id}/close` — **not implemented** — close the thread. Originally sketched here; not part of the Inbox v1 scope.
+
+### Leads (CRM pipeline)
+
+CRM Foundation (Sprint 28, 2026-07-09, see DEC-031). One `Lead` per `(business, customer)` — `UNIQUE(business_id, customer_id)`, so a repeat inquiry updates the existing lead rather than creating a second one. Every route sits behind `get_current_principal`, is tenant-scoped, and returns `404` if the lead/customer doesn't exist or belongs to another business (same convention as every other resource here) — see `backend/app/services/leads.py`.
+
+- `GET /leads` — **implemented**. Query params: `search` (matches the linked customer's display name or WhatsApp number), `stage` (one of the seven values below), `limit`/`offset` (pagination, `{"data": [...], "meta": {"total", "limit", "offset"}}`, ordered by `updated_at desc`). Each row includes the joined `customer` (`id`/`display_name`/`wa_phone`).
+- `POST /leads` — **implemented**. Body: `{"customer_id", "stage"?, "source"?, "estimated_value"?, "notes"?, "next_follow_up_at"?, "assigned_to"?}` (`stage` defaults to `"new"`). `404` if `customer_id` doesn't belong to this business; `409` if this business already has a lead for that customer; `422` if `assigned_to` doesn't reference a user of this business or `stage` isn't one of the seven valid values. Logs a `lead_created` `LeadEvent`.
+- `GET /leads/{id}` — **implemented**.
+- `PATCH /leads/{id}` — **implemented**. Body: any subset of the fields above. At least one required (`422` on an empty body). Omitting a field leaves it untouched; sending it as JSON `null` explicitly clears it (`source`/`estimated_value`/`notes`/`next_follow_up_at`/`assigned_to` are all nullable-and-clearable this way). Logs a `LeadEvent` for `stage`/`notes`/`next_follow_up_at`/`assigned_to` changes — but only when the new value actually differs from the old one, and never for `source`/`estimated_value` (treated as descriptive attributes, not pipeline activity).
+- `DELETE /leads/{id}` — **implemented**. Cascades to the lead's `LeadEvent` history.
+
+`stage` is one of `new | contacted | qualified | proposal_sent | negotiation | won | lost` — validated at this API layer (a Pydantic `Literal`), but stored as a plain string with no DB-level CHECK constraint, matching every other status field in this schema.
+
+### Customers
+
+Also Sprint 28 (DEC-031) — replaces the previously backend-less Customers page.
+
+- `GET /customers` — **implemented**. Query params: `search` (name or phone), `limit`/`offset` (pagination). Each row: `{id, display_name, wa_phone, created_at, conversation_count, last_message_at, lead}`, where `lead` is `null` or `{id, stage}` (a summary — see `GET /leads/{id}` or the embedded detail below for the full record).
+- `GET /customers/{id}` — **implemented**. Same shape as a list row, but `lead` (if present) is the *full* lead record (`stage, source, estimated_value, notes, next_follow_up_at, assigned_to, created_at, updated_at` — no nested `customer`, redundant here).
+- `GET /customers/{id}/timeline` — **implemented**. Query params: `limit` (default 30, max 100), `offset`. Merges this customer's `Message` history with their `Lead`'s `LeadEvent` history into one newest-first, paginated list: `{"data": [...], "meta": {"total", "limit", "offset"}}`, where each item is either `{"type": "message", id, created_at, direction, body, status}` or `{"type": "lead_event", id, created_at, event_type, from_value, to_value, note}` (`event_type` is one of `lead_created | stage_change | notes_updated | follow_up_set | assigned`). Implemented as two independent queries merged in Python (see DEC-031), not a SQL `UNION`.
 
 ### Assisted-Mode Approvals
 

@@ -10,8 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 from app.api.conversations import router as conversations_router
+from app.api.customers import router as customers_router
 from app.api.dashboard import router as dashboard_router
 from app.api.knowledge_base import router as knowledge_base_router
+from app.api.leads import router as leads_router
 from app.api.onboarding import router as onboarding_router
 from app.api.settings import router as settings_router
 from app.webhooks.whatsapp import router as whatsapp_router
@@ -34,6 +36,8 @@ app.include_router(knowledge_base_router)
 app.include_router(onboarding_router)
 app.include_router(settings_router)
 app.include_router(conversations_router)
+app.include_router(leads_router)
+app.include_router(customers_router)
 
 
 @app.get("/health")

@@ -92,19 +92,119 @@ export interface Message {
   direction: "inbound" | "outbound";
   body: string;
   type: string;
-  status: "received" | "pending_approval" | "sent" | "failed";
+  status: "received" | "pending_approval" | "sent" | "failed" | "rejected" | "escalated";
   created_at: string;
 }
 
-// Type for the future Customers list endpoint — not yet implemented on the
-// backend (rendered from a placeholder/empty state until it lands).
+// Leads / CRM pipeline (/api/v1/leads). Sprint 28 — see DEC-031. `stage` is
+// validated against this fixed set at the API boundary, but stored as a plain
+// string on the backend (no DB-level enum), matching Message.status/
+// Conversation.status.
+export type LeadStage =
+  | "new"
+  | "contacted"
+  | "qualified"
+  | "proposal_sent"
+  | "negotiation"
+  | "won"
+  | "lost";
+
+export interface LeadCustomer {
+  id: string;
+  display_name: string | null;
+  wa_phone: string;
+}
+
+// Fields shared between the standalone /leads response and the lead embedded
+// in a /customers/{id} response (which omits `customer` — redundant there).
+export interface LeadFields {
+  id: string;
+  stage: LeadStage;
+  source: string | null;
+  estimated_value: number | null;
+  notes: string | null;
+  next_follow_up_at: string | null;
+  assigned_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Lead extends LeadFields {
+  customer: LeadCustomer;
+}
+
+export type CustomerLead = LeadFields;
+
+export interface CreateLeadPayload {
+  customer_id: string;
+  stage?: LeadStage;
+  source?: string | null;
+  estimated_value?: number | null;
+  notes?: string | null;
+  next_follow_up_at?: string | null;
+  assigned_to?: string | null;
+}
+
+// All fields optional-and-nullable: omitting a key leaves it untouched,
+// sending `null` explicitly clears it (see backend's `exclude_unset` handling).
+export interface UpdateLeadPayload {
+  stage?: LeadStage;
+  source?: string | null;
+  estimated_value?: number | null;
+  notes?: string | null;
+  next_follow_up_at?: string | null;
+  assigned_to?: string | null;
+}
+
+// Customers (/api/v1/customers). Sprint 28 — see DEC-031.
+export interface LeadSummary {
+  id: string;
+  stage: LeadStage;
+}
+
 export interface Customer {
   id: string;
   display_name: string | null;
   wa_phone: string;
+  created_at: string;
   conversation_count: number;
   last_message_at: string | null;
+  lead: LeadSummary | null;
 }
+
+export interface CustomerDetail extends Omit<Customer, "lead"> {
+  lead: CustomerLead | null;
+}
+
+// Customer timeline (/api/v1/customers/{id}/timeline) — merges Message
+// history with Lead activity (LeadEvent rows), newest first.
+export interface TimelineMessageItem {
+  type: "message";
+  id: string;
+  created_at: string;
+  direction: Message["direction"];
+  body: string;
+  status: Message["status"];
+}
+
+export type LeadEventType =
+  | "lead_created"
+  | "stage_change"
+  | "notes_updated"
+  | "follow_up_set"
+  | "assigned";
+
+export interface TimelineLeadEventItem {
+  type: "lead_event";
+  id: string;
+  created_at: string;
+  event_type: LeadEventType;
+  from_value: string | null;
+  to_value: string | null;
+  note: string | null;
+}
+
+export type TimelineItem = TimelineMessageItem | TimelineLeadEventItem;
 
 // Knowledge Base — manual entry (/api/v1/kb). Each entry may be one of
 // several chunks stored under the same title if the content was long enough
