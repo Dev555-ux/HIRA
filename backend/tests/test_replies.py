@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 
+from app.ai.lead_tools import CREATE_LEAD
 from app.ai.llm.base import ToolCall
 from app.ai.llm.mock import MockProvider
 from app.ai.tools import BOOK_APPOINTMENT
@@ -311,6 +312,30 @@ def _pending_tool_call_reply(db, *, business_phone="PN1"):
     return biz, customer, msg
 
 
+def _pending_lead_tool_call_reply(db, *, business_phone="PN1"):
+    biz = Business(name="Clinic A", whatsapp_phone_number_id=business_phone)
+    db.add(biz)
+    db.flush()
+    customer = Customer(business_id=biz.id, wa_phone="+15551230000")
+    db.add(customer)
+    db.flush()
+    conv = Conversation(business_id=biz.id, customer_id=customer.id)
+    db.add(conv)
+    db.flush()
+    msg = Message(
+        conversation_id=conv.id,
+        business_id=biz.id,
+        direction="outbound",
+        body="Log as a new lead (source: WhatsApp inquiry)",
+        type="tool_call",
+        status="pending_approval",
+        ai_meta={"tool_name": CREATE_LEAD, "tool_arguments": {"source": "WhatsApp inquiry"}},
+    )
+    db.add(msg)
+    db.flush()
+    return biz, customer, msg
+
+
 def test_approve_tool_call_executes_then_sends(db_session, monkeypatch):
     biz, customer, msg = _pending_tool_call_reply(db_session)
     monkeypatch.setattr(
@@ -356,6 +381,26 @@ def test_approve_tool_call_marks_failed_when_execution_fails(db_session, monkeyp
     db_session.refresh(msg)
     assert msg.status == "failed"
     assert sender_called["called"] is False  # never attempted to send
+
+
+def test_approve_lead_tool_call_executes_then_sends(db_session):
+    """DEC-033: approve_and_send dispatches a CRM tool call through the exact
+    same code path as a calendar one — no branch added for CRM specifically."""
+    biz, customer, msg = _pending_lead_tool_call_reply(db_session)
+    captured = {}
+
+    def fake_sender(phone_number_id, to, body):
+        captured.update(phone_number_id=phone_number_id, to=to, body=body)
+        return "wamid.out1"
+
+    result = approve_and_send(db_session, biz.id, msg.id, sender=fake_sender)
+
+    assert result.status == "sent"
+    assert result.ai_meta["tool_result"] == "Lead logged."
+    assert captured["body"] == msg.body
+    from app.models import Lead
+
+    assert db_session.query(Lead).count() == 1
 
 
 # --- escalate_reply (Phase 4) --------------------------------------------------

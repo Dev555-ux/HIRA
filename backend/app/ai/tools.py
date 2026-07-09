@@ -1,30 +1,38 @@
-"""Booking tool definitions and dispatcher — the AI's calendar actions (DEC-032).
+"""Booking + CRM tool definitions and dispatcher — the AI's calendar and lead
+actions (DEC-032, DEC-033).
 
 Tool schemas are passed to the LLM alongside the system prompt so the model
-can propose booking/reschedule/cancel actions instead of only generating
+can propose booking/reschedule/cancel/CRM actions instead of only generating
 text. `execute_tool_call()` is the only place a proposed action becomes a
-real calendar write, and it always goes through `AppointmentService`
-(`app/calendar/factory.py`), never a vendor SDK directly.
+real write, and it always goes through `AppointmentService`
+(`app/calendar/factory.py`) for calendar tools or `app/ai/lead_tools.py` for
+CRM tools, never a vendor SDK or data-access path of its own.
 
 `check_availability` is read-only and always safe to execute immediately
-(see `execute_check_availability`, used by `app/ai/orchestrator.py`).
-`book_appointment`/`reschedule_appointment`/`cancel_appointment` write to the
-calendar — DEC-032 gates those behind the existing Pending Approvals
-workflow in Assisted Mode (see `app/ai/processing.py`); only Autonomous Mode,
-or an already-approved pending draft, calls `execute_tool_call` for these.
+(see `execute_check_availability`, used by `app/ai/orchestrator.py`). Every
+other tool here — calendar and CRM alike — writes real state, so DEC-032/
+DEC-033 gate all of them behind the existing Pending Approvals workflow in
+Assisted Mode (see `app/ai/processing.py`); only Autonomous Mode, or an
+already-approved pending draft, calls `execute_tool_call` for these.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.lead_tools import (
+    LEAD_TOOL_NAMES,
+    LEAD_TOOL_SCHEMAS,
+    execute_lead_tool_call,
+    preview_lead_tool_call,
+)
 from app.ai.llm.base import LLMResponse, ToolCall, ToolSchema
+from app.ai.tool_results import ToolExecutionResult
 from app.calendar.factory import get_appointment_service
 from app.calendar.providers.base import CalendarError
 from app.models import Appointment
@@ -36,7 +44,7 @@ BOOK_APPOINTMENT = "book_appointment"
 RESCHEDULE_APPOINTMENT = "reschedule_appointment"
 CANCEL_APPOINTMENT = "cancel_appointment"
 
-TOOL_SCHEMAS = [
+_CALENDAR_TOOL_SCHEMAS = [
     ToolSchema(
         name=CHECK_AVAILABILITY,
         description=(
@@ -104,16 +112,13 @@ TOOL_SCHEMAS = [
     ),
 ]
 
-
-@dataclass
-class ToolExecutionResult:
-    success: bool
-    message: str
-    appointment_id: uuid.UUID | None = None
+TOOL_SCHEMAS = [*_CALENDAR_TOOL_SCHEMAS, *LEAD_TOOL_SCHEMAS]
 
 
 def preview_tool_call(tool_call: ToolCall) -> str:
     """Human-readable, editable preview shown in the Pending queue before approval."""
+    if tool_call.name in LEAD_TOOL_NAMES:
+        return preview_lead_tool_call(tool_call)
     args = tool_call.arguments
     if tool_call.name == BOOK_APPOINTMENT:
         return (
@@ -181,10 +186,13 @@ def execute_tool_call(
     customer_id: uuid.UUID,
     conversation_id: uuid.UUID | None,
 ) -> ToolExecutionResult:
-    """Executes a write tool (book/reschedule/cancel) for real.
+    """Executes a write tool (calendar or CRM) for real.
 
     Never call this for check_availability — see execute_check_availability.
     """
+    if tool_call.name in LEAD_TOOL_NAMES:
+        return execute_lead_tool_call(db, business_id, tool_call, customer_id=customer_id)
+
     try:
         appointment_service = get_appointment_service(db, business_id)
 

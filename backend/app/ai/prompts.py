@@ -10,6 +10,10 @@ Prompt version is recorded so AI behaviour can be traced to a specific prompt
 
 v2 (Sprint 29, DEC-032): added booking-tool guidance + optional availability
 grounding, now that generate_reply() passes app/ai/tools.py's TOOL_SCHEMAS.
+
+v3 (Sprint 30, DEC-033): added CRM tool-usage guidance now that TOOL_SCHEMAS
+also includes app/ai/lead_tools.py's create_lead/update_lead_stage/
+set_lead_follow_up.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from zoneinfo import ZoneInfo
 from app.ai.llm.base import ChatMessage
 from app.models import Business, KbEntry, Message
 
-SYSTEM_PROMPT_VERSION = "v2"
+SYSTEM_PROMPT_VERSION = "v3"
 
 _BASE_SYSTEM_PROMPT = """\
 You are HIRA, a professional AI receptionist replying to a customer on WhatsApp \
@@ -44,6 +48,16 @@ immediately — a human reviews the proposed action first.
 confirmed until you are told it succeeded.
 - All appointment times you propose must be within the business's current \
 date/time and, if working hours are given below, within them.
+
+Tracking leads:
+- If a customer shows buying interest (asks about pricing, requests a quote, \
+or wants to book a consultation), use create_lead to log them — but only if \
+one doesn't already exist for them based on the conversation so far.
+- Use update_lead_stage as their interest progresses, and set_lead_follow_up \
+if they ask to be contacted again at a specific time.
+- These do not take effect immediately — a human reviews the proposed \
+action first. Never state or imply a CRM change is confirmed until you are \
+told it succeeded.
 """
 
 _NO_KNOWLEDGE = "(No relevant knowledge base entries were found for this question.)"

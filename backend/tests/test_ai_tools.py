@@ -4,12 +4,14 @@ AppointmentService (the real factory is monkeypatched out) (DEC-032)."""
 
 from datetime import datetime, timedelta, timezone
 
+from app.ai.lead_tools import CREATE_LEAD, UPDATE_LEAD_STAGE
 from app.ai.llm.base import LLMResponse, ToolCall
 from app.ai.tools import (
     BOOK_APPOINTMENT,
     CANCEL_APPOINTMENT,
     CHECK_AVAILABILITY,
     RESCHEDULE_APPOINTMENT,
+    TOOL_SCHEMAS,
     execute_check_availability,
     execute_tool_call,
     preview_tool_call,
@@ -19,6 +21,7 @@ from app.calendar.providers.base import CalendarEventDraft, CalendarNotConnected
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
 from app.models import Business, Customer
+from app.services.leads import create_lead as service_create_lead
 
 NOW = datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc)
 
@@ -339,6 +342,53 @@ def test_execute_check_availability_reports_calendar_errors(db_session, monkeypa
     note = execute_check_availability(db_session, biz.id, tool_call)
 
     assert "Calendar unavailable" in note
+
+
+def test_tool_schemas_include_both_calendar_and_lead_tools():
+    names = {schema.name for schema in TOOL_SCHEMAS}
+    assert {
+        BOOK_APPOINTMENT,
+        CANCEL_APPOINTMENT,
+        RESCHEDULE_APPOINTMENT,
+        CHECK_AVAILABILITY,
+    }.issubset(names)
+    assert {CREATE_LEAD, UPDATE_LEAD_STAGE}.issubset(names)
+
+
+def test_execute_tool_call_dispatches_lead_tools_to_the_crm_path(db_session):
+    biz, customer = _business_customer(db_session)
+    tool_call = ToolCall(id="1", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+
+    result = execute_tool_call(
+        db_session, biz.id, tool_call, customer_id=customer.id, conversation_id=None
+    )
+
+    assert result.success is True
+    assert result.lead_id is not None
+
+
+def test_execute_tool_call_dispatches_update_lead_stage_to_the_crm_path(db_session):
+    biz, customer = _business_customer(db_session)
+    lead = service_create_lead(db_session, biz.id, customer.id)
+    tool_call = ToolCall(id="1", name=UPDATE_LEAD_STAGE, arguments={"stage": "won"})
+
+    result = execute_tool_call(
+        db_session, biz.id, tool_call, customer_id=customer.id, conversation_id=None
+    )
+
+    assert result.success is True
+    assert result.lead_id == lead.id
+
+
+def test_response_to_message_fields_tool_call_for_a_lead_tool():
+    tool_call = ToolCall(id="1", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+    response = LLMResponse(text="", model="mock-1", tool_calls=[tool_call])
+
+    type_, body, extra = response_to_message_fields(response)
+
+    assert type_ == "tool_call"
+    assert "new lead" in body
+    assert extra == {"tool_name": CREATE_LEAD, "tool_arguments": tool_call.arguments}
 
 
 def test_execute_check_availability_with_bad_arguments(db_session, monkeypatch):

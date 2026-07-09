@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.ai import processing
+from app.ai.lead_tools import CREATE_LEAD
 from app.ai.llm.base import LLMProvider, LLMResponse, ToolCall
 from app.ai.llm.mock import MockProvider
 from app.ai.orchestrator import generate_reply
@@ -195,6 +196,82 @@ def test_assisted_mode_stores_proposed_tool_call_without_executing(db_session, m
     assert "Cleaning" in outbound[0].body
     assert outbound[0].ai_meta["tool_name"] == BOOK_APPOINTMENT
     assert executed["called"] is False  # nothing touched the calendar
+
+
+def test_assisted_mode_stores_proposed_lead_tool_call_without_executing(db_session, monkeypatch):
+    """DEC-033: CRM tool calls go through the same generic pending-approval
+    path as calendar ones — no separate wiring in processing.py needed."""
+    from app.models import Customer
+
+    biz = Business(name="Clinic A")  # assisted (default)
+    db_session.add(biz)
+    db_session.flush()
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    tool_call = ToolCall(id="1", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[tool_call]),
+    )
+
+    processing.generate_and_store_reply(conversation.id, "I'd like a quote please")
+
+    outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
+    assert len(outbound) == 1
+    assert outbound[0].type == "tool_call"
+    assert outbound[0].status == "pending_approval"
+    assert outbound[0].ai_meta["tool_name"] == CREATE_LEAD
+    from app.models import Lead
+
+    assert db_session.scalars(select(Lead)).first() is None  # nothing written yet
+
+
+def test_autonomous_mode_executes_lead_tool_call_immediately(db_session, monkeypatch):
+    from app.models import Customer, Lead
+
+    biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
+    db_session.add(biz)
+    db_session.flush()
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    tool_call = ToolCall(id="1", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[tool_call]),
+    )
+    sent: dict = {}
+
+    def fake_sender(phone_number_id, to, body):
+        sent.update(phone_number_id=phone_number_id, to=to, body=body)
+        return "wamid.sent1"
+
+    processing.generate_and_store_reply(
+        conversation.id, "I'd like a quote please", sender=fake_sender
+    )
+
+    outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
+    assert len(outbound) == 1
+    assert outbound[0].type == "tool_call"
+    assert outbound[0].status == "sent"
+    assert outbound[0].ai_meta["tool_result"] == "Lead logged."
+    assert sent["body"] == outbound[0].body
+    assert db_session.scalars(select(Lead)).first() is not None
 
 
 def test_autonomous_mode_sends_reply_immediately(db_session, monkeypatch):
