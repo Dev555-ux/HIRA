@@ -11,12 +11,7 @@ export function ClerkBridge({ children }: { children: React.ReactNode }) {
   const { user } = useUser();
   const clerk = useClerk();
 
-  const getTokenFn = useCallback(async () => {
-    console.log("[DEBUG-401] ClerkBridge getTokenFn called, Clerk isLoaded:", isLoaded);
-    const t = await getToken();
-    console.log("[DEBUG-401] Clerk useAuth().getToken() resolved, token present:", !!t);
-    return t;
-  }, [getToken, isLoaded]);
+  const getTokenFn = useCallback(() => getToken(), [getToken]);
   const signOut = useCallback(() => clerk.signOut({ redirectUrl: "/" }), [clerk]);
   const openProfile = useCallback(() => clerk.openUserProfile(), [clerk]);
 
