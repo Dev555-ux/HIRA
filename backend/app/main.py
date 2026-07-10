@@ -23,20 +23,26 @@ from app.webhooks.whatsapp import router as whatsapp_router
 
 app = FastAPI(title="HIRA Backend", version="0.1.0")
 
-# Fixed localhost dev ports, plus settings.frontend_url so a deployed
-# frontend isn't CORS-blocked once FRONTEND_URL is set to the real domain
-# (Sprint 34) — previously hardcoded to only the three dev ports below, with
-# no path from FRONTEND_URL into this list despite config.py's own comment
-# claiming they were kept in sync.
+# Fixed localhost dev ports, the production Vercel domain, plus
+# settings.frontend_url so a deployed frontend isn't CORS-blocked once
+# FRONTEND_URL is set to the real domain (Sprint 34). allow_origins only
+# does exact string matches, so Vercel preview deployments (random
+# *.vercel.app subdomains per branch/PR) can never be listed individually —
+# they're matched separately via allow_origin_regex below. Without that
+# regex, Starlette's CORSMiddleware rejects any non-matching Origin on the
+# preflight with a 400 "Disallowed CORS origin", which is what was breaking
+# every OPTIONS request from Vercel.
 _CORS_ORIGINS = {
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:3002",
+    "https://hira-tau.vercel.app",
     settings.frontend_url,
 }
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(_CORS_ORIGINS),
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
