@@ -11,6 +11,7 @@ without a live Clerk account.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ from app.auth.clerk import verify_clerk_token
 from app.core.config import settings
 from app.db.session import get_db
 from app.models import User
+
+logger = logging.getLogger(__name__)
 
 MOCK_TOKEN = "dev-mock-token"
 MOCK_CLERK_USER_ID = "dev-mock-user"
@@ -71,12 +74,14 @@ def get_verified_clerk_user_id(
     """
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
+        logger.info("%s %s: missing bearer token", request.method, request.url.path)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     token = auth.removeprefix("Bearer ").strip()
-    claims = verify(token)  # raises HTTPException(401) on failure
+    claims = verify(token)  # raises HTTPException(401/500) on failure
 
     clerk_user_id = claims.get("sub")
     if not clerk_user_id:
+        logger.warning("%s %s: verified token has no 'sub' claim", request.method, request.url.path)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token"
         )
@@ -89,6 +94,7 @@ def get_current_principal(
 ) -> Principal:
     user = db.scalars(select(User).where(User.clerk_user_id == clerk_user_id)).first()
     if user is None:
+        logger.info("No User row for clerk_user_id=%s", clerk_user_id)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown user")
 
     return Principal(

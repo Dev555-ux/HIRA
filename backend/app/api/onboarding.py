@@ -17,6 +17,8 @@ needs to allow. The playground route requires an existing business, so it uses
 
 from __future__ import annotations
 
+import logging
+
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -26,6 +28,8 @@ from app.auth.dependencies import Principal, get_current_principal, get_verified
 from app.db.session import get_db
 from app.models import Business
 from app.services.provisioning import get_business_for_clerk_user, provision_business
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
 
@@ -65,9 +69,20 @@ def onboarding_status(
     clerk_user_id: str = Depends(get_verified_clerk_user_id),
     db: Session = Depends(get_db),
 ) -> dict:
-    business = get_business_for_clerk_user(db, clerk_user_id)
+    logger.info("onboarding_status: looking up business for clerk_user_id=%s", clerk_user_id)
+    try:
+        business = get_business_for_clerk_user(db, clerk_user_id)
+    except Exception:
+        logger.exception(
+            "onboarding_status: DB lookup failed for clerk_user_id=%s", clerk_user_id
+        )
+        raise
     if business is None:
+        logger.info("onboarding_status: no business yet for clerk_user_id=%s", clerk_user_id)
         return {"data": {"has_business": False, "business": None}}
+    logger.info(
+        "onboarding_status: found business_id=%s for clerk_user_id=%s", business.id, clerk_user_id
+    )
     return {"data": {"has_business": True, "business": _serialize_business(business)}}
 
 
