@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.tenant import get_scoped
@@ -103,7 +104,15 @@ def create_lead(
     assigned_to: uuid.UUID | None = None,
 ) -> Lead:
     """Create a lead for a customer. Raises CustomerNotFoundError,
-    LeadAlreadyExistsError, or InvalidAssigneeError on invalid input."""
+    LeadAlreadyExistsError, or InvalidAssigneeError on invalid input.
+
+    The existence check below is inherently check-then-insert: two
+    concurrent requests for the same customer can both pass it before either
+    commits. `uq_lead_business_customer` (UNIQUE(business_id, customer_id))
+    is what actually prevents the duplicate — the `flush()` below is wrapped
+    so that race loses with the same 409-mapped LeadAlreadyExistsError the
+    upfront check produces, instead of an unhandled IntegrityError/500.
+    """
     if get_scoped(db, Customer, business_id, customer_id) is None:
         raise CustomerNotFoundError("Customer not found for this business")
 
@@ -124,7 +133,11 @@ def create_lead(
         assigned_to=assigned_to,
     )
     db.add(lead)
-    db.flush()
+    try:
+        db.flush()  # assign lead.id; the UNIQUE constraint is checked here
+    except IntegrityError:
+        db.rollback()
+        raise LeadAlreadyExistsError("A lead already exists for this customer") from None
     db.add(LeadEvent(lead_id=lead.id, type="lead_created", to_value=stage))
     db.commit()
     db.refresh(lead)

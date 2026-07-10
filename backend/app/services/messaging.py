@@ -22,6 +22,10 @@ class WhatsAppSendError(RuntimeError):
     """Non-retryable send failure (e.g. a 4xx client error)."""
 
 
+class WhatsAppNotConnectedError(RuntimeError):
+    """This business has no WhatsApp phone number configured yet."""
+
+
 class _RetryableSendError(RuntimeError):
     """Transient failure (network or 5xx) worth retrying."""
 

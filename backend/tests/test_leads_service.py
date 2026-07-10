@@ -114,6 +114,31 @@ def test_create_lead_rejects_duplicate_for_same_customer(db_session):
         create_lead(db_session, biz.id, customer.id)
 
 
+def test_create_lead_race_raises_already_exists_not_integrity_error(db_session, monkeypatch):
+    """Two concurrent requests can both pass the upfront existence check
+    before either commits. Simulates that by forcing this call's own check
+    to report "no lead yet" even though one already exists (committed by the
+    "other" request) — the UNIQUE(business_id, customer_id) constraint must
+    still be what stops the duplicate, and it must surface as
+    LeadAlreadyExistsError (-> 409), not an unhandled IntegrityError."""
+    import app.services.leads as leads_module
+
+    biz, customer = _business_with_customer(db_session)
+    winner = create_lead(db_session, biz.id, customer.id, stage="new")
+
+    monkeypatch.setattr(leads_module, "get_lead_for_customer", lambda *a, **k: None)
+
+    with pytest.raises(LeadAlreadyExistsError):
+        create_lead(db_session, biz.id, customer.id, stage="contacted")
+
+    # The loser's attempt didn't leave a half-created row behind, and the
+    # winner is untouched.
+    remaining = db_session.query(Lead).filter_by(business_id=biz.id, customer_id=customer.id).all()
+    assert len(remaining) == 1
+    assert remaining[0].id == winner.id
+    assert remaining[0].stage == "new"
+
+
 def test_create_lead_rejects_invalid_assignee(db_session):
     biz, customer = _business_with_customer(db_session)
 

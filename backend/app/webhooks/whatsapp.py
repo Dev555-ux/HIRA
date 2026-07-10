@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.ai.processing import generate_and_store_reply
@@ -137,17 +138,45 @@ def _extract_text(msg: dict) -> str:
 def _get_or_create_customer(
     db: Session, business_id, wa_phone: str, display_name: str | None
 ) -> Customer:
+    """Get-or-create, race-safe against `uq_customer_business_phone`.
+
+    Two overlapping webhook deliveries for the same phone number (e.g. a
+    Meta retry landing concurrently with the original) can both pass the
+    SELECT below before either flushes. On conflict, a plain `db.rollback()`
+    would also discard any *other* messages already staged earlier in this
+    same `_persist_inbound` batch (one commit covers a whole `change`'s
+    messages) — so the insert attempt runs in a SAVEPOINT via
+    `begin_nested()`, whose rollback-on-conflict only undoes this one row.
+    """
     customer = db.scalars(
         select(Customer).where(Customer.business_id == business_id, Customer.wa_phone == wa_phone)
     ).first()
-    if customer is None:
-        customer = Customer(business_id=business_id, wa_phone=wa_phone, display_name=display_name)
-        db.add(customer)
-        db.flush()
+    if customer is not None:
+        return customer
+    try:
+        with db.begin_nested():
+            customer = Customer(
+                business_id=business_id, wa_phone=wa_phone, display_name=display_name
+            )
+            db.add(customer)
+            db.flush()
+    except IntegrityError:
+        customer = db.scalars(
+            select(Customer).where(
+                Customer.business_id == business_id, Customer.wa_phone == wa_phone
+            )
+        ).first()
+        if customer is None:
+            raise
     return customer
 
 
 def _get_or_create_conversation(db: Session, business_id, customer_id, now) -> Conversation:
+    """Get-or-create. Unlike `_get_or_create_customer`, there is no unique
+    constraint on (business_id, customer_id, status) for Conversation, so a
+    concurrent race here can't raise IntegrityError — it would (rarely)
+    create two active conversations instead, a different, lower-severity
+    issue out of this sprint's scope."""
     conversation = db.scalars(
         select(Conversation)
         .where(

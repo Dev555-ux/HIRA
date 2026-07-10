@@ -15,7 +15,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.calendar import map_calendar_error
@@ -27,6 +27,13 @@ from app.db.tenant import get_scoped, tenant_query
 from app.models import Appointment, Customer
 
 router = APIRouter(prefix="/api/v1/appointments", tags=["appointments"])
+
+# Sprint 36: same guard-rail rationale as dashboard.py's /pending — a cap
+# against a truly unbounded scan, defaulted high enough that today's
+# "see every appointment in range" behavior is unchanged for any realistic
+# business.
+DEFAULT_APPOINTMENT_LIMIT = 200
+MAX_APPOINTMENT_LIMIT = 200
 
 
 class CreateAppointmentRequest(BaseModel):
@@ -78,16 +85,24 @@ def list_appointments(
     db: Session = Depends(get_db),
     from_: datetime | None = Query(default=None, alias="from"),
     to: datetime | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_APPOINTMENT_LIMIT, ge=1, le=MAX_APPOINTMENT_LIMIT),
+    offset: int = Query(default=0, ge=0),
 ) -> dict:
-    stmt = tenant_query(Appointment, principal.business_id).order_by(Appointment.starts_at)
+    base_stmt = tenant_query(Appointment, principal.business_id)
     if from_ is not None:
-        stmt = stmt.where(Appointment.starts_at >= from_)
+        base_stmt = base_stmt.where(Appointment.starts_at >= from_)
     if to is not None:
-        stmt = stmt.where(Appointment.starts_at <= to)
+        base_stmt = base_stmt.where(Appointment.starts_at <= to)
+    total = db.scalar(select(func.count()).select_from(base_stmt.subquery()))
+
+    stmt = base_stmt.order_by(Appointment.starts_at).limit(limit).offset(offset)
     rows = db.scalars(stmt).all()
 
     customers = _customers_by_id(db, [a.customer_id for a in rows])
-    return {"data": [_serialize(a, customers.get(a.customer_id)) for a in rows]}
+    return {
+        "data": [_serialize(a, customers.get(a.customer_id)) for a in rows],
+        "meta": {"total": total, "limit": limit, "offset": offset},
+    }
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

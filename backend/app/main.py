@@ -5,8 +5,11 @@ Everything else (webhooks, AI engine, calendar, etc.) will be added on top of
 this skeleton in later Sprint 1 tasks.
 """
 
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 
 from app.api.appointments import router as appointments_router
@@ -21,7 +24,27 @@ from app.api.settings import router as settings_router
 from app.core.config import settings
 from app.webhooks.whatsapp import router as whatsapp_router
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="HIRA Backend", version="0.1.0")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all for anything no route/dependency explicitly handled.
+
+    FastAPI registers its own handlers for HTTPException and
+    RequestValidationError, which the ASGI exception middleware matches
+    before falling back to this one (it looks up the closest registered
+    class in the exception's MRO) — so normal 401/404/409/422/502/503
+    responses are unaffected. This only fires for genuine bugs, which
+    previously surfaced as a bare 500 with zero application-level log entry
+    (Starlette's default handler doesn't log anything; only uvicorn's raw
+    stderr traceback, unstructured and with no request context).
+    """
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 # Fixed localhost dev ports, the production Vercel domain, plus
 # settings.frontend_url so a deployed frontend isn't CORS-blocked once

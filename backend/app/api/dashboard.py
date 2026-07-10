@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.llm import LLMError
@@ -22,7 +22,7 @@ from app.calendar.providers.base import CalendarError
 from app.db.session import get_db
 from app.db.tenant import tenant_query
 from app.models import Conversation, Customer, Message
-from app.services.messaging import WhatsAppSendError, send_text
+from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError, send_text
 from app.services.replies import (
     approve_and_send,
     escalate_reply,
@@ -36,6 +36,14 @@ router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 # WhatsApp Cloud API's text message body limit — the same boundary `send_text`
 # will eventually hit, so an edited draft is validated against it up front.
 MAX_DRAFT_LENGTH = 4096
+
+# Sprint 36: cap on /pending so a business with a huge backlog can't force an
+# unbounded query. Set high (not the 20/100 convention list_conversations/etc.
+# use) deliberately — this is a guard rail against a truly unbounded scan, not
+# a UX pagination feature yet (the frontend doesn't page through this list),
+# so today's "see everything" behavior is preserved for any realistic backlog.
+DEFAULT_PENDING_LIMIT = 200
+MAX_PENDING_LIMIT = 200
 
 
 class UpdateDraftRequest(BaseModel):
@@ -87,12 +95,15 @@ def _serialize_customer(customer: Customer | None) -> dict | None:
 def list_pending(
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
+    limit: int = Query(default=DEFAULT_PENDING_LIMIT, ge=1, le=MAX_PENDING_LIMIT),
+    offset: int = Query(default=0, ge=0),
 ) -> dict:
-    stmt = (
-        tenant_query(Message, principal.business_id)
-        .where(Message.direction == "outbound", Message.status == "pending_approval")
-        .order_by(Message.created_at)
+    base_stmt = tenant_query(Message, principal.business_id).where(
+        Message.direction == "outbound", Message.status == "pending_approval"
     )
+    total = db.scalar(select(func.count()).select_from(base_stmt.subquery()))
+
+    stmt = base_stmt.order_by(Message.created_at).limit(limit).offset(offset)
     rows = db.scalars(stmt).all()
 
     conversation_ids = [m.conversation_id for m in rows]
@@ -110,7 +121,8 @@ def list_pending(
                 "conversation_preview": previews.get(m.conversation_id),
             }
             for m in rows
-        ]
+        ],
+        "meta": {"total": total, "limit": limit, "offset": offset},
     }
 
 
@@ -130,6 +142,8 @@ def approve_message(
         # A proposed calendar action (message.type == "tool_call") failed to
         # execute on approval — e.g. the slot was taken meanwhile (DEC-032).
         raise map_calendar_error(exc) from exc
+    except WhatsAppNotConnectedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except WhatsAppSendError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to send reply"

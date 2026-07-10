@@ -22,8 +22,9 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, HttpUrl
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.embeddings import EmbeddingProvider, get_embedding_provider
@@ -35,6 +36,12 @@ from app.db.tenant import tenant_query
 from app.models import KbEntry
 
 router = APIRouter(prefix="/api/v1/kb", tags=["knowledge-base"])
+
+# Sprint 36: same guard-rail rationale as dashboard.py's /pending — a cap
+# against a truly unbounded scan, defaulted high enough that today's
+# "see the whole KB" behavior is unchanged for any realistic business.
+DEFAULT_KB_LIMIT = 200
+MAX_KB_LIMIT = 200
 
 
 class CreateKbEntryRequest(BaseModel):
@@ -75,10 +82,18 @@ def _serialize(entry: KbEntry) -> dict:
 def list_entries(
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
+    limit: int = Query(default=DEFAULT_KB_LIMIT, ge=1, le=MAX_KB_LIMIT),
+    offset: int = Query(default=0, ge=0),
 ) -> dict:
-    stmt = tenant_query(KbEntry, principal.business_id).order_by(KbEntry.title, KbEntry.created_at)
+    base_stmt = tenant_query(KbEntry, principal.business_id)
+    total = db.scalar(select(func.count()).select_from(base_stmt.subquery()))
+
+    stmt = base_stmt.order_by(KbEntry.title, KbEntry.created_at).limit(limit).offset(offset)
     rows = db.scalars(stmt).all()
-    return {"data": [_serialize(e) for e in rows]}
+    return {
+        "data": [_serialize(e) for e in rows],
+        "meta": {"total": total, "limit": limit, "offset": offset},
+    }
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

@@ -2,6 +2,7 @@
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.ai.llm.mock import MockProvider
 from app.api.dashboard import get_reply_sender
@@ -96,6 +97,25 @@ def test_approve_sends_and_marks_sent(db_session):
     app.dependency_overrides.clear()
 
 
+def test_approve_returns_409_when_whatsapp_not_connected(db_session):
+    _, _, msg = _seed_business(db_session, "A", "user_a", phone=None)
+    db_session.commit()
+    sent = []
+    client = _client(
+        db_session,
+        claims_for_token=lambda t: {"sub": "user_a"},
+        sender=lambda *a: sent.append(a) or "wamid.should-not-happen",
+    )
+
+    resp = client.post(f"/api/v1/messages/{msg.id}/approve", headers=_auth())
+
+    assert resp.status_code == 409
+    assert sent == []  # Meta API was never attempted
+    db_session.refresh(msg)
+    assert msg.status == "pending_approval"  # untouched
+    app.dependency_overrides.clear()
+
+
 def test_cannot_approve_another_businesss_message(db_session):
     _seed_business(db_session, "A", "user_a", phone="PN_A")
     _, _, msg_b = _seed_business(db_session, "B", "user_b", phone="PN_B")
@@ -120,8 +140,39 @@ def test_pending_list_is_tenant_scoped(db_session):
     resp = client.get("/api/v1/pending", headers=_auth())
 
     assert resp.status_code == 200
-    data = resp.json()["data"]
+    body = resp.json()
+    data = body["data"]
     assert len(data) == 1  # only business A's pending message
+    assert body["meta"] == {"total": 1, "limit": 200, "offset": 0}
+    app.dependency_overrides.clear()
+
+
+def test_pending_list_supports_limit_and_offset(db_session):
+    biz, user, _first_msg = _seed_business(db_session, "A", "user_a")
+    conversation = db_session.scalars(
+        select(Conversation).where(Conversation.business_id == biz.id)
+    ).first()
+    for i in range(3):
+        db_session.add(
+            Message(
+                conversation_id=conversation.id,
+                business_id=biz.id,
+                direction="outbound",
+                body=f"extra reply {i}",
+                type="text",
+                status="pending_approval",
+            )
+        )
+    db_session.commit()
+    # 4 pending messages total now (1 from _seed_business + 3 extra).
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/pending", params={"limit": 2, "offset": 1}, headers=_auth())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["data"]) == 2
+    assert body["meta"] == {"total": 4, "limit": 2, "offset": 1}
     app.dependency_overrides.clear()
 
 

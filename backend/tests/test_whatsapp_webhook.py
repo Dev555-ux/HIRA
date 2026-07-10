@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.main import app
 from app.models import Business, Conversation, Customer, Message
-from app.webhooks.whatsapp import get_reply_dispatcher
+from app.webhooks.whatsapp import _get_or_create_customer, get_reply_dispatcher
 
 
 def _client(db_session):
@@ -168,3 +168,45 @@ def test_post_dedupes_repeated_message_id(db_session):
     assert len(inbound) == 1  # not double-stored
     assert len(dispatched) == 1  # dispatched only for the first (new) message
     app.dependency_overrides.clear()
+
+
+def test_get_or_create_customer_recovers_from_concurrent_insert_race(db_session, monkeypatch):
+    """Two overlapping webhook deliveries for the same phone number can both
+    pass the existence check before either flushes. Simulates that by
+    forcing this call's own check to report "not found" for exactly one
+    call, even though a customer for this (business, phone) already exists
+    (committed by the "other" delivery) — uq_customer_business_phone must
+    still be what stops the duplicate INSERT, recovered via SAVEPOINT
+    rollback + re-query rather than raising an unhandled IntegrityError."""
+    business = Business(name="Clinic A", whatsapp_phone_number_id="PN1")
+    db_session.add(business)
+    db_session.commit()
+
+    winner = Customer(business_id=business.id, wa_phone="+15551230000", display_name="Winner")
+    db_session.add(winner)
+    db_session.commit()
+
+    real_scalars = db_session.scalars
+    calls = {"n": 0}
+
+    class _EmptyResult:
+        def first(self):
+            return None
+
+    def fake_scalars(stmt, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _EmptyResult()
+        return real_scalars(stmt, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "scalars", fake_scalars)
+
+    customer = _get_or_create_customer(db_session, business.id, "+15551230000", "Loser's name")
+
+    assert customer.id == winner.id
+    all_customers = db_session.scalars(
+        select(Customer).where(
+            Customer.business_id == business.id, Customer.wa_phone == "+15551230000"
+        )
+    ).all()
+    assert len(all_customers) == 1

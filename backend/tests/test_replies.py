@@ -12,7 +12,7 @@ from app.calendar.providers.base import CalendarError
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
 from app.models import Business, Conversation, Customer, Escalation, Message
-from app.services.messaging import WhatsAppSendError
+from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError
 from app.services.replies import (
     approve_and_send,
     escalate_reply,
@@ -93,6 +93,22 @@ def test_approve_and_send_is_tenant_scoped(db_session):
 
     with pytest.raises(ValueError):
         approve_and_send(db_session, other_business_id, msg.id, sender=lambda *a: "x")
+
+
+def test_approve_and_send_rejects_when_whatsapp_not_connected(db_session):
+    biz, _, msg = _pending_reply(db_session, business_phone=None)
+    sent = []
+
+    def sender_that_should_never_run(*_args):
+        sent.append(_args)
+        return "wamid.should-not-happen"
+
+    with pytest.raises(WhatsAppNotConnectedError):
+        approve_and_send(db_session, biz.id, msg.id, sender=sender_that_should_never_run)
+
+    db_session.refresh(msg)
+    assert msg.status == "pending_approval"  # untouched — no partial side effect
+    assert sent == []  # the Meta API was never called
 
 
 # --- update_draft (Phase 1: editable drafts) ---------------------------------

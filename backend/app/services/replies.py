@@ -31,7 +31,7 @@ from app.ai.tools import execute_tool_call, response_to_message_fields
 from app.calendar.providers.base import CalendarError
 from app.db.tenant import get_scoped
 from app.models import Business, Conversation, Customer, Escalation, Message
-from app.services.messaging import WhatsAppSendError, send_text
+from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError, send_text
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +56,21 @@ def approve_and_send(
     (possibly human-edited) confirmation body to the customer and mark sent.
 
     Raises ValueError if the message isn't an approvable pending reply for this
-    business. Raises CalendarError (after marking the message failed) if a
-    proposed tool call fails to execute (e.g. the slot was taken meanwhile).
-    Raises WhatsAppSendError (after marking the message failed) if the send
-    fails.
+    business. Raises WhatsAppNotConnectedError up front (before any tool call
+    or send is attempted) if the business has no WhatsApp number configured —
+    approving a tool_call message would otherwise execute a real side effect
+    (e.g. book a calendar slot) with no way to actually notify the customer.
+    Raises CalendarError (after marking the message failed) if a proposed
+    tool call fails to execute (e.g. the slot was taken meanwhile). Raises
+    WhatsAppSendError (after marking the message failed) if the send fails.
     """
     message = _get_pending_reply(db, business_id, message_id)
     conversation = db.get(Conversation, message.conversation_id)
     business = db.get(Business, business_id)
     customer = db.get(Customer, conversation.customer_id)
+
+    if not business.whatsapp_phone_number_id:
+        raise WhatsAppNotConnectedError("This business has not connected WhatsApp yet")
 
     if message.type == "tool_call":
         tool_call = ToolCall(

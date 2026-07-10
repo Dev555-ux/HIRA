@@ -303,6 +303,15 @@ Current technical debt is limited to production-infrastructure hardening — see
 - **Dashboard's "AI activity" tile unconditionally shows "Live."** Pre-existing (noted in PROGRESS.md Session 34) — it doesn't reflect whether Groq is actually reachable, since detecting that needs a new backend health signal. Not re-flagged as new; restated here only because Sprint 35's audit reconfirmed it's still the case.
 - **Settings' WhatsApp configuration remains disabled placeholders.** Pre-existing, unchanged — no backend endpoint exists for self-serve WhatsApp connection (`ONBOARD-D`/`ONBOARD-E`).
 
+**Sprint 36 backend audit findings (2026-07-10) — deferred by explicit instruction, not fixed this sprint:**
+
+- **`User.role` ("owner"/"staff") is schema-only, never enforced.** No endpoint checks `principal.role` (confirmed via a full grep across `app/`) — every authenticated user of a business can do everything a dashboard route allows, regardless of role. Needs a product decision on what staff should actually be restricted from before implementing.
+- **Weak/inconsistent validation on a few request models.** `onboarding.py`'s `_looks_like_email` is a hand-rolled check weaker than Pydantic's `EmailStr` (e.g. `"a@.com"` passes it). No `max_length` on `CreateKbEntryRequest`/`UpdateKbEntryRequest` content, `Lead.notes`, or `Appointment.summary` — unbounded text before chunking/embedding is a real (if not urgent) resource-cost concern for the KB case specifically.
+- **Several endpoints fetch a related row via unscoped `db.get()` after tenant-scoping the primary row** (`appointments.py`, `conversations.py`, `leads.py`, `dashboard.py`'s `approve_and_send`) — safe today only because of FK invariants (a customer/conversation always belongs to the same business as the appointment/lead/message referencing it), not because the query itself enforces it. Defense-in-depth gap, not a live vulnerability.
+- **`import_website` (`knowledge_base.py`) is the only endpoint whose response isn't the `{"data": ...}` envelope** every other route uses. Not a live bug (the frontend's `api.ts` already special-cases it), but will surprise the next person writing a generic client against this API.
+- **`app/auth/clerk.py`'s missing-`CLERK_JWKS_URL` 500 leaks the internal config detail in the response body** to any caller sending *a* Bearer header (no valid token required to reach that code path). Minor information disclosure.
+- **`verify_state`'s `int(timestamp_str)` (`app/calendar/oauth.py`) sits outside any `try/except`.** Unreachable by a forged request (the signature check gates it first), but would surface as an uncaught `ValueError` in a public redirect route if the state format ever changes.
+
 ---
 
 ## Blocked

@@ -83,9 +83,27 @@ def test_list_is_tenant_scoped(db_session):
     resp = client.get("/api/v1/kb", headers=_auth())
 
     assert resp.status_code == 200
-    data = resp.json()["data"]
+    body = resp.json()
+    data = body["data"]
     assert len(data) == 1
     assert data[0]["title"] == "A fact"
+    assert body["meta"] == {"total": 1, "limit": 200, "offset": 0}
+    app.dependency_overrides.clear()
+
+
+def test_list_supports_limit_and_offset(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    for i in range(4):
+        db_session.add(KbEntry(business_id=biz.id, title=f"fact-{i}", content=f"content {i}"))
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/kb", params={"limit": 2, "offset": 1}, headers=_auth())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["data"]) == 2
+    assert body["meta"] == {"total": 4, "limit": 2, "offset": 1}
     app.dependency_overrides.clear()
 
 
@@ -93,14 +111,14 @@ def test_patch_updates_content_and_reembeds(db_session):
     biz, _ = _seed_business(db_session, "A", "user_a")
     provider = FakeEmbeddingProvider()
     original_vector = provider.embed_documents(["Old content"])[0]
-    entry = KbEntry(business_id=biz.id, title="Hours", content="Old content", embedding=original_vector)
+    entry = KbEntry(
+        business_id=biz.id, title="Hours", content="Old content", embedding=original_vector
+    )
     db_session.add(entry)
     db_session.commit()
 
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
-    resp = client.patch(
-        f"/api/v1/kb/{entry.id}", headers=_auth(), json={"content": "New content"}
-    )
+    resp = client.patch(f"/api/v1/kb/{entry.id}", headers=_auth(), json={"content": "New content"})
 
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -114,7 +132,9 @@ def test_patch_title_only_does_not_reembed(db_session):
     biz, _ = _seed_business(db_session, "A", "user_a")
     provider = FakeEmbeddingProvider()
     original_vector = provider.embed_documents(["Some content"])[0]
-    entry = KbEntry(business_id=biz.id, title="Old title", content="Some content", embedding=original_vector)
+    entry = KbEntry(
+        business_id=biz.id, title="Old title", content="Some content", embedding=original_vector
+    )
     db_session.add(entry)
     db_session.commit()
 

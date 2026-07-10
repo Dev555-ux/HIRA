@@ -288,11 +288,40 @@ def test_list_appointments_filters_by_date_range(db_session, monkeypatch):
     )
 
     assert resp.status_code == 200
-    data = resp.json()["data"]
+    body = resp.json()
+    data = body["data"]
     assert len(data) == 1
     # starts_at is a naive TIMESTAMP column (matches the rest of the schema —
     # see test_appointment_service.py), so the tzinfo suffix is dropped.
     assert data[0]["starts_at"] == NOW.isoformat().replace("+00:00", "")
+    assert body["meta"] == {"total": 1, "limit": 200, "offset": 0}
+    app.dependency_overrides.clear()
+
+
+def test_list_appointments_supports_limit_and_offset(db_session, monkeypatch):
+    _, _, customer = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    _mock_service(monkeypatch)
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    for i in range(4):
+        starts = NOW + timedelta(hours=i)
+        client.post(
+            "/api/v1/appointments",
+            json={
+                "customer_id": str(customer.id),
+                "starts_at": starts.isoformat(),
+                "ends_at": (starts + timedelta(minutes=30)).isoformat(),
+                "summary": f"Appt {i}",
+            },
+            headers=_auth(),
+        )
+
+    resp = client.get("/api/v1/appointments", params={"limit": 2, "offset": 1}, headers=_auth())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["data"]) == 2
+    assert body["meta"] == {"total": 4, "limit": 2, "offset": 1}
     app.dependency_overrides.clear()
 
 
