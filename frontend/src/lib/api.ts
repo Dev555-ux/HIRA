@@ -62,13 +62,21 @@ async function apiFetch<T>(
   getToken: GetToken,
   init: RequestInit = {},
 ): Promise<T> {
+  console.log("[DEBUG-401] apiFetch entered", { path });
+  console.log("[DEBUG-401] calling getToken()");
   const token = await getToken();
+  console.log("[DEBUG-401] getToken() returned, token present:", !!token);
   if (!token) {
     throw new ApiError(401, "Not authenticated");
   }
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   headers.set("Authorization", `Bearer ${token}`);
+  console.log("[DEBUG-401] Authorization header added");
+  console.log(
+    "[DEBUG-401] final headers before fetch()",
+    Object.fromEntries(headers.entries()),
+  );
 
   let res: Response;
   try {
