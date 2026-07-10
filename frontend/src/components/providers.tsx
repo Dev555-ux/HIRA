@@ -9,6 +9,10 @@ import { ToastProvider, useToast } from "@/components/ui/toast";
 import { AuthContext } from "@/lib/auth-context";
 import { authEnabled, isProduction } from "@/lib/config";
 
+// Module-scope log — fires once when this chunk is evaluated, independent of
+// render/auth state, to prove the browser is executing this build at all.
+console.log("DEBUG BUILD LOADED", { authEnabled, isProduction });
+
 const MOCK_USER = {
   name: "Dev User",
   email: "dev@hira.local",
