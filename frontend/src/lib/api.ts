@@ -63,9 +63,12 @@ async function apiFetch<T>(
   init: RequestInit = {},
 ): Promise<T> {
   const token = await getToken();
+  if (!token) {
+    throw new ApiError(401, "Not authenticated");
+  }
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Authorization", `Bearer ${token}`);
 
   let res: Response;
   try {

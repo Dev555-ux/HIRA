@@ -9,10 +9,11 @@ import type { PendingReply } from "@/lib/types";
 const PENDING_KEY = ["pending"] as const;
 
 export function usePending() {
-  const { getToken } = useAuthContext();
+  const { getToken, isLoaded } = useAuthContext();
   return useQuery({
     queryKey: PENDING_KEY,
     queryFn: () => api.listPending(getToken),
+    enabled: isLoaded,
     refetchInterval: POLL_INTERVAL_MS,
   });
 }
