@@ -1,11 +1,17 @@
 """Tests for AppointmentService (provider-agnostic, exercised against the mock provider)."""
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.calendar.providers.base import CalendarConflictError, CalendarEventDraft
+from app.calendar.providers.base import (
+    CalendarConflictError,
+    CalendarEventDraft,
+    CalendarProviderUnavailableError,
+)
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService, get_upcoming_appointments
 from app.models import Appointment, Business, Customer
@@ -75,6 +81,71 @@ def test_book_appointment_conflict_leaves_no_row(db_session):
         )
 
     assert db_session.scalars(select(Appointment)).all() == []
+
+
+def test_book_appointment_commit_failure_cleans_up_external_event(db_session, monkeypatch):
+    biz, customer = _business_and_customer(db_session)
+    provider = MockCalendarProvider()
+    service = AppointmentService(db_session, biz.id, provider, calendar_id="primary")
+    starts_at = NOW + timedelta(hours=1)
+    ends_at = starts_at + timedelta(minutes=30)
+
+    original_commit = db_session.commit
+    commit_calls = {"n": 0}
+
+    def failing_commit():
+        commit_calls["n"] += 1
+        raise SQLAlchemyError("simulated commit failure")
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+    cancel_spy = Mock(wraps=provider.cancel_event)
+    monkeypatch.setattr(provider, "cancel_event", cancel_spy)
+
+    with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
+        service.book_appointment(
+            customer_id=customer.id,
+            conversation_id=None,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            summary="Dental cleaning",
+        )
+
+    # Cleanup attempted exactly once, against the event that was actually created.
+    cancel_spy.assert_called_once_with(calendar_id="primary", event_id="mock-event-1")
+    assert provider._events["mock-event-1"].status == "cancelled"
+
+    # No Appointment row survives a failed commit.
+    monkeypatch.setattr(db_session, "commit", original_commit)
+    assert db_session.scalars(select(Appointment)).all() == []
+
+
+def test_book_appointment_cleanup_failure_does_not_hide_original_exception(db_session, monkeypatch):
+    biz, customer = _business_and_customer(db_session)
+    provider = MockCalendarProvider()
+    service = AppointmentService(db_session, biz.id, provider, calendar_id="primary")
+    starts_at = NOW + timedelta(hours=1)
+    ends_at = starts_at + timedelta(minutes=30)
+
+    def failing_commit():
+        raise SQLAlchemyError("simulated commit failure")
+
+    def failing_cancel(*, calendar_id, event_id):
+        raise CalendarProviderUnavailableError("cleanup also failed")
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+    cancel_spy = Mock(side_effect=failing_cancel)
+    monkeypatch.setattr(provider, "cancel_event", cancel_spy)
+
+    with pytest.raises(SQLAlchemyError, match="simulated commit failure"):
+        service.book_appointment(
+            customer_id=customer.id,
+            conversation_id=None,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            summary="Dental cleaning",
+        )
+
+    cancel_spy.assert_called_once_with(calendar_id="primary", event_id="mock-event-1")
 
 
 def test_reschedule_appointment_updates_row_and_calls_provider(db_session):

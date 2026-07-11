@@ -20,6 +20,7 @@ Appointment table — the exception simply propagates to the caller.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -35,6 +36,8 @@ from app.calendar.providers.base import (
 from app.calendar.working_hours import filter_by_working_hours
 from app.db.tenant import get_scoped
 from app.models import Appointment
+
+logger = logging.getLogger(__name__)
 
 
 def get_upcoming_appointments(
@@ -108,6 +111,12 @@ class AppointmentService:
 
         Raises whatever the provider raises (e.g. CalendarConflictError) if
         the event can't be created — no Appointment row is written in that case.
+
+        If the event is created but the local commit fails, the event would
+        otherwise be left dangling on the external calendar with nothing in
+        Postgres pointing to it. We delete it best-effort and re-raise the
+        original commit error either way — a cleanup failure must never mask
+        why the booking actually failed.
         """
         event = self._provider.create_event(
             calendar_id=self._calendar_id,
@@ -123,7 +132,19 @@ class AppointmentService:
             status="booked",
         )
         self._db.add(appointment)
-        self._db.commit()
+        try:
+            self._db.commit()
+        except Exception:
+            try:
+                self._provider.cancel_event(
+                    calendar_id=self._calendar_id, event_id=event.provider_event_id
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to clean up external calendar event %s after local commit failure",
+                    event.provider_event_id,
+                )
+            raise
         self._db.refresh(appointment)
         return appointment
 
