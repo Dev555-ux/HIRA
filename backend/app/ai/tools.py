@@ -131,6 +131,32 @@ def preview_tool_call(tool_call: ToolCall) -> str:
     return f"{tool_call.name}({args})"
 
 
+def confirmation_message_for(tool_call: ToolCall, result: ToolExecutionResult) -> str:
+    """Deterministic, customer-facing text sent in Autonomous Mode after a
+    tool call executes successfully (Section A1 fix) — never
+    preview_tool_call()'s internal, editable-in-the-dashboard text. No LLM
+    call: built only from the tool name, its arguments, and the execution
+    result. Assisted Mode never calls this — see app/ai/processing.py's
+    _auto_send, the only call site.
+    """
+    args = tool_call.arguments
+    if tool_call.name == BOOK_APPOINTMENT:
+        return (
+            f"You're all set! {args.get('summary', 'Your appointment')} is booked "
+            f"for {args.get('starts_at', '?')} to {args.get('ends_at', '?')}."
+        )
+    if tool_call.name == RESCHEDULE_APPOINTMENT:
+        return (
+            f"Your appointment has been rescheduled to "
+            f"{args.get('starts_at', '?')} – {args.get('ends_at', '?')}."
+        )
+    if tool_call.name == CANCEL_APPOINTMENT:
+        return "Your appointment has been cancelled."
+    # CRM tools (create_lead, update_lead_stage, set_lead_follow_up) are
+    # internal bookkeeping with nothing appointment-specific to confirm.
+    return "Thanks — that's been taken care of."
+
+
 def response_to_message_fields(response: LLMResponse) -> tuple[str, str, dict]:
     """(type, body, extra_ai_meta) for storing an LLMResponse as a Message.
 

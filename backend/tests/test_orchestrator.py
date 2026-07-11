@@ -8,7 +8,7 @@ from app.ai.lead_tools import CREATE_LEAD
 from app.ai.llm.base import LLMProvider, LLMResponse, ToolCall
 from app.ai.llm.mock import MockProvider
 from app.ai.orchestrator import generate_reply
-from app.ai.tools import BOOK_APPOINTMENT, CHECK_AVAILABILITY
+from app.ai.tools import BOOK_APPOINTMENT, CHECK_AVAILABILITY, preview_tool_call
 from app.calendar.providers.base import CalendarNotConnectedError
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
@@ -196,6 +196,9 @@ def test_assisted_mode_stores_proposed_tool_call_without_executing(db_session, m
     assert "Cleaning" in outbound[0].body
     assert outbound[0].ai_meta["tool_name"] == BOOK_APPOINTMENT
     assert executed["called"] is False  # nothing touched the calendar
+    # Section A1: Assisted Mode's stored body is exactly preview_tool_call()'s
+    # output — unchanged, still the text the Pending queue shows for editing.
+    assert outbound[0].body == preview_tool_call(tool_call)
 
 
 def test_assisted_mode_stores_proposed_lead_tool_call_without_executing(db_session, monkeypatch):
@@ -272,6 +275,10 @@ def test_autonomous_mode_executes_lead_tool_call_immediately(db_session, monkeyp
     assert outbound[0].ai_meta["tool_result"] == "Lead logged."
     assert sent["body"] == outbound[0].body
     assert db_session.scalars(select(Lead)).first() is not None
+    # Section A1: the internal, dashboard-only preview text must never be
+    # what's actually sent to the customer over WhatsApp.
+    assert sent["body"] != preview_tool_call(tool_call)
+    assert sent["body"] == "Thanks — that's been taken care of."
 
 
 def test_autonomous_mode_sends_reply_immediately(db_session, monkeypatch):
@@ -368,6 +375,12 @@ def test_autonomous_mode_executes_tool_call_immediately(db_session, monkeypatch)
     from app.models import Appointment
 
     assert db_session.scalars(select(Appointment)).first() is not None
+    # Section A1: the internal, dashboard-only preview text ("Book: Cleaning
+    # (...)") must never be what's actually sent to the customer.
+    assert sent["body"] != preview_tool_call(tool_call)
+    assert sent["body"] == (
+        "You're all set! Cleaning is booked for 2026-08-05T14:00:00 to 2026-08-05T15:00:00."
+    )
 
 
 def test_autonomous_mode_marks_failed_when_tool_call_execution_fails(db_session, monkeypatch):

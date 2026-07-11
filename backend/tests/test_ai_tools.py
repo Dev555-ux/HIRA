@@ -6,12 +6,14 @@ from datetime import datetime, timedelta, timezone
 
 from app.ai.lead_tools import CREATE_LEAD, UPDATE_LEAD_STAGE
 from app.ai.llm.base import LLMResponse, ToolCall
+from app.ai.tool_results import ToolExecutionResult
 from app.ai.tools import (
     BOOK_APPOINTMENT,
     CANCEL_APPOINTMENT,
     CHECK_AVAILABILITY,
     RESCHEDULE_APPOINTMENT,
     TOOL_SCHEMAS,
+    confirmation_message_for,
     execute_check_availability,
     execute_tool_call,
     preview_tool_call,
@@ -75,6 +77,65 @@ def test_preview_cancel_appointment():
 def test_preview_unknown_tool_falls_back_to_repr():
     tool_call = ToolCall(id="1", name="mystery_tool", arguments={"a": 1})
     assert "mystery_tool" in preview_tool_call(tool_call)
+
+
+# --- confirmation_message_for (Section A1 fix — Autonomous Mode only) ------
+
+
+def test_confirmation_book_appointment_differs_from_preview():
+    tool_call = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T14:00:00",
+            "ends_at": "2026-08-05T15:00:00",
+            "summary": "Dental cleaning",
+        },
+    )
+    result = ToolExecutionResult(True, "Appointment booked.")
+
+    confirmation = confirmation_message_for(tool_call, result)
+
+    assert confirmation == (
+        "You're all set! Dental cleaning is booked for 2026-08-05T14:00:00 to 2026-08-05T15:00:00."
+    )
+    assert confirmation != preview_tool_call(tool_call)
+
+
+def test_confirmation_reschedule_appointment_differs_from_preview():
+    tool_call = ToolCall(
+        id="1",
+        name=RESCHEDULE_APPOINTMENT,
+        arguments={"starts_at": "2026-08-05T14:00:00", "ends_at": "2026-08-05T15:00:00"},
+    )
+    result = ToolExecutionResult(True, "Appointment rescheduled.")
+
+    confirmation = confirmation_message_for(tool_call, result)
+
+    assert confirmation == (
+        "Your appointment has been rescheduled to 2026-08-05T14:00:00 – 2026-08-05T15:00:00."
+    )
+    assert confirmation != preview_tool_call(tool_call)
+
+
+def test_confirmation_cancel_appointment_differs_from_preview():
+    tool_call = ToolCall(id="1", name=CANCEL_APPOINTMENT, arguments={})
+    result = ToolExecutionResult(True, "Appointment cancelled.")
+
+    confirmation = confirmation_message_for(tool_call, result)
+
+    assert confirmation == "Your appointment has been cancelled."
+    assert confirmation != preview_tool_call(tool_call)  # "Cancel your upcoming appointment"
+
+
+def test_confirmation_lead_tool_differs_from_preview():
+    tool_call = ToolCall(id="1", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+    result = ToolExecutionResult(True, "Lead logged.")
+
+    confirmation = confirmation_message_for(tool_call, result)
+
+    assert confirmation == "Thanks — that's been taken care of."
+    assert confirmation != preview_tool_call(tool_call)  # "Log as a new lead (source: ...)"
 
 
 # --- response_to_message_fields --------------------------------------------

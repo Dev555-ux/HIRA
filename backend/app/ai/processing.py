@@ -18,7 +18,7 @@ from collections.abc import Callable
 from app.ai.llm.base import ToolCall
 from app.ai.orchestrator import generate_reply
 from app.ai.prompts import SYSTEM_PROMPT_VERSION
-from app.ai.tools import execute_tool_call, response_to_message_fields
+from app.ai.tools import confirmation_message_for, execute_tool_call, response_to_message_fields
 from app.db.session import SessionLocal
 from app.models import Business, Conversation, Customer, Message
 from app.services.messaging import WhatsAppSendError, send_text
@@ -113,6 +113,11 @@ def _auto_send(
             )
             return
         message.ai_meta = {**message.ai_meta, "tool_result": result.message}
+        # Section A1 fix: message.body up to this point is still
+        # preview_tool_call()'s internal, dashboard-editable text (set at
+        # creation in response_to_message_fields). Autonomous Mode has no
+        # human to edit it before send, so it must never go out as-is.
+        message.body = confirmation_message_for(tool_call, result)
 
     try:
         wa_message_id = sender(business.whatsapp_phone_number_id, customer.wa_phone, message.body)
