@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, RefreshCw, Search, Target } from "lucide-react";
+import { AlertTriangle, Plus, RefreshCw, Search, Target } from "lucide-react";
 import { useState } from "react";
 import { CustomerDetailPane } from "@/components/customer-detail";
 import { EmptyState } from "@/components/empty-state";
+import { NewLeadDialog } from "@/components/new-lead-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ export default function LeadsPage() {
   const [stage, setStage] = useState<LeadStage | undefined>(undefined);
   const [offset, setOffset] = useState(0);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const debouncedQuery = useDebouncedValue(query);
 
   const { data, isLoading, isError, error, isFetching, refetch } = useLeads({
@@ -49,16 +51,26 @@ export default function LeadsPage() {
     setOffset(0);
   }
 
+  function handleLeadCreated(lead: Lead) {
+    setIsNewLeadOpen(false);
+    setSelectedCustomerId(lead.customer.id);
+  }
+
   return (
     <>
       <PageHeader
         title="Leads"
         description="Your sales pipeline, grouped by stage."
         action={
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className={isFetching ? "animate-spin" : ""} />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className={isFetching ? "animate-spin" : ""} />
+              Refresh
+            </Button>
+            <Button size="sm" onClick={() => setIsNewLeadOpen(true)}>
+              <Plus /> New Lead
+            </Button>
+          </div>
         }
       />
 
@@ -99,12 +111,19 @@ export default function LeadsPage() {
           total={total}
           offset={offset}
           onOffsetChange={setOffset}
+          onNewLead={() => setIsNewLeadOpen(true)}
         />
         <CustomerDetailPane
           customerId={selectedCustomerId}
           onBack={() => setSelectedCustomerId(null)}
         />
       </div>
+
+      <NewLeadDialog
+        open={isNewLeadOpen}
+        onOpenChange={setIsNewLeadOpen}
+        onCreated={handleLeadCreated}
+      />
     </>
   );
 }
@@ -121,6 +140,7 @@ function LeadList({
   total,
   offset,
   onOffsetChange,
+  onNewLead,
 }: {
   leads: Lead[];
   isLoading: boolean;
@@ -133,6 +153,7 @@ function LeadList({
   total: number;
   offset: number;
   onOffsetChange: (offset: number) => void;
+  onNewLead: () => void;
 }) {
   return (
     <Card
@@ -171,7 +192,14 @@ function LeadList({
             description={
               hasQuery
                 ? "Try a different search term or stage."
-                : "Leads logged from the Customers page, or by the AI during a conversation, will show up here."
+                : "Leads logged from the Customers page, by the AI during a conversation, or added manually will show up here."
+            }
+            action={
+              !hasQuery && (
+                <Button size="sm" onClick={onNewLead}>
+                  <Plus /> New Lead
+                </Button>
+              )
             }
             className="border-0 py-16"
           />

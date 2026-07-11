@@ -47,6 +47,7 @@ function customer(overrides: Partial<Customer> = {}): Customer {
   return {
     id: "cust-2",
     display_name: "Sam Patel",
+    company: null,
     wa_phone: "+15559998888",
     email: null,
     notes: null,

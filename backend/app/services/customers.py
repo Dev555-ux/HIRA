@@ -37,10 +37,78 @@ class CustomerNotFoundError(Exception):
     """The customer doesn't exist, or doesn't belong to this business."""
 
 
+class MissingCustomerInfoError(Exception):
+    """No customer_id/phone/email match was found, and no name was given to
+    create a new customer."""
+
+
 def _find_by_phone(db: Session, business_id: uuid.UUID, wa_phone: str) -> Customer | None:
     return db.scalars(
         select(Customer).where(Customer.business_id == business_id, Customer.wa_phone == wa_phone)
     ).first()
+
+
+def _find_by_email(db: Session, business_id: uuid.UUID, email: str) -> Customer | None:
+    return db.scalars(
+        select(Customer).where(Customer.business_id == business_id, Customer.email == email)
+    ).first()
+
+
+def resolve_or_create_customer(
+    db: Session,
+    business_id: uuid.UUID,
+    *,
+    customer_id: uuid.UUID | None = None,
+    wa_phone: str | None = None,
+    email: str | None = None,
+    display_name: str | None = None,
+    company: str | None = None,
+) -> Customer:
+    """Find the customer a manually-created Lead should attach to, or create
+    one (Sprint 38). Priority, matching the product spec exactly:
+
+    1. `customer_id`, if given — must belong to this business.
+    2. Else `wa_phone`, if given and it matches an existing customer.
+    3. Else `email`, if given and it matches an existing customer.
+    4. Else create a new customer from `display_name`/`company`/`wa_phone`/
+       `email` — raises MissingCustomerInfoError if `display_name` is blank,
+       since a new customer can't be created without a name.
+
+    A match is reused as-is: none of the typed contact fields overwrite an
+    existing customer's data as a side effect of creating a lead for them.
+
+    Raises CustomerNotFoundError if `customer_id` doesn't belong to this
+    business, or CustomerAlreadyExistsError (from create_customer) if a
+    concurrent request wins a race on `wa_phone` between the lookup above
+    and the insert.
+    """
+    if customer_id is not None:
+        customer = get_scoped(db, Customer, business_id, customer_id)
+        if customer is None:
+            raise CustomerNotFoundError("Customer not found for this business")
+        return customer
+
+    if wa_phone:
+        customer = _find_by_phone(db, business_id, wa_phone)
+        if customer is not None:
+            return customer
+
+    if email:
+        customer = _find_by_email(db, business_id, email)
+        if customer is not None:
+            return customer
+
+    if not display_name or not display_name.strip():
+        raise MissingCustomerInfoError("A name is required to create a new customer for this lead")
+
+    return create_customer(
+        db,
+        business_id,
+        display_name=display_name.strip(),
+        wa_phone=wa_phone,
+        email=email,
+        company=company,
+    )
 
 
 def create_customer(
@@ -50,6 +118,7 @@ def create_customer(
     display_name: str,
     wa_phone: str | None = None,
     email: str | None = None,
+    company: str | None = None,
     notes: str | None = None,
 ) -> Customer:
     """Manually add a customer. Raises CustomerAlreadyExistsError if
@@ -69,6 +138,7 @@ def create_customer(
         wa_phone=wa_phone,
         display_name=display_name,
         email=email,
+        company=company,
         notes=notes,
     )
     db.add(customer)

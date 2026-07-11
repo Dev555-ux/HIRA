@@ -51,6 +51,7 @@ MAX_NOTES_LENGTH = 4096
 
 class CreateCustomerRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=255)
+    company: str | None = Field(default=None, max_length=255)
     wa_phone: str | None = Field(default=None, max_length=MAX_PHONE_LENGTH)
     email: EmailStr | None = None
     notes: str | None = Field(default=None, max_length=MAX_NOTES_LENGTH)
@@ -58,6 +59,7 @@ class CreateCustomerRequest(BaseModel):
 
 class UpdateCustomerRequest(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=255)
+    company: str | None = Field(default=None, max_length=255)
     wa_phone: str | None = Field(default=None, max_length=MAX_PHONE_LENGTH)
     email: EmailStr | None = None
     notes: str | None = Field(default=None, max_length=MAX_NOTES_LENGTH)
@@ -128,6 +130,7 @@ def _serialize_customer_summary(
     return {
         "id": str(customer.id),
         "display_name": customer.display_name,
+        "company": customer.company,
         "wa_phone": customer.wa_phone,
         "email": customer.email,
         "notes": customer.notes,
@@ -182,6 +185,7 @@ def create_customer_route(
         raise HTTPException(status_code=422, detail="Name is required")
     wa_phone = payload.wa_phone.strip() if payload.wa_phone else None
     notes = payload.notes.strip() if payload.notes else None
+    company = payload.company.strip() if payload.company else None
 
     try:
         customer = create_customer(
@@ -190,6 +194,7 @@ def create_customer_route(
             display_name=display_name,
             wa_phone=wa_phone or None,
             email=payload.email,
+            company=company or None,
             notes=notes or None,
         )
     except CustomerAlreadyExistsError as exc:
@@ -260,6 +265,8 @@ def patch_customer(
         updates["wa_phone"] = updates["wa_phone"].strip() or None
     if "notes" in updates and updates["notes"]:
         updates["notes"] = updates["notes"].strip() or None
+    if "company" in updates and updates["company"]:
+        updates["company"] = updates["company"].strip() or None
     if "email" in updates and updates["email"] is not None:
         updates["email"] = str(updates["email"])
 

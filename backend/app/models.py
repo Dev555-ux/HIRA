@@ -89,6 +89,9 @@ class Customer(Base):
     # webhook, only by POST/PATCH /api/v1/customers.
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Sprint 38 — set by manual lead creation (POST /api/v1/leads) or
+    # POST/PATCH /api/v1/customers; never by the WhatsApp webhook.
+    company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

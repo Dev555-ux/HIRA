@@ -37,6 +37,7 @@ function customer(overrides: Partial<Customer> = {}): Customer {
   return {
     id: "cust-1",
     display_name: "Alice Smith",
+    company: null,
     wa_phone: "+15551230000",
     email: null,
     notes: null,
@@ -52,6 +53,7 @@ function customerDetail(overrides: Partial<CustomerDetail> = {}): CustomerDetail
   return {
     id: "cust-1",
     display_name: "Alice Smith",
+    company: null,
     wa_phone: "+15551230000",
     email: null,
     notes: null,
@@ -208,7 +210,7 @@ describe("CustomersPage", () => {
     vi.mocked(api.getCustomer).mockResolvedValue(customerDetail());
     vi.mocked(api.createLead).mockResolvedValue({
       id: "lead-1",
-      customer: { id: "cust-1", display_name: "Alice Smith", wa_phone: "+15551230000" },
+      customer: { id: "cust-1", display_name: "Alice Smith", company: null, wa_phone: "+15551230000", email: null },
       stage: "new",
       source: null,
       estimated_value: null,
@@ -256,7 +258,7 @@ describe("CustomersPage", () => {
     );
     vi.mocked(api.updateLead).mockResolvedValue({
       id: "lead-1",
-      customer: { id: "cust-1", display_name: "Alice Smith", wa_phone: "+15551230000" },
+      customer: { id: "cust-1", display_name: "Alice Smith", company: null, wa_phone: "+15551230000", email: null },
       stage: "contacted",
       source: null,
       estimated_value: null,
@@ -362,6 +364,7 @@ describe("CustomersPage", () => {
     await waitFor(() =>
       expect(api.createCustomer).toHaveBeenCalledWith(expect.any(Function), {
         display_name: "Jordan Lee",
+        company: null,
         wa_phone: "+15559876543",
         email: "jordan@example.com",
         notes: null,

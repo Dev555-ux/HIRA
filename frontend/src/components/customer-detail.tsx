@@ -106,7 +106,9 @@ export function CustomerDetailPane({
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
                   {[
+                    customer.company,
                     customer.wa_phone,
+                    customer.email,
                     `${customer.conversation_count} conversation${customer.conversation_count === 1 ? "" : "s"}`,
                   ]
                     .filter(Boolean)
@@ -310,9 +312,14 @@ function LeadForm({
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
       {lead && (
-        <Badge variant={STAGE_BADGE_VARIANT[lead.stage]} className="w-fit">
-          {LEAD_STAGES.find((s) => s.value === lead.stage)?.label ?? lead.stage}
-        </Badge>
+        <div className="flex items-center justify-between gap-2">
+          <Badge variant={STAGE_BADGE_VARIANT[lead.stage]} className="w-fit">
+            {LEAD_STAGES.find((s) => s.value === lead.stage)?.label ?? lead.stage}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            Created {formatRelativeTime(lead.created_at)}
+          </span>
+        </div>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block space-y-1.5">

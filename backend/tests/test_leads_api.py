@@ -185,6 +185,160 @@ def test_create_lead_rejects_invalid_assignee(db_session):
     app.dependency_overrides.clear()
 
 
+# --- create with manual customer resolution (Sprint 38) ---------------------
+
+
+def test_create_lead_with_new_customer_creates_customer_and_links_lead(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/leads",
+        json={
+            "display_name": "Jordan Lee",
+            "company": "Acme Co",
+            "email": "jordan@example.com",
+            "wa_phone": "+15559876543",
+            "stage": "contacted",
+            "source": "referral",
+            "estimated_value": 1200.0,
+            "notes": "Wants a quote",
+        },
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["stage"] == "contacted"
+    assert data["customer"]["display_name"] == "Jordan Lee"
+    assert data["customer"]["company"] == "Acme Co"
+    assert data["customer"]["email"] == "jordan@example.com"
+    assert data["customer"]["wa_phone"] == "+15559876543"
+
+    customers = db_session.query(Customer).filter_by(business_id=biz.id).all()
+    assert len(customers) == 1
+    assert customers[0].display_name == "Jordan Lee"
+    assert customers[0].company == "Acme Co"
+    app.dependency_overrides.clear()
+
+
+def test_create_lead_reuses_existing_customer_by_phone(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    existing = _customer(db_session, biz.id, wa_phone="+15551230000", display_name="Existing")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/leads",
+        json={"display_name": "Typed-in name", "wa_phone": "+15551230000"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["customer"]["id"] == str(existing.id)
+    assert data["customer"]["display_name"] == "Existing"  # not overwritten
+    assert db_session.query(Customer).filter_by(business_id=biz.id).count() == 1
+    app.dependency_overrides.clear()
+
+
+def test_create_lead_reuses_existing_customer_by_email(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    existing = Customer(business_id=biz.id, display_name="Existing", email="alex@example.com")
+    db_session.add(existing)
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/leads",
+        json={"display_name": "Typed-in name", "email": "alex@example.com"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["customer"]["id"] == str(existing.id)
+    assert db_session.query(Customer).filter_by(business_id=biz.id).count() == 1
+    app.dependency_overrides.clear()
+
+
+def test_create_lead_customer_matching_is_tenant_scoped(db_session):
+    """A phone match in a different business must not be reused."""
+    _seed_business(db_session, "A", "user_a", phone="PN_A")
+    biz_b, _ = _seed_business(db_session, "B", "user_b", phone="PN_B")
+    _customer(db_session, biz_b.id, wa_phone="+15551230000", display_name="B's customer")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/leads",
+        json={"display_name": "A's new customer", "wa_phone": "+15551230000"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["customer"]["display_name"] == "A's new customer"
+    app.dependency_overrides.clear()
+
+
+def test_create_lead_without_customer_info_or_name_is_422(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post("/api/v1/leads", json={}, headers=_auth())
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
+def test_create_lead_no_match_and_blank_name_is_422(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/leads",
+        json={"display_name": "   ", "wa_phone": "+15559999999"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
+def test_create_lead_new_customer_creation_is_tenant_isolated(db_session):
+    """Two businesses independently creating a lead with the same phone each
+    get their own customer — no cross-tenant reuse or duplication."""
+    biz_a, _ = _seed_business(db_session, "A", "user_a", phone="PN_A")
+    biz_b, _ = _seed_business(db_session, "B", "user_b", phone="PN_B")
+    db_session.commit()
+
+    client_a = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp_a = client_a.post(
+        "/api/v1/leads",
+        json={"display_name": "Shared Phone Person", "wa_phone": "+15551230000"},
+        headers=_auth(),
+    )
+    app.dependency_overrides.clear()
+
+    client_b = _client(db_session, claims_for_token=lambda t: {"sub": "user_b"})
+    resp_b = client_b.post(
+        "/api/v1/leads",
+        json={"display_name": "Shared Phone Person", "wa_phone": "+15551230000"},
+        headers=_auth(),
+    )
+    app.dependency_overrides.clear()
+
+    assert resp_a.status_code == 201
+    assert resp_b.status_code == 201
+    assert resp_a.json()["data"]["customer"]["id"] != resp_b.json()["data"]["customer"]["id"]
+    assert db_session.query(Customer).filter_by(business_id=biz_a.id).count() == 1
+    assert db_session.query(Customer).filter_by(business_id=biz_b.id).count() == 1
+
+
 # --- list ------------------------------------------------------------------
 
 
@@ -357,9 +511,7 @@ def test_patch_lead_rejects_negative_estimated_value(db_session):
     db_session.commit()
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
 
-    resp = client.patch(
-        f"/api/v1/leads/{lead.id}", json={"estimated_value": -50}, headers=_auth()
-    )
+    resp = client.patch(f"/api/v1/leads/{lead.id}", json={"estimated_value": -50}, headers=_auth())
 
     assert resp.status_code == 422
     app.dependency_overrides.clear()

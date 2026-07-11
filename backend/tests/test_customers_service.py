@@ -1,13 +1,18 @@
 """Unit tests for app/services/customers.py: manual create/update/delete,
-tenant scoping, duplicate-phone handling, and the create-then-insert race
-(same pattern as Sprint 36's test_leads_service.py/test_provisioning.py)."""
+tenant scoping, duplicate-phone handling, the create-then-insert race
+(same pattern as Sprint 36's test_leads_service.py/test_provisioning.py),
+and resolve_or_create_customer (Sprint 38 — manual lead creation)."""
+
+import pytest
 
 from app.models import Business, Customer
 from app.services.customers import (
     CustomerAlreadyExistsError,
     CustomerNotFoundError,
+    MissingCustomerInfoError,
     create_customer,
     delete_customer,
+    resolve_or_create_customer,
     update_customer,
 )
 
@@ -179,3 +184,147 @@ def test_delete_customer_is_tenant_scoped(db_session):
 
     assert delete_customer(db_session, biz_a.id, customer.id) is False
     assert db_session.get(Customer, customer.id) is not None
+
+
+# --- resolve_or_create_customer (Sprint 38 — manual lead creation) ----------
+
+
+def test_resolve_or_create_customer_by_id(db_session):
+    biz = _business(db_session)
+    customer = create_customer(db_session, biz.id, display_name="Alex")
+
+    resolved = resolve_or_create_customer(db_session, biz.id, customer_id=customer.id)
+
+    assert resolved.id == customer.id
+
+
+def test_resolve_or_create_customer_by_id_is_tenant_scoped(db_session):
+    biz_a = _business(db_session, "A")
+    biz_b = _business(db_session, "B")
+    customer = create_customer(db_session, biz_b.id, display_name="B's customer")
+
+    with pytest.raises(CustomerNotFoundError):
+        resolve_or_create_customer(db_session, biz_a.id, customer_id=customer.id)
+
+
+def test_resolve_or_create_customer_matches_by_phone(db_session):
+    biz = _business(db_session)
+    existing = create_customer(db_session, biz.id, display_name="Existing", wa_phone="+15551230000")
+
+    resolved = resolve_or_create_customer(
+        db_session, biz.id, wa_phone="+15551230000", display_name="Different Name Typed In"
+    )
+
+    assert resolved.id == existing.id
+    # Reused as-is — the typed name did not overwrite the existing customer.
+    assert resolved.display_name == "Existing"
+    assert db_session.query(Customer).filter_by(business_id=biz.id).count() == 1
+
+
+def test_resolve_or_create_customer_matches_by_email_when_no_phone_match(db_session):
+    biz = _business(db_session)
+    existing = create_customer(
+        db_session, biz.id, display_name="Existing", email="alex@example.com"
+    )
+
+    resolved = resolve_or_create_customer(
+        db_session,
+        biz.id,
+        wa_phone="+15559999999",  # doesn't match anything
+        email="alex@example.com",
+        display_name="New Name Typed In",
+    )
+
+    assert resolved.id == existing.id
+    assert db_session.query(Customer).filter_by(business_id=biz.id).count() == 1
+
+
+def test_resolve_or_create_customer_phone_match_takes_priority_over_email(db_session):
+    biz = _business(db_session)
+    by_phone = create_customer(db_session, biz.id, display_name="By phone", wa_phone="+15551230000")
+    create_customer(db_session, biz.id, display_name="By email", email="alex@example.com")
+
+    resolved = resolve_or_create_customer(
+        db_session, biz.id, wa_phone="+15551230000", email="alex@example.com"
+    )
+
+    assert resolved.id == by_phone.id
+
+
+def test_resolve_or_create_customer_creates_new_customer_when_no_match(db_session):
+    biz = _business(db_session)
+
+    resolved = resolve_or_create_customer(
+        db_session,
+        biz.id,
+        wa_phone="+15559876543",
+        email="jordan@example.com",
+        display_name="Jordan Lee",
+        company="Acme Co",
+    )
+
+    assert resolved.display_name == "Jordan Lee"
+    assert resolved.wa_phone == "+15559876543"
+    assert resolved.email == "jordan@example.com"
+    assert resolved.company == "Acme Co"
+    assert db_session.query(Customer).filter_by(business_id=biz.id).count() == 1
+
+
+def test_resolve_or_create_customer_new_customer_lookup_is_tenant_scoped(db_session):
+    """A phone/email match in a different business must not be reused —
+    a new customer is created for this business instead."""
+    biz_a = _business(db_session, "A")
+    biz_b = _business(db_session, "B")
+    create_customer(db_session, biz_b.id, display_name="B's customer", wa_phone="+15551230000")
+
+    resolved = resolve_or_create_customer(
+        db_session, biz_a.id, wa_phone="+15551230000", display_name="A's new customer"
+    )
+
+    assert resolved.business_id == biz_a.id
+    assert resolved.display_name == "A's new customer"
+    assert db_session.query(Customer).filter_by(business_id=biz_a.id).count() == 1
+    assert db_session.query(Customer).filter_by(business_id=biz_b.id).count() == 1
+
+
+def test_resolve_or_create_customer_requires_name_when_creating_new(db_session):
+    biz = _business(db_session)
+
+    with pytest.raises(MissingCustomerInfoError):
+        resolve_or_create_customer(db_session, biz.id, wa_phone="+15559876543")
+
+
+def test_resolve_or_create_customer_rejects_blank_name_when_creating_new(db_session):
+    biz = _business(db_session)
+
+    with pytest.raises(MissingCustomerInfoError):
+        resolve_or_create_customer(db_session, biz.id, display_name="   ")
+
+
+def test_resolve_or_create_customer_no_info_at_all_is_missing_info_error(db_session):
+    biz = _business(db_session)
+
+    with pytest.raises(MissingCustomerInfoError):
+        resolve_or_create_customer(db_session, biz.id)
+
+
+def test_resolve_or_create_customer_id_takes_priority_over_phone_and_email(db_session):
+    biz = _business(db_session)
+    by_id = create_customer(db_session, biz.id, display_name="Direct match")
+    create_customer(
+        db_session,
+        biz.id,
+        display_name="Would match by phone",
+        wa_phone="+15551230000",
+        email="other@example.com",
+    )
+
+    resolved = resolve_or_create_customer(
+        db_session,
+        biz.id,
+        customer_id=by_id.id,
+        wa_phone="+15551230000",
+        email="other@example.com",
+    )
+
+    assert resolved.id == by_id.id

@@ -6,6 +6,15 @@ string with no DB-level CHECK constraint, matching every other status field
 in this schema (Message.status, Conversation.status). Every route sits behind
 `get_current_principal` and is tenant-scoped via `tenant_query`/`get_scoped`,
 same as dashboard.py/knowledge_base.py/conversations.py.
+
+POST /api/v1/leads (Sprint 38) creates a lead without an existing customer
+already selected — `customer_id` is now optional; when omitted, the customer
+is resolved by phone, then email, then created from the submitted contact
+fields (app/services/customers.py's resolve_or_create_customer). This route
+is the only thing that changed for manual lead creation — create_lead()
+itself (app/services/leads.py) is untouched and still requires a real,
+already-known customer_id, since app/ai/lead_tools.py calls it positionally
+with one during live WhatsApp conversations.
 """
 
 from __future__ import annotations
@@ -15,7 +24,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -23,25 +32,35 @@ from app.auth.dependencies import Principal, get_current_principal
 from app.db.session import get_db
 from app.db.tenant import get_scoped
 from app.models import Customer, Lead
-from app.services.leads import (
+from app.services.customers import (
+    CustomerAlreadyExistsError,
     CustomerNotFoundError,
-    InvalidAssigneeError,
-    LeadAlreadyExistsError,
-    LeadNotFoundError,
-    create_lead,
-    delete_lead,
-    update_lead,
+    MissingCustomerInfoError,
+    resolve_or_create_customer,
 )
+from app.services.leads import InvalidAssigneeError, LeadAlreadyExistsError, LeadNotFoundError
+from app.services.leads import CustomerNotFoundError as LeadServiceCustomerNotFoundError
+from app.services.leads import create_lead, delete_lead, update_lead
 
 router = APIRouter(prefix="/api/v1/leads", tags=["leads"])
 
 LeadStage = Literal["new", "contacted", "qualified", "proposal_sent", "negotiation", "won", "lost"]
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+MAX_PHONE_LENGTH = 32
 
 
 class CreateLeadRequest(BaseModel):
-    customer_id: uuid.UUID
+    # Either customer_id (an already-known customer — e.g. from the customer
+    # detail page), or enough contact info to find/create one. display_name
+    # is only actually required when no customer_id/phone-match/email-match
+    # resolves to an existing customer — enforced in resolve_or_create_customer,
+    # not here, since it depends on what else was found.
+    customer_id: uuid.UUID | None = None
+    display_name: str | None = Field(default=None, max_length=255)
+    company: str | None = Field(default=None, max_length=255)
+    wa_phone: str | None = Field(default=None, max_length=MAX_PHONE_LENGTH)
+    email: EmailStr | None = None
     stage: LeadStage = "new"
     source: str | None = None
     estimated_value: float | None = Field(default=None, ge=0)
@@ -65,7 +84,9 @@ def _serialize_lead(lead: Lead, customer: Customer) -> dict:
         "customer": {
             "id": str(customer.id),
             "display_name": customer.display_name,
+            "company": customer.company,
             "wa_phone": customer.wa_phone,
+            "email": customer.email,
         },
         "stage": lead.stage,
         "source": lead.source,
@@ -119,10 +140,29 @@ def create_lead_route(
     db: Session = Depends(get_db),
 ) -> dict:
     try:
+        customer = resolve_or_create_customer(
+            db,
+            principal.business_id,
+            customer_id=payload.customer_id,
+            wa_phone=payload.wa_phone.strip() if payload.wa_phone else None,
+            email=payload.email,
+            display_name=payload.display_name,
+            company=payload.company.strip() if payload.company else None,
+        )
+    except CustomerNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
+        ) from exc
+    except MissingCustomerInfoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except CustomerAlreadyExistsError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    try:
         lead = create_lead(
             db,
             principal.business_id,
-            payload.customer_id,
+            customer.id,
             stage=payload.stage,
             source=payload.source,
             estimated_value=payload.estimated_value,
@@ -130,7 +170,11 @@ def create_lead_route(
             next_follow_up_at=payload.next_follow_up_at,
             assigned_to=payload.assigned_to,
         )
-    except CustomerNotFoundError as exc:
+    except LeadServiceCustomerNotFoundError as exc:
+        # Defensive only — `customer` above was just resolved/created for
+        # this exact business_id, so create_lead's own existence check can't
+        # actually fail here. Mapped the same way as the check above in case
+        # that invariant is ever broken by a future change.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
         ) from exc
@@ -141,7 +185,6 @@ def create_lead_route(
     except InvalidAssigneeError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    customer = db.get(Customer, lead.customer_id)
     return {"data": _serialize_lead(lead, customer)}
 
 

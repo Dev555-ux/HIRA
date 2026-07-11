@@ -21,6 +21,7 @@ import type { Customer, CustomerDetail } from "@/lib/types";
 
 const customerFormSchema = z.object({
   display_name: z.string().trim().min(1, "Name is required"),
+  company: z.string().trim(),
   wa_phone: z.string().trim(),
   email: z.string().trim().email("Enter a valid email address").or(z.literal("")),
   notes: z.string().trim(),
@@ -56,6 +57,7 @@ export function CustomerFormDialog({
           onSubmit={async (values) => {
             const payload = {
               display_name: values.display_name.trim(),
+              company: values.company.trim() || null,
               wa_phone: values.wa_phone.trim() || null,
               email: values.email.trim() || null,
               notes: values.notes.trim() || null,
@@ -93,6 +95,7 @@ function CustomerForm({
     resolver: zodResolver(customerFormSchema),
     defaultValues: {
       display_name: customer?.display_name ?? "",
+      company: customer?.company ?? "",
       wa_phone: customer?.wa_phone ?? "",
       email: customer?.email ?? "",
       notes: customer?.notes ?? "",
@@ -128,6 +131,11 @@ function CustomerForm({
           {errors.display_name && (
             <span className="block text-xs text-destructive">{errors.display_name.message}</span>
           )}
+        </label>
+
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium">Company</span>
+          <Input placeholder="Acme Co" {...register("company")} />
         </label>
 
         <label className="block space-y-1.5">

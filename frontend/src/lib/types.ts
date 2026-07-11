@@ -112,7 +112,9 @@ export type LeadStage =
 export interface LeadCustomer {
   id: string;
   display_name: string | null;
-  wa_phone: string;
+  company: string | null;
+  wa_phone: string | null;
+  email: string | null;
 }
 
 // Fields shared between the standalone /leads response and the lead embedded
@@ -135,8 +137,18 @@ export interface Lead extends LeadFields {
 
 export type CustomerLead = LeadFields;
 
+// Sprint 38 — manual lead creation. Either `customer_id` (an already-known
+// customer), or enough contact info for the backend to find/create one
+// (resolve_or_create_customer: customer_id -> phone match -> email match ->
+// create new from display_name/company/wa_phone/email). display_name is
+// only actually required when a new customer needs to be created — the
+// backend enforces that conditionally, not this type.
 export interface CreateLeadPayload {
-  customer_id: string;
+  customer_id?: string;
+  display_name?: string;
+  company?: string | null;
+  wa_phone?: string | null;
+  email?: string | null;
   stage?: LeadStage;
   source?: string | null;
   estimated_value?: number | null;
@@ -165,6 +177,7 @@ export interface LeadSummary {
 export interface Customer {
   id: string;
   display_name: string | null;
+  company: string | null;
   wa_phone: string | null;
   email: string | null;
   notes: string | null;
@@ -182,6 +195,7 @@ export interface CustomerDetail extends Omit<Customer, "lead"> {
 // never creates a Lead, Conversation, or Message, and never sends WhatsApp.
 export interface CreateCustomerPayload {
   display_name: string;
+  company?: string | null;
   wa_phone?: string | null;
   email?: string | null;
   notes?: string | null;
@@ -191,6 +205,7 @@ export interface CreateCustomerPayload {
 // exclude_unset handling), same convention as UpdateLeadPayload.
 export interface UpdateCustomerPayload {
   display_name?: string;
+  company?: string | null;
   wa_phone?: string | null;
   email?: string | null;
   notes?: string | null;

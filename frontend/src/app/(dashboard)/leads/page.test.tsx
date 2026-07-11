@@ -36,7 +36,7 @@ const mockAuth: AuthContextValue = {
 function lead(overrides: Partial<Lead> = {}): Lead {
   return {
     id: "lead-1",
-    customer: { id: "cust-1", display_name: "Alice Smith", wa_phone: "+15551230000" },
+    customer: { id: "cust-1", display_name: "Alice Smith", company: null, wa_phone: "+15551230000", email: null },
     stage: "qualified",
     source: null,
     estimated_value: null,
@@ -53,6 +53,7 @@ function customerDetail(overrides: Partial<CustomerDetail> = {}): CustomerDetail
   return {
     id: "cust-1",
     display_name: "Alice Smith",
+    company: null,
     wa_phone: "+15551230000",
     email: null,
     notes: null,
@@ -204,5 +205,172 @@ describe("LeadsPage", () => {
 
     expect(await screen.findByText("+15551230000 · 2 conversations")).toBeInTheDocument();
     expect(api.getCustomer).toHaveBeenCalledWith(expect.any(Function), "cust-1");
+  });
+
+  // --- New Lead dialog (Sprint 38) ------------------------------------------
+
+  it("opens the New Lead dialog from the header button", async () => {
+    vi.mocked(api.listLeads).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<LeadsPage />);
+    await screen.findByText("No leads yet");
+    await user.click(screen.getAllByRole("button", { name: /new lead/i })[0]);
+
+    expect(await screen.findByRole("heading", { name: "New lead" })).toBeInTheDocument();
+  });
+
+  it("offers New Lead from the empty state", async () => {
+    vi.mocked(api.listLeads).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<LeadsPage />);
+    await screen.findByText("No leads yet");
+
+    const buttons = screen.getAllByRole("button", { name: /new lead/i });
+    expect(buttons.length).toBeGreaterThan(1); // header action + empty-state CTA
+    await user.click(buttons[buttons.length - 1]);
+
+    expect(await screen.findByRole("heading", { name: "New lead" })).toBeInTheDocument();
+  });
+
+  it("rejects a blank full name without calling the API", async () => {
+    vi.mocked(api.listLeads).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<LeadsPage />);
+    await screen.findByText("No leads yet");
+    await user.click(screen.getAllByRole("button", { name: /new lead/i })[0]);
+    await screen.findByRole("heading", { name: "New lead" });
+
+    await user.click(screen.getByRole("button", { name: "Create lead" }));
+
+    expect(await screen.findByText("Full name is required")).toBeInTheDocument();
+    expect(api.createLead).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid email without calling the API", async () => {
+    vi.mocked(api.listLeads).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<LeadsPage />);
+    await screen.findByText("No leads yet");
+    await user.click(screen.getAllByRole("button", { name: /new lead/i })[0]);
+    await user.type(screen.getByLabelText("Full name"), "Jordan Lee");
+    await user.type(screen.getByLabelText("Email"), "not-an-email");
+    await user.click(screen.getByRole("button", { name: "Create lead" }));
+
+    expect(await screen.findByText("Enter a valid email address")).toBeInTheDocument();
+    expect(api.createLead).not.toHaveBeenCalled();
+  });
+
+  it("creates a lead, shows a success toast, refreshes the list, and selects the new lead's customer", async () => {
+    vi.mocked(api.listLeads).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
+    const newLead = lead({
+      id: "lead-new",
+      customer: {
+        id: "cust-new",
+        display_name: "Jordan Lee",
+        company: "Acme Co",
+        wa_phone: "+15559876543",
+        email: "jordan@example.com",
+      },
+      stage: "contacted",
+      source: "referral",
+      estimated_value: 1200,
+    });
+    vi.mocked(api.createLead).mockResolvedValue(newLead);
+    vi.mocked(api.getCustomer).mockResolvedValue(
+      customerDetail({
+        id: "cust-new",
+        display_name: "Jordan Lee",
+        company: "Acme Co",
+        wa_phone: "+15559876543",
+        email: "jordan@example.com",
+        conversation_count: 0,
+        last_message_at: null,
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderWithProviders(<LeadsPage />);
+    await screen.findByText("No leads yet");
+    await user.click(screen.getAllByRole("button", { name: /new lead/i })[0]);
+
+    await user.type(screen.getByLabelText("Full name"), "Jordan Lee");
+    await user.type(screen.getByLabelText("Company"), "Acme Co");
+    await user.type(screen.getByLabelText("Email"), "jordan@example.com");
+    await user.type(screen.getByLabelText("Phone"), "+15559876543");
+    await user.selectOptions(screen.getByLabelText("Stage"), "contacted");
+    await user.type(screen.getByLabelText("Source"), "referral");
+    await user.type(screen.getByLabelText("Estimated value"), "1200");
+    await user.click(screen.getByRole("button", { name: "Create lead" }));
+
+    await waitFor(() =>
+      expect(api.createLead).toHaveBeenCalledWith(expect.any(Function), {
+        display_name: "Jordan Lee",
+        company: "Acme Co",
+        email: "jordan@example.com",
+        wa_phone: "+15559876543",
+        stage: "contacted",
+        source: "referral",
+        estimated_value: 1200,
+        next_follow_up_at: null,
+        notes: null,
+      }),
+    );
+    expect(await screen.findByText("Lead created")).toBeInTheDocument();
+
+    // Dialog closes on success.
+    expect(screen.queryByRole("heading", { name: "New lead" })).not.toBeInTheDocument();
+
+    // List refreshes automatically (query invalidation) — listLeads called again.
+    await waitFor(() => expect(api.listLeads).toHaveBeenCalledTimes(2));
+
+    // The new lead's customer is auto-selected in the detail pane.
+    expect(
+      await screen.findByText("Acme Co · +15559876543 · jordan@example.com · 0 conversations"),
+    ).toBeInTheDocument();
+    expect(api.getCustomer).toHaveBeenCalledWith(expect.any(Function), "cust-new");
+  });
+
+  it("shows an inline error and keeps the dialog open when creation fails", async () => {
+    vi.mocked(api.listLeads).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
+    vi.mocked(api.createLead).mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+
+    renderWithProviders(<LeadsPage />);
+    await screen.findByText("No leads yet");
+    await user.click(screen.getAllByRole("button", { name: /new lead/i })[0]);
+    await user.type(screen.getByLabelText("Full name"), "Jordan Lee");
+    await user.click(screen.getByRole("button", { name: "Create lead" }));
+
+    // Non-ApiError rejections fall back to a generic message (matching
+    // CustomerFormDialog/KbEntryForm's existing inline-error convention).
+    expect(
+      await screen.findByText("Something went wrong — please try again."),
+    ).toBeInTheDocument();
+    // Dialog stays open so the user doesn't lose their input, and the toast
+    // ("Lead created") that only fires on success never appears.
+    expect(screen.getByRole("heading", { name: "New lead" })).toBeInTheDocument();
+    expect(screen.queryByText("Lead created")).not.toBeInTheDocument();
   });
 });
