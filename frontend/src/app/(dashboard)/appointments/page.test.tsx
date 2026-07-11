@@ -48,6 +48,8 @@ function customer(overrides: Partial<Customer> = {}): Customer {
     id: "cust-2",
     display_name: "Sam Patel",
     wa_phone: "+15559998888",
+    email: null,
+    notes: null,
     created_at: new Date().toISOString(),
     conversation_count: 1,
     last_message_at: null,

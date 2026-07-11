@@ -72,6 +72,10 @@ class User(Base):
 class Customer(Base):
     __tablename__ = "customers"
     __table_args__ = (
+        # NULL wa_phone is allowed (Postgres treats NULLs as distinct under a
+        # UNIQUE constraint) — a manually-added customer (Sprint 37) may not
+        # have a WhatsApp number yet; the constraint still fully protects
+        # every customer that does have one.
         UniqueConstraint("business_id", "wa_phone", name="uq_customer_business_phone"),
     )
 
@@ -79,8 +83,12 @@ class Customer(Base):
     business_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("businesses.id", ondelete="CASCADE"), index=True
     )
-    wa_phone: Mapped[str] = mapped_column(String(32))
+    wa_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Manual-entry fields (Sprint 37) — never populated by the WhatsApp
+    # webhook, only by POST/PATCH /api/v1/customers.
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

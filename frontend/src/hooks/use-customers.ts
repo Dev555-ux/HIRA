@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
+import type { CreateCustomerPayload, UpdateCustomerPayload } from "@/lib/types";
 
 const CUSTOMERS_KEY = "customers" as const;
 
@@ -33,5 +34,33 @@ export function useCustomerTimeline(
     queryKey: [CUSTOMERS_KEY, id, "timeline", params],
     queryFn: () => api.getCustomerTimeline(getToken, id as string, params),
     enabled: isLoaded && id !== null,
+  });
+}
+
+export function useCreateCustomer() {
+  const { getToken } = useAuthContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateCustomerPayload) => api.createCustomer(getToken, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [CUSTOMERS_KEY] }),
+  });
+}
+
+export function useUpdateCustomer() {
+  const { getToken } = useAuthContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateCustomerPayload }) =>
+      api.updateCustomer(getToken, id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [CUSTOMERS_KEY] }),
+  });
+}
+
+export function useDeleteCustomer() {
+  const { getToken } = useAuthContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteCustomer(getToken, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [CUSTOMERS_KEY] }),
   });
 }

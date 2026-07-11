@@ -13,6 +13,9 @@ vi.mock("@/lib/api", () => ({
     listCustomers: vi.fn(),
     getCustomer: vi.fn(),
     getCustomerTimeline: vi.fn(),
+    createCustomer: vi.fn(),
+    updateCustomer: vi.fn(),
+    deleteCustomer: vi.fn(),
     createLead: vi.fn(),
     updateLead: vi.fn(),
     deleteLead: vi.fn(),
@@ -35,6 +38,8 @@ function customer(overrides: Partial<Customer> = {}): Customer {
     id: "cust-1",
     display_name: "Alice Smith",
     wa_phone: "+15551230000",
+    email: null,
+    notes: null,
     created_at: new Date().toISOString(),
     conversation_count: 2,
     last_message_at: new Date().toISOString(),
@@ -48,6 +53,8 @@ function customerDetail(overrides: Partial<CustomerDetail> = {}): CustomerDetail
     id: "cust-1",
     display_name: "Alice Smith",
     wa_phone: "+15551230000",
+    email: null,
+    notes: null,
     created_at: new Date().toISOString(),
     conversation_count: 2,
     last_message_at: new Date().toISOString(),
@@ -327,6 +334,125 @@ describe("CustomersPage", () => {
 
     await user.click(screen.getByRole("button", { name: /back to customers/i }));
 
+    expect(
+      await screen.findByText("Select a customer to view their profile, pipeline, and timeline."),
+    ).toBeInTheDocument();
+  });
+
+  it("creates a customer via the Add Customer dialog", async () => {
+    vi.mocked(api.listCustomers).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
+    vi.mocked(api.createCustomer).mockResolvedValue(customerDetail({ id: "cust-new" }));
+    const user = userEvent.setup();
+
+    renderWithProviders(<CustomersPage />);
+    await screen.findByText("No customers yet");
+
+    // Two "Add Customer" buttons exist in the empty state (header action +
+    // empty-state CTA) — the header one is always present regardless of list
+    // state, so it's used here for a state-independent test.
+    await user.click(screen.getAllByRole("button", { name: /add customer/i })[0]);
+    await user.type(screen.getByLabelText("Name"), "Jordan Lee");
+    await user.type(screen.getByLabelText("Phone"), "+15559876543");
+    await user.type(screen.getByLabelText("Email"), "jordan@example.com");
+    await user.click(screen.getByRole("button", { name: "Add customer" }));
+
+    await waitFor(() =>
+      expect(api.createCustomer).toHaveBeenCalledWith(expect.any(Function), {
+        display_name: "Jordan Lee",
+        wa_phone: "+15559876543",
+        email: "jordan@example.com",
+        notes: null,
+      }),
+    );
+    expect(await screen.findByText("Customer added")).toBeInTheDocument();
+  });
+
+  it("rejects a blank name without calling the API", async () => {
+    vi.mocked(api.listCustomers).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<CustomersPage />);
+    await screen.findByText("No customers yet");
+
+    await user.click(screen.getAllByRole("button", { name: /add customer/i })[0]);
+    await user.click(screen.getByRole("button", { name: "Add customer" }));
+
+    expect(await screen.findByText("Name is required")).toBeInTheDocument();
+    expect(api.createCustomer).not.toHaveBeenCalled();
+  });
+
+  it("offers Add Customer from the empty state", async () => {
+    vi.mocked(api.listCustomers).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<CustomersPage />);
+    await screen.findByText("No customers yet");
+
+    const emptyStateButtons = screen.getAllByRole("button", { name: /add customer/i });
+    expect(emptyStateButtons.length).toBeGreaterThan(1); // header action + empty-state CTA
+    await user.click(emptyStateButtons[emptyStateButtons.length - 1]);
+
+    expect(await screen.findByRole("heading", { name: "Add customer" })).toBeInTheDocument();
+  });
+
+  it("edits a customer from the detail pane", async () => {
+    vi.mocked(api.listCustomers).mockResolvedValue({
+      data: [customer()],
+      meta: { total: 1, limit: 20, offset: 0 },
+    });
+    vi.mocked(api.getCustomer).mockResolvedValue(customerDetail());
+    vi.mocked(api.updateCustomer).mockResolvedValue(
+      customerDetail({ display_name: "Alice Johnson" }),
+    );
+    const user = userEvent.setup();
+
+    renderWithProviders(<CustomersPage />);
+    await user.click(await screen.findByText("Alice Smith"));
+    await user.click(await screen.findByRole("button", { name: "Edit customer" }));
+
+    const nameInput = screen.getByLabelText("Name");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Alice Johnson");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(api.updateCustomer).toHaveBeenCalledWith(
+        expect.any(Function),
+        "cust-1",
+        expect.objectContaining({ display_name: "Alice Johnson" }),
+      ),
+    );
+    expect(await screen.findByText("Customer updated")).toBeInTheDocument();
+  });
+
+  it("deletes a customer after confirming, and returns to the list", async () => {
+    vi.mocked(api.listCustomers).mockResolvedValue({
+      data: [customer()],
+      meta: { total: 1, limit: 20, offset: 0 },
+    });
+    vi.mocked(api.getCustomer).mockResolvedValue(customerDetail());
+    vi.mocked(api.deleteCustomer).mockResolvedValue(undefined);
+    const user = userEvent.setup();
+
+    renderWithProviders(<CustomersPage />);
+    await user.click(await screen.findByText("Alice Smith"));
+    await user.click(await screen.findByRole("button", { name: "Delete customer" }));
+
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /delete/i }));
+
+    await waitFor(() =>
+      expect(api.deleteCustomer).toHaveBeenCalledWith(expect.any(Function), "cust-1"),
+    );
     expect(
       await screen.findByText("Select a customer to view their profile, pipeline, and timeline."),
     ).toBeInTheDocument();

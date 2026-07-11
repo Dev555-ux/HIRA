@@ -282,3 +282,276 @@ def test_customer_timeline_paginates(db_session):
     assert body["meta"] == {"total": 4, "limit": 2, "offset": 0}
     assert body["data"][0]["body"] == "msg3"
     app.dependency_overrides.clear()
+
+
+# --- create (Sprint 37) ------------------------------------------------------
+
+
+def test_create_customer_requires_authentication(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+    resp = client.post("/api/v1/customers", json={"display_name": "Alex Rivera"})
+    assert resp.status_code == 401
+    app.dependency_overrides.clear()
+
+
+def test_create_customer_with_name_only(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post("/api/v1/customers", json={"display_name": "Alex Rivera"}, headers=_auth())
+
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["display_name"] == "Alex Rivera"
+    assert data["wa_phone"] is None
+    assert data["email"] is None
+    assert data["notes"] is None
+    assert data["conversation_count"] == 0
+    assert data["lead"] is None
+    app.dependency_overrides.clear()
+
+
+def test_create_customer_with_all_fields(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/customers",
+        json={
+            "display_name": "Jordan Lee",
+            "wa_phone": "+15559876543",
+            "email": "jordan@example.com",
+            "notes": "Prefers afternoon appointments",
+        },
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["wa_phone"] == "+15559876543"
+    assert data["email"] == "jordan@example.com"
+    assert data["notes"] == "Prefers afternoon appointments"
+
+    stored = db_session.get(Customer, data["id"])
+    assert stored.business_id == biz.id
+    app.dependency_overrides.clear()
+
+
+def test_create_customer_rejects_blank_name(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post("/api/v1/customers", json={"display_name": "   "}, headers=_auth())
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
+def test_create_customer_rejects_invalid_email(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/customers",
+        json={"display_name": "Alex Rivera", "email": "not-an-email"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
+def test_create_customer_rejects_duplicate_phone(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    _customer(db_session, biz.id, wa_phone="+15551230000")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/customers",
+        json={"display_name": "Duplicate", "wa_phone": "+15551230000"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 409
+    app.dependency_overrides.clear()
+
+
+def test_create_customer_allows_same_phone_across_businesses(db_session):
+    _seed_business(db_session, "A", "user_a", phone="PN_A")
+    biz_b, _ = _seed_business(db_session, "B", "user_b", phone="PN_B")
+    _customer(db_session, biz_b.id, wa_phone="+15551230000")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/customers",
+        json={"display_name": "Not a duplicate", "wa_phone": "+15551230000"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 201
+    app.dependency_overrides.clear()
+
+
+def test_create_customer_does_not_create_lead_conversation_or_message(db_session):
+    from sqlalchemy import select
+
+    from app.models import Conversation as ConversationModel
+    from app.models import Lead as LeadModel
+    from app.models import Message as MessageModel
+
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/customers",
+        json={"display_name": "Alex Rivera", "wa_phone": "+15551230000"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 201
+    assert db_session.scalars(select(LeadModel)).all() == []
+    assert db_session.scalars(select(ConversationModel)).all() == []
+    assert db_session.scalars(select(MessageModel)).all() == []
+    app.dependency_overrides.clear()
+
+
+# --- update (Sprint 37) ------------------------------------------------------
+
+
+def test_patch_customer_requires_authentication(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    db_session.commit()
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+    resp = client.patch(f"/api/v1/customers/{cust.id}", json={"notes": "x"})
+    assert resp.status_code == 401
+    app.dependency_overrides.clear()
+
+
+def test_patch_customer_updates_fields(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001", display_name="Old Name")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(
+        f"/api/v1/customers/{cust.id}",
+        json={"display_name": "New Name", "notes": "Called back on Tuesday"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["display_name"] == "New Name"
+    assert data["notes"] == "Called back on Tuesday"
+    assert data["wa_phone"] == "+10000001"  # untouched
+    app.dependency_overrides.clear()
+
+
+def test_patch_customer_rejects_nothing_to_update(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(f"/api/v1/customers/{cust.id}", json={}, headers=_auth())
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
+def test_patch_customer_rejects_duplicate_phone(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    _customer(db_session, biz.id, wa_phone="+15551111111")
+    other = _customer(db_session, biz.id, wa_phone="+15552222222")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(
+        f"/api/v1/customers/{other.id}",
+        json={"wa_phone": "+15551111111"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 409
+    app.dependency_overrides.clear()
+
+
+def test_cannot_patch_another_businesss_customer(db_session):
+    _seed_business(db_session, "A", "user_a", phone="PN_A")
+    biz_b, _ = _seed_business(db_session, "B", "user_b", phone="PN_B")
+    cust_b = _customer(db_session, biz_b.id, wa_phone="+10000002")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.patch(
+        f"/api/v1/customers/{cust_b.id}", json={"notes": "hijacked"}, headers=_auth()
+    )
+
+    assert resp.status_code == 404
+    db_session.refresh(cust_b)
+    assert cust_b.notes is None
+    app.dependency_overrides.clear()
+
+
+# --- delete (Sprint 37) ------------------------------------------------------
+
+
+def test_delete_customer_requires_authentication(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    db_session.commit()
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+    resp = client.delete(f"/api/v1/customers/{cust.id}")
+    assert resp.status_code == 401
+    app.dependency_overrides.clear()
+
+
+def test_delete_customer_removes_it(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.delete(f"/api/v1/customers/{cust.id}", headers=_auth())
+
+    assert resp.status_code == 204
+    assert db_session.get(Customer, cust.id) is None
+    app.dependency_overrides.clear()
+
+
+def test_delete_unknown_customer_is_404(db_session):
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.delete("/api/v1/customers/00000000-0000-0000-0000-000000000000", headers=_auth())
+
+    assert resp.status_code == 404
+    app.dependency_overrides.clear()
+
+
+def test_cannot_delete_another_businesss_customer(db_session):
+    _seed_business(db_session, "A", "user_a", phone="PN_A")
+    biz_b, _ = _seed_business(db_session, "B", "user_b", phone="PN_B")
+    cust_b = _customer(db_session, biz_b.id, wa_phone="+10000002")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.delete(f"/api/v1/customers/{cust_b.id}", headers=_auth())
+
+    assert resp.status_code == 404
+    assert db_session.get(Customer, cust_b.id) is not None
+    app.dependency_overrides.clear()

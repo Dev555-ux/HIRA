@@ -12,6 +12,7 @@ import type {
   ConversationStatusFilter,
   CreateAppointmentPayload,
   CreateBusinessPayload,
+  CreateCustomerPayload,
   CreateKbEntryPayload,
   CreateLeadPayload,
   CustomerDetail,
@@ -32,6 +33,7 @@ import type {
   RescheduleAppointmentPayload,
   TimelineItem,
   UpdateCalendarSettingsPayload,
+  UpdateCustomerPayload,
   UpdateDraftResult,
   UpdateKbEntryPayload,
   UpdateLeadPayload,
@@ -248,6 +250,21 @@ export const api = {
     apiFetch<ApiEnvelope<CustomerDetail>>(`/api/v1/customers/${id}`, getToken).then(
       (r) => r.data,
     ),
+
+  createCustomer: (getToken: GetToken, payload: CreateCustomerPayload) =>
+    apiFetch<ApiEnvelope<CustomerDetail>>("/api/v1/customers", getToken, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  updateCustomer: (getToken: GetToken, id: string, payload: UpdateCustomerPayload) =>
+    apiFetch<ApiEnvelope<CustomerDetail>>(`/api/v1/customers/${id}`, getToken, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  deleteCustomer: (getToken: GetToken, id: string) =>
+    apiFetch<void>(`/api/v1/customers/${id}`, getToken, { method: "DELETE" }),
 
   getCustomerTimeline: (
     getToken: GetToken,

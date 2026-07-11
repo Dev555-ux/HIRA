@@ -1,8 +1,9 @@
 "use client";
 
-import { AlertTriangle, RefreshCw, Search, Users } from "lucide-react";
+import { AlertTriangle, Plus, RefreshCw, Search, Users } from "lucide-react";
 import { useState } from "react";
 import { CustomerDetailPane } from "@/components/customer-detail";
+import { CustomerFormDialog, type CustomerDialogTarget } from "@/components/customer-form-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ export default function CustomersPage() {
   const [query, setQuery] = useState("");
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dialogTarget, setDialogTarget] = useState<CustomerDialogTarget>(null);
   const debouncedQuery = useDebouncedValue(query);
 
   const { data, isLoading, isError, error, isFetching, refetch } = useCustomers({
@@ -43,10 +45,15 @@ export default function CustomersPage() {
         title="Customers"
         description="People who have messaged your business."
         action={
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className={isFetching ? "animate-spin" : ""} />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className={isFetching ? "animate-spin" : ""} />
+              Refresh
+            </Button>
+            <Button size="sm" onClick={() => setDialogTarget("new")}>
+              <Plus /> Add Customer
+            </Button>
+          </div>
         }
       />
 
@@ -73,9 +80,15 @@ export default function CustomersPage() {
           total={total}
           offset={offset}
           onOffsetChange={setOffset}
+          onAddCustomer={() => setDialogTarget("new")}
         />
         <CustomerDetailPane customerId={selectedId} onBack={() => setSelectedId(null)} />
       </div>
+
+      <CustomerFormDialog
+        target={dialogTarget}
+        onOpenChange={(open) => !open && setDialogTarget(null)}
+      />
     </>
   );
 }
@@ -92,6 +105,7 @@ function CustomerList({
   total,
   offset,
   onOffsetChange,
+  onAddCustomer,
 }: {
   customers: Customer[];
   isLoading: boolean;
@@ -104,6 +118,7 @@ function CustomerList({
   total: number;
   offset: number;
   onOffsetChange: (offset: number) => void;
+  onAddCustomer: () => void;
 }) {
   return (
     <Card
@@ -139,7 +154,14 @@ function CustomerList({
             description={
               hasQuery
                 ? "Try a different search term."
-                : "Everyone who has messaged your business will show up here."
+                : "Everyone who has messaged your business will show up here, or add one manually."
+            }
+            action={
+              !hasQuery && (
+                <Button size="sm" onClick={onAddCustomer}>
+                  <Plus /> Add Customer
+                </Button>
+              )
             }
             className="border-0 py-16"
           />

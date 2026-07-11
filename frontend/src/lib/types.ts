@@ -165,7 +165,9 @@ export interface LeadSummary {
 export interface Customer {
   id: string;
   display_name: string | null;
-  wa_phone: string;
+  wa_phone: string | null;
+  email: string | null;
+  notes: string | null;
   created_at: string;
   conversation_count: number;
   last_message_at: string | null;
@@ -174,6 +176,24 @@ export interface Customer {
 
 export interface CustomerDetail extends Omit<Customer, "lead"> {
   lead: CustomerLead | null;
+}
+
+// Manual customer management (Sprint 37). Creating/updating a customer here
+// never creates a Lead, Conversation, or Message, and never sends WhatsApp.
+export interface CreateCustomerPayload {
+  display_name: string;
+  wa_phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
+}
+
+// All fields optional: omitting a key leaves it untouched (see backend's
+// exclude_unset handling), same convention as UpdateLeadPayload.
+export interface UpdateCustomerPayload {
+  display_name?: string;
+  wa_phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
 }
 
 // Customer timeline (/api/v1/customers/{id}/timeline) — merges Message

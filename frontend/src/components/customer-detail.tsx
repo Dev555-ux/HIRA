@@ -1,11 +1,12 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, ArrowLeft, History, Plus, Tag, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, History, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { CustomerFormDialog } from "@/components/customer-form-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { useCustomer, useCustomerTimeline } from "@/hooks/use-customers";
+import { useCustomer, useCustomerTimeline, useDeleteCustomer } from "@/hooks/use-customers";
 import { useCreateLead, useDeleteLead, useUpdateLead } from "@/hooks/use-leads";
 import { ApiError } from "@/lib/api";
 import { LEAD_STAGES, STAGE_BADGE_VARIANT } from "@/lib/leads";
@@ -32,6 +33,28 @@ export function CustomerDetailPane({
   onBack: () => void;
 }) {
   const { data: customer, isLoading, isError, error, refetch } = useCustomer(customerId);
+  const { toast } = useToast();
+  const [isEditing, setIsEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteCustomer = useDeleteCustomer();
+
+  async function handleDelete() {
+    if (!customer) return;
+    try {
+      await deleteCustomer.mutateAsync(customer.id);
+      toast({ title: "Customer deleted" });
+      setConfirmDelete(false);
+      onBack();
+    } catch (err) {
+      toast({
+        title: "Couldn't delete customer",
+        description:
+          err instanceof ApiError ? err.message : "Something went wrong — please try again.",
+        variant: "destructive",
+      });
+      setConfirmDelete(false);
+    }
+  }
 
   if (customerId === null) {
     return (
@@ -76,15 +99,40 @@ export function CustomerDetailPane({
             />
           )}
           {!isLoading && !isError && customer && (
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">
-                {customer.display_name || customer.wa_phone}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {customer.wa_phone} · {customer.conversation_count} conversation
-                {customer.conversation_count === 1 ? "" : "s"}
-              </p>
-            </div>
+            <>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {customer.display_name || customer.wa_phone}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {[
+                    customer.wa_phone,
+                    `${customer.conversation_count} conversation${customer.conversation_count === 1 ? "" : "s"}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Edit customer"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <Pencil />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Delete customer"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            </>
           )}
         </div>
       </Card>
@@ -95,6 +143,19 @@ export function CustomerDetailPane({
           <TimelineCard customerId={customer.id} />
         </>
       )}
+
+      <CustomerFormDialog
+        target={isEditing && customer ? customer : null}
+        onOpenChange={(open) => !open && setIsEditing(false)}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete this customer?"
+        description="This removes the customer and all their conversations, leads, and appointment history. This can't be undone."
+        onConfirm={handleDelete}
+        isPending={deleteCustomer.isPending}
+      />
     </div>
   );
 }
