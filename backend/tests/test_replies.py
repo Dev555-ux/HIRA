@@ -4,7 +4,8 @@ import threading
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from app.ai.lead_tools import CREATE_LEAD
@@ -15,7 +16,7 @@ from app.ai.tools import BOOK_APPOINTMENT
 from app.calendar.providers.base import CalendarError
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
-from app.models import Business, Conversation, Customer, Escalation, Message
+from app.models import Appointment, Business, Conversation, Customer, Escalation, Message
 from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError
 from app.services.replies import (
     approve_and_send,
@@ -384,7 +385,7 @@ def test_approve_tool_call_executes_then_sends(db_session, monkeypatch):
 def test_approve_tool_call_marks_failed_when_execution_fails(db_session, monkeypatch):
     biz, _, msg = _pending_tool_call_reply(db_session)
 
-    def _fails(db, business_id, tool_call, *, customer_id, conversation_id):
+    def _fails(db, business_id, tool_call, *, customer_id, conversation_id, commit=True):
         from app.ai.tools import ToolExecutionResult
 
         return ToolExecutionResult(False, "slot no longer available")
@@ -486,7 +487,7 @@ def test_concurrent_approve_tool_call_executes_tool_exactly_once(db_session, mon
     call_count = {"n": 0}
     call_lock = threading.Lock()
 
-    def fake_execute_tool_call(db, business_id, tool_call, *, customer_id, conversation_id):
+    def fake_execute_tool_call(db, business_id, tool_call, *, customer_id, conversation_id, commit=True):
         with call_lock:
             call_count["n"] += 1
         return ToolExecutionResult(True, "Appointment booked.", uuid.uuid4())
@@ -532,6 +533,85 @@ def test_concurrent_approve_tool_call_executes_tool_exactly_once(db_session, mon
     db_session.expire_all()
     final = db_session.get(Message, message_id)
     assert final.status == "sent"
+
+
+# --- Section A4: tool effect + Message update must commit atomically --------
+
+
+def test_assisted_mode_final_commit_failure_leaves_no_orphaned_appointment(db_session, monkeypatch):
+    """If the final commit in approve_and_send fails after the tool ran
+    (with commit=False) and the WhatsApp send fired, the Appointment's flush
+    must roll back with it -- not persist independently and orphan a real
+    calendar booking. The now-orphaned external event must be cleaned up,
+    and the Message must land on "sending" (the last durably committed
+    state), not "pending_approval" -- so it can't be silently re-approved
+    and double-booked. A deliberate recovery retry that then succeeds must
+    create exactly one appointment, proving the failure left no
+    duplicate-booking residue."""
+    biz, customer, msg = _pending_tool_call_reply(db_session)
+    message_id, business_id = msg.id, biz.id
+
+    provider = MockCalendarProvider()
+    monkeypatch.setattr(
+        "app.ai.tools.get_appointment_service",
+        lambda db, business_id: AppointmentService(
+            db, business_id, provider, calendar_id="primary"
+        ),
+    )
+
+    original_commit = db_session.commit
+    commit_calls = {"n": 0}
+
+    def flaky_commit():
+        commit_calls["n"] += 1
+        if commit_calls["n"] == 2:  # 1 = the A3 claim commit, 2 = the final commit
+            raise SQLAlchemyError("simulated failure on the final Message commit")
+        return original_commit()
+
+    monkeypatch.setattr(db_session, "commit", flaky_commit)
+
+    sent = {"count": 0}
+
+    def fake_sender(phone_number_id, to, body):
+        sent["count"] += 1
+        return f"wamid.out{sent['count']}"
+
+    with pytest.raises(SQLAlchemyError):
+        approve_and_send(db_session, business_id, message_id, sender=fake_sender)
+
+    monkeypatch.setattr(db_session, "commit", original_commit)
+    # The mocked commit raised without going through real SQLAlchemy commit
+    # machinery, so the transaction is still open on this connection; a real
+    # failed commit aborts the transaction as part of handling the error,
+    # and the request's session then gets closed by get_db's teardown --
+    # simulate that same "nothing left dangling on this connection" reset.
+    db_session.rollback()
+
+    # No orphaned appointment -- the tool's flushed insert rolled back
+    # together with the failed Message commit.
+    assert db_session.scalars(select(Appointment)).all() == []
+
+    # The WhatsApp send fired for real before the commit failed.
+    assert sent["count"] == 1
+
+    # The external calendar event was cleaned up, not left dangling.
+    assert all(e.status == "cancelled" for e in provider._events.values())
+
+    # Stuck at the last durably committed state ("sending"), not
+    # "pending_approval" -- so a normal approval request can't silently
+    # re-execute the tool and double-book.
+    db_session.expire_all()
+    stuck = db_session.get(Message, message_id)
+    assert stuck.status == "sending"
+
+    # A deliberate recovery retry (e.g. support resetting the message back
+    # to pending_approval) executes the tool exactly once more.
+    stuck.status = "pending_approval"
+    db_session.commit()
+    approve_and_send(db_session, business_id, message_id, sender=fake_sender)
+
+    appointments = db_session.scalars(select(Appointment)).all()
+    assert len(appointments) == 1
 
 
 # --- escalate_reply (Phase 4) --------------------------------------------------

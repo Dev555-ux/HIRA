@@ -63,10 +63,23 @@ def generate_and_store_reply(
         # Autonomous Mode: send/execute immediately with no human approval.
         # Assisted Mode (the default) leaves the reply/proposed action as
         # pending_approval for the dashboard.
+        on_commit_failure = None
         if business is not None and business.mode == "autonomous":
-            _auto_send(db, business, conversation, message, sender)
+            on_commit_failure = _auto_send(db, business, conversation, message, sender)
 
-        db.commit()
+        # Section A4: _auto_send ran any tool call with commit=False, so its
+        # effect (e.g. the Appointment row) is only flushed. This commit is
+        # what durably persists that effect together with the Message row
+        # (creation + status/ai_meta/body/wa_message_id) — either both land
+        # or neither does. On failure, on_commit_failure (if set) deletes the
+        # now-orphaned external calendar event before re-raising, to be
+        # caught by the except below like any other failure here.
+        try:
+            db.commit()
+        except Exception:
+            if on_commit_failure is not None:
+                on_commit_failure()
+            raise
         logger.info("Stored reply for conversation %s (status=%s)", conversation_id, message.status)
     except Exception:
         logger.exception("Failed to generate reply for conversation %s", conversation_id)
@@ -81,12 +94,16 @@ def _auto_send(
     conversation: Conversation,
     message: Message,
     sender: Callable[[str, str, str], str],
-) -> None:
+) -> Callable[[], None] | None:
     """Send/execute the reply immediately (Autonomous Mode) and mark sent/failed.
 
     For a proposed calendar action (message.type == "tool_call"), the tool
     executes first — no approval gate in this mode, mirroring how a text
     reply already sends immediately here (DEC-027, extended by DEC-032).
+
+    Runs the tool with commit=False (Section A4) and returns the resulting
+    `on_commit_failure` (or None) so the caller's single outer commit can
+    compensate if it fails — see generate_and_store_reply.
     """
     customer = db.get(Customer, conversation.customer_id)
 
@@ -102,6 +119,7 @@ def _auto_send(
             tool_call,
             customer_id=customer.id,
             conversation_id=conversation.id,
+            commit=False,
         )
         if not result.success:
             message.status = "failed"
@@ -111,13 +129,16 @@ def _auto_send(
                 conversation.id,
                 result.message,
             )
-            return
+            return None
         message.ai_meta = {**message.ai_meta, "tool_result": result.message}
         # Section A1 fix: message.body up to this point is still
         # preview_tool_call()'s internal, dashboard-editable text (set at
         # creation in response_to_message_fields). Autonomous Mode has no
         # human to edit it before send, so it must never go out as-is.
         message.body = confirmation_message_for(tool_call, result)
+        on_commit_failure = result.on_commit_failure
+    else:
+        on_commit_failure = None
 
     try:
         wa_message_id = sender(business.whatsapp_phone_number_id, customer.wa_phone, message.body)
@@ -127,3 +148,5 @@ def _auto_send(
     except WhatsAppSendError:
         message.status = "failed"
         logger.exception("Autonomous send failed for conversation %s", conversation.id)
+
+    return on_commit_failure

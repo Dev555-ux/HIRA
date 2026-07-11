@@ -129,11 +129,17 @@ def execute_lead_tool_call(
     tool_call: ToolCall,
     *,
     customer_id: uuid.UUID,
+    commit: bool = True,
 ) -> ToolExecutionResult:
     """Executes a CRM write tool (create/update-stage/set-follow-up) for real.
 
     Called only from app/ai/tools.py's execute_tool_call, after the calling
     action has already been approved (or, in Autonomous Mode, immediately).
+
+    `commit` is passed straight through to create_lead/update_lead — see
+    their docstrings (Section A4). No compensating action is needed for a
+    CRM-only tool (no external system involved), so unlike the calendar
+    path there is never an `on_commit_failure` to set here.
     """
     if tool_call.name not in LEAD_TOOL_NAMES:
         return ToolExecutionResult(False, f"Unknown tool '{tool_call.name}'.")
@@ -146,6 +152,7 @@ def execute_lead_tool_call(
                 customer_id,
                 source=tool_call.arguments.get("source"),
                 notes=tool_call.arguments.get("notes"),
+                commit=commit,
             )
             return ToolExecutionResult(True, "Lead logged.", lead_id=lead.id)
 
@@ -157,11 +164,13 @@ def execute_lead_tool_call(
             stage = tool_call.arguments["stage"]
             if stage not in _STAGES:
                 return ToolExecutionResult(False, f"'{stage}' is not a valid lead stage.")
-            updated = update_lead(db, business_id, lead.id, {"stage": stage})
+            updated = update_lead(db, business_id, lead.id, {"stage": stage}, commit=commit)
             return ToolExecutionResult(True, f"Lead moved to '{stage}'.", lead_id=updated.id)
 
         follow_up_at = datetime.fromisoformat(tool_call.arguments["follow_up_at"])
-        updated = update_lead(db, business_id, lead.id, {"next_follow_up_at": follow_up_at})
+        updated = update_lead(
+            db, business_id, lead.id, {"next_follow_up_at": follow_up_at}, commit=commit
+        )
         return ToolExecutionResult(True, "Follow-up scheduled.", lead_id=updated.id)
     except LeadAlreadyExistsError:
         existing = get_lead_for_customer(db, business_id, customer_id)

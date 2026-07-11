@@ -3,9 +3,12 @@ isolation, CRUD/actions, and CalendarError mapping — always via
 AppointmentService (get_appointment_service monkeypatched to a Mock-backed
 instance; there is no local-only appointment path) (DEC-032)."""
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.auth.dependencies import get_token_verifier
 from app.calendar.providers.base import CalendarEventDraft
@@ -13,7 +16,8 @@ from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
 from app.db.session import get_db
 from app.main import app
-from app.models import Business, Customer, User
+from app.models import Appointment, Business, Customer, User
+from tests.conftest import TEST_DATABASE_URL
 
 NOW = datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc)
 
@@ -97,6 +101,39 @@ def test_create_appointment_books_via_appointment_service(db_session, monkeypatc
     assert data["status"] == "booked"
     assert data["customer"]["wa_phone"] == "+15551230000"
     app.dependency_overrides.clear()
+
+
+def test_create_appointment_durably_commits_independent_of_caller(db_session, monkeypatch):
+    """Section A4: book_appointment's default commit=True must remain the
+    sole thing that persists a REST-created appointment, exactly as before
+    -- proven via a genuinely separate connection, not just the same
+    session the request and this test share via the get_db override."""
+    biz, _, customer = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    _mock_service(monkeypatch)
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/appointments",
+        json={
+            "customer_id": str(customer.id),
+            "starts_at": NOW.isoformat(),
+            "ends_at": (NOW + timedelta(hours=1)).isoformat(),
+            "summary": "Cleaning",
+        },
+        headers=_auth(),
+    )
+    assert resp.status_code == 201
+    appointment_id = uuid.UUID(resp.json()["data"]["id"])
+    app.dependency_overrides.clear()
+
+    verify_session = sessionmaker(bind=create_engine(TEST_DATABASE_URL))()
+    try:
+        appointment = verify_session.get(Appointment, appointment_id)
+        assert appointment is not None
+        assert appointment.status == "booked"
+    finally:
+        verify_session.close()
 
 
 def test_create_appointment_rejects_unknown_customer(db_session, monkeypatch):

@@ -192,13 +192,23 @@ def execute_tool_call(
     *,
     customer_id: uuid.UUID,
     conversation_id: uuid.UUID | None,
+    commit: bool = True,
 ) -> ToolExecutionResult:
     """Executes a write tool (calendar or CRM) for real.
 
     Never call this for check_availability — see execute_check_availability.
+
+    `commit=True` (default): every write commits immediately inside its own
+    service call, exactly as before. `commit=False` (Section A4): passed
+    through to book_appointment/create_lead/update_lead so none of them
+    commit — the caller (app/services/replies.py::approve_and_send,
+    app/ai/processing.py::_auto_send) persists this tool's effect and its
+    own Message update in one atomic commit instead. reschedule_appointment
+    and cancel_appointment are unaffected — out of scope for A4, they keep
+    committing internally regardless of `commit`.
     """
     if tool_call.name in LEAD_TOOL_NAMES:
-        return execute_lead_tool_call(db, business_id, tool_call, customer_id=customer_id)
+        return execute_lead_tool_call(db, business_id, tool_call, customer_id=customer_id, commit=commit)
 
     try:
         appointment_service = get_appointment_service(db, business_id)
@@ -210,8 +220,16 @@ def execute_tool_call(
                 starts_at=datetime.fromisoformat(tool_call.arguments["starts_at"]),
                 ends_at=datetime.fromisoformat(tool_call.arguments["ends_at"]),
                 summary=tool_call.arguments.get("summary", "Appointment"),
+                commit=commit,
             )
-            return ToolExecutionResult(True, "Appointment booked.", appointment.id)
+            on_commit_failure = (
+                None
+                if commit
+                else (lambda: appointment_service.cancel_calendar_event(appointment.google_event_id))
+            )
+            return ToolExecutionResult(
+                True, "Appointment booked.", appointment.id, on_commit_failure=on_commit_failure
+            )
 
         if tool_call.name in (RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT):
             # A WhatsApp customer doesn't know their appointment's internal id,

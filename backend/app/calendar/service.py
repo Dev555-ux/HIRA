@@ -106,17 +106,28 @@ class AppointmentService:
         starts_at: datetime,
         ends_at: datetime,
         summary: str,
+        commit: bool = True,
     ) -> Appointment:
         """Create the event on the calendar, then persist the Appointment row.
 
         Raises whatever the provider raises (e.g. CalendarConflictError) if
         the event can't be created — no Appointment row is written in that case.
 
-        If the event is created but the local commit fails, the event would
-        otherwise be left dangling on the external calendar with nothing in
-        Postgres pointing to it. We delete it best-effort and re-raise the
-        original commit error either way — a cleanup failure must never mask
-        why the booking actually failed.
+        `commit=True` (default): commits immediately, matching every existing
+        caller (the REST /appointments endpoint, the demo seed script, direct
+        callers in tests) exactly as before. If that commit fails, the event
+        would otherwise be left dangling on the external calendar with
+        nothing in Postgres pointing to it — it's deleted best-effort via
+        `cancel_calendar_event`, and the original commit error is re-raised
+        either way (Section A2).
+
+        `commit=False`: only flushes (assigns the row's id, surfaces
+        constraint errors), leaving the commit to the caller. Used by
+        execute_tool_call(commit=False) so the Assisted/Autonomous approval
+        workflows (app/services/replies.py, app/ai/processing.py) can persist
+        this Appointment and the Message row it's linked to in one atomic
+        commit (Section A4) — such a caller is responsible for calling
+        `cancel_calendar_event(...)` itself if its own, later commit fails.
         """
         event = self._provider.create_event(
             calendar_id=self._calendar_id,
@@ -132,21 +143,33 @@ class AppointmentService:
             status="booked",
         )
         self._db.add(appointment)
+        if not commit:
+            self._db.flush()
+            return appointment
+
         try:
             self._db.commit()
         except Exception:
-            try:
-                self._provider.cancel_event(
-                    calendar_id=self._calendar_id, event_id=event.provider_event_id
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to clean up external calendar event %s after local commit failure",
-                    event.provider_event_id,
-                )
+            self.cancel_calendar_event(event.provider_event_id)
             raise
         self._db.refresh(appointment)
         return appointment
+
+    def cancel_calendar_event(self, event_id: str) -> None:
+        """Best-effort delete of an external event. Logs but never raises —
+        a cleanup failure must never mask the real error that triggered it.
+
+        Used internally by book_appointment(commit=True), and externally by
+        a caller that booked with commit=False and whose own later commit
+        failed (Section A4) — same compensating action either way.
+        """
+        try:
+            self._provider.cancel_event(calendar_id=self._calendar_id, event_id=event_id)
+        except Exception:
+            logger.exception(
+                "Failed to clean up external calendar event %s after local commit failure",
+                event_id,
+            )
 
     def reschedule_appointment(
         self,

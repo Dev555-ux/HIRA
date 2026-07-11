@@ -1,6 +1,7 @@
 """Tests for the orchestrator and background reply processing (mock providers)."""
 
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from app.ai import processing
@@ -12,7 +13,7 @@ from app.ai.tools import BOOK_APPOINTMENT, CHECK_AVAILABILITY, preview_tool_call
 from app.calendar.providers.base import CalendarNotConnectedError
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
-from app.models import Business, Conversation, Message
+from app.models import Appointment, Business, Conversation, Message
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_knowledge_base import FakeEmbeddingProvider
 from app.ai.knowledge_base import index_entry
@@ -431,3 +432,102 @@ def test_autonomous_mode_marks_failed_when_tool_call_execution_fails(db_session,
     assert len(outbound) == 1
     assert outbound[0].status == "failed"
     assert sender_called["called"] is False  # never attempted to send a confirmation
+
+
+# --- Section A4: tool effect + Message update must commit atomically --------
+
+
+def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appointment(
+    db_session, monkeypatch
+):
+    """If the single commit in generate_and_store_reply fails after the tool
+    ran (with commit=False) and the WhatsApp send fired, nothing should be
+    left half-done: no Message row at all (not even a stale
+    "pending_approval" one a human could re-approve), no Appointment row
+    (its flush rolled back with everything else), and the now-orphaned
+    external calendar event cleaned up. A retry that then succeeds must
+    create exactly one appointment, proving the failed attempt left no
+    duplicate-booking residue behind."""
+    from app.models import Customer
+
+    biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
+    db_session.add(biz)
+    db_session.flush()
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+    conversation_id = conversation.id
+
+    real_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    commit_calls = {"n": 0}
+
+    def flaky_session_factory():
+        session = real_sessionmaker()
+        original_commit = session.commit
+
+        def flaky_commit():
+            commit_calls["n"] += 1
+            if commit_calls["n"] == 1:
+                raise SQLAlchemyError("simulated failure on the single outer commit")
+            return original_commit()
+
+        session.commit = flaky_commit
+        return session
+
+    monkeypatch.setattr(processing, "SessionLocal", flaky_session_factory)
+
+    tool_call = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T14:00:00",
+            "ends_at": "2026-08-05T15:00:00",
+            "summary": "Cleaning",
+        },
+    )
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[tool_call]),
+    )
+    provider = MockCalendarProvider()
+    monkeypatch.setattr(
+        "app.ai.tools.get_appointment_service",
+        lambda db, business_id: AppointmentService(db, business_id, provider, calendar_id="primary"),
+    )
+    sent = {"count": 0}
+
+    def fake_sender(phone_number_id, to, body):
+        sent["count"] += 1
+        return f"wamid.out{sent['count']}"
+
+    processing.generate_and_store_reply(
+        conversation_id, "book me tuesday at 2pm", sender=fake_sender
+    )
+
+    # Nothing durably persisted -- no stale pending Message, no orphaned Appointment.
+    assert (
+        db_session.scalars(
+            select(Message).where(Message.conversation_id == conversation_id)
+        ).all()
+        == []
+    )
+    assert db_session.scalars(select(Appointment)).all() == []
+
+    # The WhatsApp send fired for real before the commit failed.
+    assert sent["count"] == 1
+
+    # The external calendar event was cleaned up, not left dangling.
+    assert all(e.status == "cancelled" for e in provider._events.values())
+
+    # A retry (this time succeeding) creates exactly one appointment.
+    monkeypatch.setattr(processing, "SessionLocal", real_sessionmaker)
+    processing.generate_and_store_reply(
+        conversation_id, "book me tuesday at 2pm", sender=fake_sender
+    )
+
+    appointments = db_session.scalars(select(Appointment)).all()
+    assert len(appointments) == 1

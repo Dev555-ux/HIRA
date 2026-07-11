@@ -72,6 +72,14 @@ def approve_and_send(
     commits pending_approval -> sending, the other's identical UPDATE then
     matches zero rows and raises ValueError here, before touching the
     calendar or WhatsApp.
+
+    Atomicity (Section A4): the tool call executes with commit=False, so its
+    effect (e.g. the Appointment row) is only flushed, not committed. The
+    single commit below is what durably persists that effect together with
+    this Message's final status/ai_meta/wa_message_id — either both land or
+    neither does. If that commit fails, `result.on_commit_failure` (set by
+    execute_tool_call when it ran with commit=False) deletes the now-orphaned
+    external calendar event before the original exception is re-raised.
     """
     message = _get_pending_reply(db, business_id, message_id)
     conversation = db.get(Conversation, message.conversation_id)
@@ -90,6 +98,7 @@ def approve_and_send(
     if claimed == 0:
         raise ValueError("Message is not a pending reply for this business")
 
+    on_commit_failure = None
     if message.type == "tool_call":
         tool_call = ToolCall(
             id="approved",
@@ -97,7 +106,12 @@ def approve_and_send(
             arguments=message.ai_meta["tool_arguments"],
         )
         result = execute_tool_call(
-            db, business_id, tool_call, customer_id=customer.id, conversation_id=conversation.id
+            db,
+            business_id,
+            tool_call,
+            customer_id=customer.id,
+            conversation_id=conversation.id,
+            commit=False,
         )
         if not result.success:
             message.status = "failed"
@@ -110,6 +124,7 @@ def approve_and_send(
             )
             raise CalendarError(result.message)
         message.ai_meta = {**message.ai_meta, "tool_result": result.message}
+        on_commit_failure = result.on_commit_failure
 
     try:
         wa_message_id = sender(business.whatsapp_phone_number_id, customer.wa_phone, message.body)
@@ -121,7 +136,12 @@ def approve_and_send(
 
     message.status = "sent"
     message.wa_message_id = wa_message_id
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        if on_commit_failure is not None:
+            on_commit_failure()
+        raise
     logger.info("Sent reply %s for business %s", message_id, business_id)
     return message
 

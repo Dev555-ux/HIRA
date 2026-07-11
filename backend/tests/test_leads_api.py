@@ -1,12 +1,17 @@
 """Tests for the Leads API (/api/v1/leads): auth, tenant isolation, CRUD,
 search/stage filtering, pagination, and validation."""
 
+import uuid
+
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.auth.dependencies import get_token_verifier
 from app.db.session import get_db
 from app.main import app
 from app.models import Business, Customer, Lead, User
+from tests.conftest import TEST_DATABASE_URL
 
 
 def _seed_business(db, name, clerk_user_id, phone="PN1"):
@@ -91,6 +96,30 @@ def test_create_lead_with_full_payload(db_session):
     assert data["estimated_value"] == 2500.0
     assert data["notes"] == "Wants a quote"
     app.dependency_overrides.clear()
+
+
+def test_create_lead_durably_commits_independent_of_caller(db_session):
+    """Section A4: create_lead's default commit=True must remain the sole
+    thing that persists a REST-created lead, exactly as before -- proven via
+    a genuinely separate connection, not just the same session the request
+    and this test share via the get_db override."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post("/api/v1/leads", json={"customer_id": str(cust.id)}, headers=_auth())
+    assert resp.status_code == 201
+    lead_id = uuid.UUID(resp.json()["data"]["id"])
+    app.dependency_overrides.clear()
+
+    verify_session = sessionmaker(bind=create_engine(TEST_DATABASE_URL))()
+    try:
+        lead = verify_session.get(Lead, lead_id)
+        assert lead is not None
+        assert lead.stage == "new"
+    finally:
+        verify_session.close()
 
 
 def test_create_lead_rejects_invalid_stage(db_session):
@@ -458,6 +487,32 @@ def test_patch_lead_updates_stage(db_session):
     assert resp.status_code == 200
     assert resp.json()["data"]["stage"] == "negotiation"
     app.dependency_overrides.clear()
+
+
+def test_patch_lead_durably_commits_independent_of_caller(db_session):
+    """Section A4: update_lead's default commit=True must remain the sole
+    thing that persists a REST patch, exactly as before -- proven via a
+    genuinely separate connection, not just the same session the request
+    and this test share via the get_db override."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    lead = Lead(business_id=biz.id, customer_id=cust.id, stage="new")
+    db_session.add(lead)
+    db_session.commit()
+    lead_id = lead.id
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(f"/api/v1/leads/{lead_id}", json={"stage": "negotiation"}, headers=_auth())
+    assert resp.status_code == 200
+    app.dependency_overrides.clear()
+
+    verify_session = sessionmaker(bind=create_engine(TEST_DATABASE_URL))()
+    try:
+        verify_session.expire_all()
+        patched = verify_session.get(Lead, lead_id)
+        assert patched.stage == "negotiation"
+    finally:
+        verify_session.close()
 
 
 def test_patch_lead_can_clear_notes(db_session):

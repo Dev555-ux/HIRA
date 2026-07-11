@@ -102,6 +102,7 @@ def create_lead(
     notes: str | None = None,
     next_follow_up_at: datetime | None = None,
     assigned_to: uuid.UUID | None = None,
+    commit: bool = True,
 ) -> Lead:
     """Create a lead for a customer. Raises CustomerNotFoundError,
     LeadAlreadyExistsError, or InvalidAssigneeError on invalid input.
@@ -112,6 +113,13 @@ def create_lead(
     is what actually prevents the duplicate — the `flush()` below is wrapped
     so that race loses with the same 409-mapped LeadAlreadyExistsError the
     upfront check produces, instead of an unhandled IntegrityError/500.
+
+    `commit=True` (default): commits immediately, matching every existing
+    caller (POST /api/v1/leads, the demo seed script, direct callers in
+    tests) exactly as before. `commit=False` only flushes, leaving the
+    caller to commit — used by execute_lead_tool_call(commit=False) so the
+    Assisted/Autonomous approval workflows can persist this Lead and the
+    Message row it's linked to in one atomic commit (Section A4).
     """
     if get_scoped(db, Customer, business_id, customer_id) is None:
         raise CustomerNotFoundError("Customer not found for this business")
@@ -139,8 +147,11 @@ def create_lead(
         db.rollback()
         raise LeadAlreadyExistsError("A lead already exists for this customer") from None
     db.add(LeadEvent(lead_id=lead.id, type="lead_created", to_value=stage))
-    db.commit()
-    db.refresh(lead)
+    if commit:
+        db.commit()
+        db.refresh(lead)
+    else:
+        db.flush()
     logger.info("Created lead %s for customer %s (business %s)", lead.id, customer_id, business_id)
     return lead
 
@@ -150,6 +161,8 @@ def update_lead(
     business_id: uuid.UUID,
     lead_id: uuid.UUID,
     updates: dict[str, Any],
+    *,
+    commit: bool = True,
 ) -> Lead:
     """Apply a partial update to a lead, logging a LeadEvent for each
     timeline-worthy field that actually changes. `updates` must contain only
@@ -158,6 +171,13 @@ def update_lead(
     and an explicit `null` clears a nullable one.
 
     Raises LeadNotFoundError or InvalidAssigneeError.
+
+    `commit=True` (default): commits immediately, matching every existing
+    caller (PATCH /api/v1/leads/{id}, direct callers in tests) exactly as
+    before. `commit=False` only flushes, leaving the caller to commit — used
+    by execute_lead_tool_call(commit=False) so the Assisted/Autonomous
+    approval workflows can persist this Lead and the Message row it's
+    linked to in one atomic commit (Section A4).
     """
     lead = get_scoped(db, Lead, business_id, lead_id)
     if lead is None:
@@ -183,8 +203,11 @@ def update_lead(
             )
 
     db.add_all(events)
-    db.commit()
-    db.refresh(lead)
+    if commit:
+        db.commit()
+        db.refresh(lead)
+    else:
+        db.flush()
     logger.info("Updated lead %s (business %s): %s", lead_id, business_id, sorted(updates))
     return lead
 
