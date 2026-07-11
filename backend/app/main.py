@@ -26,6 +26,40 @@ from app.webhooks.whatsapp import router as whatsapp_router
 
 logger = logging.getLogger(__name__)
 
+
+def _configure_app_logging() -> None:
+    """Make every app.*'s logger.info()/.warning()/.exception() call actually
+    emit, in local dev and production alike (Section A5).
+
+    Python's root logger defaults to level WARNING with no handler attached,
+    so every `logging.getLogger(__name__)` in this codebase was silently
+    dropping INFO records — only WARNING/ERROR ever appeared, via Python's
+    last-resort stderr fallback, not any configuration this app owns.
+
+    This attaches one handler directly to the "app" logger — the shared
+    ancestor of every app.* module logger — and stops it there
+    (propagate=False), the same pattern uvicorn's own default logging
+    config uses for its "uvicorn"/"uvicorn.access" loggers. That keeps this
+    fully independent of uvicorn's own loggers and of the root logger: it
+    can't create duplicate lines (each record is handled exactly once, by
+    this handler), and it works no matter whether uvicorn has configured
+    its own logging yet or not, since nothing here touches uvicorn's
+    loggers or root. Guarded by `if app_logger.handlers` so re-importing
+    this module in the same process (e.g. across test files) can't attach
+    a second handler and double every line.
+    """
+    app_logger = logging.getLogger("app")
+    if app_logger.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    app_logger.addHandler(handler)
+    app_logger.setLevel(logging.INFO)
+    app_logger.propagate = False
+
+
+_configure_app_logging()
+
 app = FastAPI(title="HIRA Backend", version="0.1.0")
 
 
