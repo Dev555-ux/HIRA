@@ -230,20 +230,26 @@ def test_list_availability_delegates_to_provider(db_session):
 
 
 def test_get_upcoming_appointments_returns_soonest_first(db_session):
+    # get_upcoming_appointments filters on starts_at > datetime.now(), so
+    # "sooner" must be anchored to the real current time rather than the
+    # module's fixed NOW constant — otherwise it silently drifts into the
+    # past as real time passes NOW and disappears from the query results
+    # (the fixed NOW + 1 hour eventually becomes yesterday).
+    now = datetime.now(timezone.utc)
     biz, customer = _business_and_customer(db_session)
     service = _service(db_session, biz.id)
     later = service.book_appointment(
         customer_id=customer.id,
         conversation_id=None,
-        starts_at=NOW + timedelta(days=2),
-        ends_at=NOW + timedelta(days=2, minutes=30),
+        starts_at=now + timedelta(days=2),
+        ends_at=now + timedelta(days=2, minutes=30),
         summary="Later",
     )
     sooner = service.book_appointment(
         customer_id=customer.id,
         conversation_id=None,
-        starts_at=NOW + timedelta(hours=1),
-        ends_at=NOW + timedelta(hours=1, minutes=30),
+        starts_at=now + timedelta(hours=1),
+        ends_at=now + timedelta(hours=1, minutes=30),
         summary="Sooner",
     )
 
