@@ -19,7 +19,7 @@ import logging
 import uuid
 from collections.abc import Callable
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.ai.embeddings import EmbeddingProvider
@@ -63,6 +63,15 @@ def approve_and_send(
     Raises CalendarError (after marking the message failed) if a proposed
     tool call fails to execute (e.g. the slot was taken meanwhile). Raises
     WhatsAppSendError (after marking the message failed) if the send fails.
+
+    Concurrency: two requests approving the same message race between this
+    load and the eventual commit. Before any side effect (tool execution or
+    WhatsApp send), the message is claimed with a conditional UPDATE
+    (pending_approval -> sending) and committed immediately. Postgres's
+    row-level lock on that UPDATE serializes concurrent claims: only one
+    commits pending_approval -> sending, the other's identical UPDATE then
+    matches zero rows and raises ValueError here, before touching the
+    calendar or WhatsApp.
     """
     message = _get_pending_reply(db, business_id, message_id)
     conversation = db.get(Conversation, message.conversation_id)
@@ -71,6 +80,15 @@ def approve_and_send(
 
     if not business.whatsapp_phone_number_id:
         raise WhatsAppNotConnectedError("This business has not connected WhatsApp yet")
+
+    claimed = db.execute(
+        update(Message)
+        .where(Message.id == message_id, Message.status == "pending_approval")
+        .values(status="sending")
+    ).rowcount
+    db.commit()
+    if claimed == 0:
+        raise ValueError("Message is not a pending reply for this business")
 
     if message.type == "tool_call":
         tool_call = ToolCall(

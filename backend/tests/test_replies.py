@@ -1,12 +1,16 @@
 """Tests for the pending-reply actions (approve, edit, reject, regenerate, escalate)."""
 
+import threading
 import uuid
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.ai.lead_tools import CREATE_LEAD
 from app.ai.llm.base import ToolCall
 from app.ai.llm.mock import MockProvider
+from app.ai.tool_results import ToolExecutionResult
 from app.ai.tools import BOOK_APPOINTMENT
 from app.calendar.providers.base import CalendarError
 from app.calendar.providers.mock import MockCalendarProvider
@@ -20,6 +24,7 @@ from app.services.replies import (
     reject_reply,
     update_draft,
 )
+from tests.conftest import TEST_DATABASE_URL
 from tests.test_knowledge_base import FakeEmbeddingProvider
 
 
@@ -417,6 +422,116 @@ def test_approve_lead_tool_call_executes_then_sends(db_session):
     from app.models import Lead
 
     assert db_session.query(Lead).count() == 1
+
+
+# --- concurrent approval (Section A3 — TOCTOU race on approve_and_send) -------
+
+
+def test_concurrent_approve_only_one_wins_and_sends_once(db_session):
+    """Two requests approving the same pending reply race between the load
+    and the commit. Only one may claim the row, execute any side effect, and
+    send; the other must lose before sending anything."""
+    biz, customer, msg = _pending_reply(db_session)
+    db_session.commit()
+    message_id, business_id = msg.id, biz.id
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    send_calls: list[tuple] = []
+    send_lock = threading.Lock()
+
+    def fake_sender(phone_number_id, to, body):
+        with send_lock:
+            send_calls.append((phone_number_id, to, body))
+        return f"wamid.out{len(send_calls)}"
+
+    results: dict[str, str] = {}
+    errors: dict[str, Exception] = {}
+    start_barrier = threading.Barrier(2)
+
+    def worker(name):
+        session = test_sessionmaker()
+        start_barrier.wait(timeout=5)
+        try:
+            result = approve_and_send(session, business_id, message_id, sender=fake_sender)
+            results[name] = result.status
+        except ValueError as exc:
+            errors[name] = exc
+        finally:
+            session.close()
+
+    threads = [threading.Thread(target=worker, args=(name,)) for name in ("A", "B")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert len(send_calls) == 1  # WhatsApp send fired exactly once
+    assert list(results.values()) == ["sent"]  # exactly one winner
+    assert len(errors) == 1  # exactly one loser
+    assert all(isinstance(e, ValueError) for e in errors.values())
+
+    db_session.expire_all()
+    final = db_session.get(Message, message_id)
+    assert final.status == "sent"
+    assert final.wa_message_id == "wamid.out1"
+
+
+def test_concurrent_approve_tool_call_executes_tool_exactly_once(db_session, monkeypatch):
+    """Same race, but on a message.type == 'tool_call' reply: the calendar
+    tool itself must run exactly once too, not just the WhatsApp send."""
+    biz, customer, msg = _pending_tool_call_reply(db_session)
+    db_session.commit()
+    message_id, business_id = msg.id, biz.id
+
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+
+    def fake_execute_tool_call(db, business_id, tool_call, *, customer_id, conversation_id):
+        with call_lock:
+            call_count["n"] += 1
+        return ToolExecutionResult(True, "Appointment booked.", uuid.uuid4())
+
+    monkeypatch.setattr("app.services.replies.execute_tool_call", fake_execute_tool_call)
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    send_calls: list[str] = []
+    send_lock = threading.Lock()
+
+    def fake_sender(phone_number_id, to, body):
+        with send_lock:
+            send_calls.append(body)
+        return "wamid.out1"
+
+    results: dict[str, str] = {}
+    errors: dict[str, Exception] = {}
+    start_barrier = threading.Barrier(2)
+
+    def worker(name):
+        session = test_sessionmaker()
+        start_barrier.wait(timeout=5)
+        try:
+            result = approve_and_send(session, business_id, message_id, sender=fake_sender)
+            results[name] = result.status
+        except ValueError as exc:
+            errors[name] = exc
+        finally:
+            session.close()
+
+    threads = [threading.Thread(target=worker, args=(name,)) for name in ("A", "B")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert call_count["n"] == 1  # tool executed exactly once
+    assert len(send_calls) == 1  # WhatsApp send fired exactly once
+    assert list(results.values()) == ["sent"]
+    assert len(errors) == 1
+    assert all(isinstance(e, ValueError) for e in errors.values())
+
+    db_session.expire_all()
+    final = db_session.get(Message, message_id)
+    assert final.status == "sent"
 
 
 # --- escalate_reply (Phase 4) --------------------------------------------------
