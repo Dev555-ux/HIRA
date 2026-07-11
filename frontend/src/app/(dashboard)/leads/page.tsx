@@ -6,6 +6,7 @@ import { CustomerDetailPane } from "@/components/customer-detail";
 import { EmptyState } from "@/components/empty-state";
 import { NewLeadDialog } from "@/components/new-lead-dialog";
 import { PageHeader } from "@/components/page-header";
+import { PaginationFooter } from "@/components/pagination-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -247,31 +248,12 @@ function LeadList({
         )}
       </CardContent>
 
-      {total > PAGE_SIZE && (
-        <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
-          <span>
-            {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
-          </span>
-          <div className="flex gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={offset === 0}
-              onClick={() => onOffsetChange(Math.max(0, offset - PAGE_SIZE))}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={offset + PAGE_SIZE >= total}
-              onClick={() => onOffsetChange(offset + PAGE_SIZE)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      <PaginationFooter
+        total={total}
+        offset={offset}
+        pageSize={PAGE_SIZE}
+        onOffsetChange={onOffsetChange}
+      />
     </Card>
   );
 }

@@ -12,6 +12,7 @@ export interface ToastOptions {
 
 interface ToastItem extends ToastOptions {
   id: string;
+  leaving: boolean;
 }
 
 interface ToastContextValue {
@@ -29,18 +30,29 @@ export function useToast(): ToastContextValue {
 }
 
 const TOAST_DURATION_MS = 5000;
+// Must match toast-hide's keyframe duration in globals.css — the toast is
+// only removed from the DOM once its exit animation has actually finished.
+const TOAST_EXIT_ANIMATION_MS = 150;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
 
-  const dismiss = React.useCallback((id: string) => {
+  const remove = React.useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const dismiss = React.useCallback(
+    (id: string) => {
+      setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
+      setTimeout(() => remove(id), TOAST_EXIT_ANIMATION_MS);
+    },
+    [remove],
+  );
 
   const toast = React.useCallback(
     (options: ToastOptions) => {
       const id = crypto.randomUUID();
-      setToasts((prev) => [...prev, { ...options, id }]);
+      setToasts((prev) => [...prev, { ...options, id, leaving: false }]);
       setTimeout(() => dismiss(id), TOAST_DURATION_MS);
     },
     [dismiss],
@@ -67,6 +79,7 @@ function Toast({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => void }
       role="status"
       className={cn(
         "flex items-start gap-3 rounded-xl border bg-card p-4 text-card-foreground shadow-lg",
+        toast.leaving ? "animate-toast-hide" : "animate-toast-show",
         toast.variant === "success" && "border-success/30",
         toast.variant === "destructive" && "border-destructive/30",
       )}

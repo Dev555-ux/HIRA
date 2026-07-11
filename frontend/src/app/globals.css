@@ -90,3 +90,113 @@
     font-family: var(--font-sans), system-ui, sans-serif;
   }
 }
+
+/* Motion primitives for overlay surfaces (Dialog/DropdownMenu/Toast) — driven
+   by Radix's data-state attribute where available, so mount/unmount timing
+   is handled by Radix's own Presence (it holds the node mounted until a CSS
+   animation finishes). Kept as plain keyframes/utilities rather than pulling
+   in tailwindcss-animate, matching this project's preference for zero new
+   dependencies (see DEC-031 on Select). */
+@keyframes overlay-show {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes overlay-hide {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dialog-content-show {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes dialog-content-hide {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+}
+@keyframes popover-show {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes popover-hide {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.98);
+  }
+}
+@keyframes toast-show {
+  from {
+    opacity: 0;
+    transform: translateX(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes toast-hide {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+    max-height: 8rem;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(1rem);
+    max-height: 0;
+  }
+}
+
+@utility animate-overlay-show {
+  animation: overlay-show 150ms ease-out;
+}
+@utility animate-overlay-hide {
+  animation: overlay-hide 150ms ease-in;
+}
+@utility animate-dialog-content-show {
+  animation: dialog-content-show 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@utility animate-dialog-content-hide {
+  animation: dialog-content-hide 100ms ease-in;
+}
+@utility animate-popover-show {
+  animation: popover-show 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@utility animate-popover-hide {
+  animation: popover-hide 100ms ease-in;
+}
+@utility animate-toast-show {
+  animation: toast-show 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@utility animate-toast-hide {
+  animation: toast-hide 150ms ease-in forwards;
+}
