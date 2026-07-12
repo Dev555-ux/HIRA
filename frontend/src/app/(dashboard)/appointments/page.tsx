@@ -30,32 +30,11 @@ import {
 import { useCustomers } from "@/hooks/use-customers";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { ApiError } from "@/lib/api";
+import { APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
 import type { Appointment, Customer } from "@/lib/types";
 import { toDateTimeInputValue } from "@/lib/utils";
 
 const RANGE_DAYS = 30;
-
-const STATUS_BADGE: Record<
-  Appointment["status"],
-  { label: string; variant: "success" | "warning" | "destructive" }
-> = {
-  booked: { label: "Booked", variant: "success" },
-  rescheduled: { label: "Rescheduled", variant: "warning" },
-  cancelled: { label: "Cancelled", variant: "destructive" },
-};
-
-function formatRange(startsAt: string, endsAt: string): string {
-  const start = new Date(startsAt);
-  const end = new Date(endsAt);
-  const dateLabel = start.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-  const startTime = start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  const endTime = end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return `${dateLabel}, ${startTime} – ${endTime}`;
-}
 
 export default function AppointmentsPage() {
   const [isCreating, setIsCreating] = useState(false);
@@ -144,7 +123,7 @@ function AppointmentRow({ appointment }: { appointment: Appointment }) {
   const cancelAppointment = useCancelAppointment();
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const statusBadge = STATUS_BADGE[appointment.status];
+  const statusBadge = APPOINTMENT_STATUS_BADGE[appointment.status];
   const name =
     appointment.customer?.display_name || appointment.customer?.wa_phone || "Unknown customer";
 
@@ -168,7 +147,7 @@ function AppointmentRow({ appointment }: { appointment: Appointment }) {
         <div>
           <p className="text-sm font-medium">{name}</p>
           <p className="text-xs text-muted-foreground">
-            {formatRange(appointment.starts_at, appointment.ends_at)}
+            {formatAppointmentRange(appointment.starts_at, appointment.ends_at)}
           </p>
         </div>
         <div className="flex items-center gap-2">

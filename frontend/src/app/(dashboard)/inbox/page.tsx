@@ -23,6 +23,7 @@ import {
   useConversations,
 } from "@/hooks/use-conversations";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { CONVERSATION_STATUS_BADGE } from "@/lib/conversations";
 import type { Conversation, ConversationStatusFilter, Message } from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
@@ -32,15 +33,6 @@ const FILTERS: { label: string; value: ConversationStatusFilter | undefined }[] 
   { label: "Pending", value: "pending" },
   { label: "Closed", value: "closed" },
 ];
-
-const STATUS_BADGE: Record<
-  Conversation["status"],
-  { label: string; variant: "secondary" | "warning" | "outline" }
-> = {
-  active: { label: "Open", variant: "secondary" },
-  escalated: { label: "Escalated", variant: "warning" },
-  closed: { label: "Closed", variant: "outline" },
-};
 
 const MESSAGE_STATUS_BADGE: Partial<
   Record<Message["status"], { label: string; variant: "warning" | "success" | "destructive" }>
@@ -176,7 +168,7 @@ function ConversationList({
         {!isLoading && !isError && conversations.length > 0 && (
           <ul className="divide-y">
             {conversations.map((conv) => {
-              const statusBadge = STATUS_BADGE[conv.status];
+              const statusBadge = CONVERSATION_STATUS_BADGE[conv.status];
               const name = conv.customer.display_name || conv.customer.wa_phone;
               return (
                 <li key={conv.id}>
