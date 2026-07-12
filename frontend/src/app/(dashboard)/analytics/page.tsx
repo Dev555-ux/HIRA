@@ -18,7 +18,7 @@ export default function AnalyticsPage() {
 
   return (
     <>
-      <PageHeader title="Analytics" description="How your AI receptionist is performing." />
+      <PageHeader title="Analytics" description="How your AI employee is performing." />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard

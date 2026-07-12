@@ -7,7 +7,7 @@ export function Hero() {
     <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
       <div className="mx-auto max-w-3xl text-center">
         <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-          An AI receptionist that answers WhatsApp before your customer gives up
+          Meet the employee who answers, books, and follows up — before you&apos;ve seen the message
         </h1>
         <p className="mt-6 text-lg text-muted-foreground sm:text-xl">
           HIRA replies to customer messages on WhatsApp using your own business

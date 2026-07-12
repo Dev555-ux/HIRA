@@ -59,7 +59,7 @@ export default function PlaygroundPage() {
     <>
       <PageHeader
         title="Playground"
-        description="Test-drive your AI receptionist. Every message runs through the exact same pipeline a real WhatsApp customer would hit — knowledge base retrieval, then the LLM."
+        description="Test-drive the Receptionist. Every message runs through the exact same pipeline a real WhatsApp customer would hit — knowledge base retrieval, then the LLM."
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -135,7 +135,7 @@ export default function PlaygroundPage() {
                 <EmptyState
                   icon={Sparkles}
                   title="No messages yet"
-                  description="Send a customer message on the left to see how your AI receptionist responds."
+                  description="Send a customer message on the left to see how the Receptionist responds."
                   className="border-0 py-8"
                 />
               )}

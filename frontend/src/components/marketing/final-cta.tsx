@@ -7,7 +7,7 @@ export function FinalCta() {
     <section className="border-t py-16 sm:py-24">
       <div className="mx-auto max-w-2xl px-4 text-center sm:px-6">
         <h2 className="text-3xl font-semibold tracking-tight">
-          Give your WhatsApp a receptionist
+          Hire your first AI employee
         </h2>
         <p className="mt-4 text-muted-foreground">
           Set up your knowledge base, connect WhatsApp, and test it yourself

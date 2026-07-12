@@ -8,7 +8,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "HIRA Dashboard",
-  description: "AI Receptionist control panel",
+  description: "Manage your AI employee's conversations, bookings, and leads.",
 };
 
 export default function RootLayout({

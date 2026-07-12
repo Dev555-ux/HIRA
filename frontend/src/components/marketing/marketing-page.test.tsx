@@ -9,7 +9,7 @@ describe("MarketingPage", () => {
 
     const headings = screen.getAllByRole("heading", { level: 1 });
     expect(headings).toHaveLength(1);
-    expect(headings[0]).toHaveTextContent(/AI receptionist/i);
+    expect(headings[0]).toHaveTextContent(/employee/i);
   });
 
   it("links every primary CTA to sign-up", () => {
@@ -45,12 +45,24 @@ describe("MarketingPage", () => {
 
     const h2s = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
     expect(h2s.some((t) => /whatsapp/i.test(t ?? ""))).toBe(true); // Problem
-    expect(h2s.some((t) => /one ai receptionist/i.test(t ?? ""))).toBe(true); // Solution
+    expect(h2s.some((t) => /bundle of bots/i.test(t ?? ""))).toBe(true); // Solution
     expect(h2s.some((t) => /ai employees/i.test(t ?? ""))).toBe(true); // AI Employees
     expect(h2s.some((t) => /front desk/i.test(t ?? ""))).toBe(true); // Features
     expect(h2s.some((t) => /four steps/i.test(t ?? ""))).toBe(true); // How it works
     expect(h2s.some((t) => /frequently asked/i.test(t ?? ""))).toBe(true); // FAQ
-    expect(h2s.some((t) => /give your whatsapp/i.test(t ?? ""))).toBe(true); // Final CTA
+    expect(h2s.some((t) => /hire your first ai employee/i.test(t ?? ""))).toBe(true); // Final CTA
+  });
+
+  it("never claims HIRA is an 'AI receptionist' anywhere on the page", () => {
+    const { container } = render(<MarketingPage />);
+
+    expect(container.textContent).not.toMatch(/AI receptionist/i);
+  });
+
+  it("directly addresses the chatbot question in the FAQ", () => {
+    render(<MarketingPage />);
+
+    expect(screen.getByText("Is HIRA a chatbot?")).toBeInTheDocument();
   });
 
   it("marks only the Receptionist as available now, not future roles", () => {

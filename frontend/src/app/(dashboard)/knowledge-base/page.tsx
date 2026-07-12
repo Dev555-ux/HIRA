@@ -100,7 +100,7 @@ export default function KnowledgeBasePage() {
     <>
       <PageHeader
         title="Knowledge Base"
-        description="Facts your AI receptionist uses to answer customers."
+        description="Facts the Receptionist uses to answer customers."
         action={
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)}>

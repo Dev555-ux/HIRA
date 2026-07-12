@@ -85,7 +85,7 @@ export default function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        description="Overview of your AI receptionist."
+        description="Overview of your AI employee."
         action={
           <Button variant="outline" size="sm" onClick={refreshAll}>
             <RefreshCw className={isRefreshing ? "animate-spin" : ""} />

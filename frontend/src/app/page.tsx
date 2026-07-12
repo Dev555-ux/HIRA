@@ -5,16 +5,17 @@ import { MarketingPage } from "@/components/marketing/marketing-page";
 import { authEnabled } from "@/lib/config";
 
 const SITE_URL = "https://hira-tau.vercel.app";
+const TITLE = "HIRA — The AI Employee for WhatsApp-First Businesses";
 const DESCRIPTION =
-  "HIRA is an AI receptionist for WhatsApp-first businesses. It answers customer questions from your own knowledge base, books appointments into your calendar, and escalates to a human when it isn't sure.";
+  "HIRA is the AI employee businesses hire to answer customers on WhatsApp, book appointments, and follow up on every lead — grounded in your own knowledge, supervised by you.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "HIRA — The AI Receptionist for WhatsApp-First Businesses",
+  title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: "/" },
   openGraph: {
-    title: "HIRA — The AI Receptionist for WhatsApp-First Businesses",
+    title: TITLE,
     description: DESCRIPTION,
     url: "/",
     siteName: "HIRA",
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "HIRA — The AI Receptionist for WhatsApp-First Businesses",
+    title: TITLE,
     description: DESCRIPTION,
   },
 };

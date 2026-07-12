@@ -27,12 +27,12 @@ export function Solution() {
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-semibold tracking-tight">
-            One AI receptionist, working inside WhatsApp
+            One employee, not a bundle of bots
           </h2>
           <p className="mt-4 text-muted-foreground">
-            HIRA connects to your business&apos;s WhatsApp number and takes on the
-            parts of customer conversation that are repetitive and time-sensitive
-            — without pretending to know things it doesn&apos;t.
+            A single AI agent holds the conversation, your calendar, and your
+            leads together — not three separate tools handing your customer
+            between them, and never pretending to know things it doesn&apos;t.
           </p>
         </div>
         <div className="mt-12 grid gap-6 sm:grid-cols-3">

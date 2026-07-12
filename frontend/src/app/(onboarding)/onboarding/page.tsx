@@ -61,7 +61,7 @@ export default function OnboardingPage() {
       });
       toast({
         title: "You're all set!",
-        description: "Let's get your AI receptionist ready.",
+        description: "Let's get your AI employee ready.",
         variant: "success",
       });
       router.replace("/dashboard");
@@ -75,7 +75,7 @@ export default function OnboardingPage() {
       <CardHeader>
         <CardTitle>👋 Hi, I&apos;m HIRA</CardTitle>
         <CardDescription>
-          Let&apos;s set up your AI receptionist. Tell me a bit about your business.
+          Let&apos;s set up your AI employee. Tell me a bit about your business.
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -1,7 +1,7 @@
 [project]
 name = "hira-backend"
 version = "0.1.0"
-description = "HIRA backend — AI Receptionist API (FastAPI)"
+description = "HIRA backend — AI employee platform API (FastAPI)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

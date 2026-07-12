@@ -1,5 +1,10 @@
 const FAQS = [
   {
+    question: "Is HIRA a chatbot?",
+    answer:
+      "No. A chatbot answers messages and stops there. HIRA is an AI employee — it holds the whole job: the conversation, your calendar, and your leads, together, grounded in what you've told it about your business.",
+  },
+  {
     question: "Does HIRA reply to my customers automatically?",
     answer:
       "It depends on the mode you choose. In Assisted Mode — the default — HIRA drafts every reply and proposed booking, and you approve, edit, or reject it before anything is sent. In Autonomous Mode, HIRA sends replies and makes bookings on its own. Most businesses start in Assisted Mode and move to Autonomous once they trust the AI's replies.",

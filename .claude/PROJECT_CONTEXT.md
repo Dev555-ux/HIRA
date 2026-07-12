@@ -6,9 +6,9 @@ Current state of the HIRA project: what it is, who it's for, what's built, and w
 
 ## What HIRA Is
 
-HIRA is an AI receptionist platform for WhatsApp-first businesses. It automatically responds to customer inquiries, answers FAQs grounded in a business's own knowledge base, books and reschedules appointments via Google Calendar, manages a lead pipeline, escalates uncertain conversations to a human, and aims to ensure businesses never miss a lead.
+HIRA is an AI employee businesses hire for WhatsApp-first customer conversations — not a chatbot they install and configure. It automatically responds to customer inquiries, answers FAQs grounded in a business's own knowledge base, books and reschedules appointments via Google Calendar, manages a lead pipeline, escalates uncertain conversations to a human, and aims to ensure businesses never miss a lead. See `business/BRAND_BIBLE.md` (DEC-036) for the full positioning, voice, and vocabulary this file's language should match.
 
-Long-term vision: an **AI Business Operating System** where businesses can "hire" AI employees across functions (receptionist, sales follow-up, support, and others yet to be validated). The current focus remains narrow and deliberate — becoming the best AI Receptionist first. Nothing beyond the receptionist product exists in the codebase today; the wider vision is direction, not a committed build plan.
+Long-term vision: an **AI Business Operating System** where businesses can "hire" AI employees across functions (the Receptionist, sales follow-up, support, and others yet to be validated). The current focus remains narrow and deliberate — becoming the best AI employee first, in the Receptionist role. Nothing beyond the Receptionist exists in the codebase today; the wider vision is direction, not a committed build plan.
 
 ## Current Implementation Status
 

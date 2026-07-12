@@ -94,7 +94,7 @@ export default function AppointmentsPage() {
         <EmptyState
           icon={CalendarClock}
           title="No upcoming appointments"
-          description="Appointments booked by you or the AI receptionist will show up here."
+          description="Appointments booked by you or the Receptionist will show up here."
           action={
             <Button size="sm" onClick={() => setIsCreating(true)}>
               <Plus /> New appointment
