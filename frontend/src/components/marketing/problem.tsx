@@ -1,0 +1,47 @@
+import { Clock, MessageSquareOff, Users } from "lucide-react";
+
+const PROBLEMS = [
+  {
+    icon: Clock,
+    title: "Customers message outside business hours",
+    description:
+      "A question at 9pm sits unanswered until morning — and by then, they've often already messaged someone else.",
+  },
+  {
+    icon: MessageSquareOff,
+    title: "Every reply competes with running the business",
+    description:
+      "Answering the same questions about hours, pricing, and availability takes time away from the customers already in front of you.",
+  },
+  {
+    icon: Users,
+    title: "Leads and follow-ups fall through the cracks",
+    description:
+      "Without a system tracking every conversation, it's easy to lose track of who still needs a reply, a booking, or a follow-up.",
+  },
+];
+
+export function Problem() {
+  return (
+    <section className="border-t bg-secondary/40 py-16 sm:py-24">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="text-3xl font-semibold tracking-tight">
+            WhatsApp is where your customers already are — and where they expect a fast reply
+          </h2>
+        </div>
+        <div className="mt-12 grid gap-6 sm:grid-cols-3">
+          {PROBLEMS.map((problem) => (
+            <div key={problem.title} className="rounded-xl border bg-card p-6">
+              <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+                <problem.icon className="size-5 text-muted-foreground" aria-hidden="true" />
+              </div>
+              <h3 className="mt-4 text-base font-semibold">{problem.title}</h3>
+              <p className="mt-2 text-sm text-muted-foreground">{problem.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
