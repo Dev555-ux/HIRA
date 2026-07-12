@@ -36,6 +36,23 @@ This is an intentional MVP-first sequencing (see `.claude/DECISIONS.md`): prove 
 
 ---
 
+# Architectural Principles
+
+Added by the architecture consolidation (2026-07-12) following a comparison against an external reference architecture document. These are not new rules — each one codifies a pattern this codebase already follows, so future decisions have a named principle to check against instead of re-deriving it from precedent every time. They govern every future engineering decision; they do not change any decision already made.
+
+1. **Modular monolith first.** One deployable (soon two: `api`/`worker`, same repo), not microservices — see DEC-012 and Section 3. Split a module into its own service only when that module's own scaling profile forces it.
+2. **Postgres before new infrastructure.** JSONB for flexible fields, pgvector for retrieval, and (later) an outbox table for durability — reach for Redis/Kafka/a dedicated vector store/ClickHouse only when a real, measured limit is hit, not ahead of it.
+3. **Prefer interfaces over frameworks.** `LLMProvider`, `CalendarProvider`, and `EmbeddingProvider` (DEC-020, DEC-021, DEC-028) are the house pattern: a small ABC plus a swappable implementation, never a vendor SDK imported into business logic. New integrations follow this shape.
+4. **Customer value over technical elegance.** Ship the smallest thing that proves the idea (DEC-003, DEC-004) — a "more correct" design that delays real validation is the wrong trade.
+5. **One source of truth.** One Postgres database of record, one tenant-scoping path (`tenant_query`/`get_scoped`), one append-only decision log (`DECISIONS.md`). Don't create a second way to do something a first way already does.
+6. **Backend correctness before UI polish.** The AI loop was proven end-to-end before auth or the dashboard existed (DEC-019); tests and live verification come before frontend surface area.
+7. **Every sprint ends in a releasable state.** CI green, migrations applied, no half-built feature left in a broken state — the Definition of Done (CLAUDE.md §16), not an aspiration.
+8. **Measure before optimizing.** Load-test-gated items stay gated (`SCALE-1` full async migration, `REL-1` durable queue) — effort is spent once real usage data says it's needed, not on a hunch.
+9. **Architecture evolves only with evidence.** Scaling, multi-tenancy hardening (`TENANT-1`), and vertical expansion all wait on real signal (DEC-004) — the same standard this consolidation itself was held to when weighing outside ideas.
+10. **Every major decision is documented.** `DECISIONS.md` is append-only and never rewritten (DEC-008, DEC-009) — a decision that changes gets a new entry that supersedes the old one, not an edit.
+
+---
+
 # 2. High-Level Architecture
 
 ```mermaid
@@ -653,19 +670,24 @@ Per `MILESTONES.md`:
 
 # 15. Future Roadmap
 
+> This roadmap is part of the HIRA v1.x architecture baseline (see `IMPLEMENTATION_PLAN.md`) — it changes only on evidence of a real limitation, a real technical constraint, or an intentional business-direction change.
+
 Recommended next implementation order, reasoning included:
 
 1. **Deployment** (`INFRA-001`, `INFRA-006`) — do this before anything else below. Every feature built on top of a laptop+ngrok setup will need to be re-verified once deployed anyway; deploying first means new features are verified once, not twice.
 2. **Inbox** — **done (2026-07-08)**. `GET /api/v1/conversations` (search, status filter, pagination), `GET /api/v1/conversations/{id}`, `GET /api/v1/conversations/{id}/messages` (`backend/app/api/conversations.py`), and a real two-pane `/inbox` page (`frontend/src/app/(dashboard)/inbox/page.tsx`). No new tables — reads `Conversation`/`Message`/`Customer` as they already existed.
 3. **Human handoff / escalation** — **half done (Sprint 27, 2026-07-09).** The manual half is built: `POST /messages/{id}/escalate` lets an operator hand off a pending draft from the dashboard, creating an `Escalation` row and marking the conversation `escalated`. Still open: a list/resolve endpoint or dashboard surface for open escalations (see DEC-030); wiring the *automatic* half — `generate_and_store_reply`'s failure path (Section 7) and a low-confidence signal from the LLM response — into the same `escalate_reply()` mechanism. That automatic half still closes the biggest reliability gap: right now a failed generation means the customer gets silence, with no escalation of any kind.
 4. **Google Calendar** — **done (Sprint 29, 2026-07-10, DEC-032)**, building on the provider-agnostic `CalendarProvider` interface and `AppointmentService` (`backend/app/calendar/`, DEC-028): OAuth connect/callback, Fernet-encrypted credential storage, a real `GoogleCalendarProvider`, `/calendar` + `/appointments` dashboard pages, business timezone + working-hours configuration, and AI tool-calling (`check_availability`/`book_appointment`/`reschedule_appointment`/`cancel_appointment`, approval-gated in Assisted Mode) so the orchestrator can propose a booking instead of only generating text. Still open: live verification against Google's real OAuth consent screen, gated on the founder supplying a real Google Cloud OAuth Client ID/Secret (everything else was verified against the real Google API surface — see `.claude/PROGRESS.md` Session 29 for three real bugs this live-testing caught and fixed).
-5. **Conversation memory** — **done (Sprint 31, 2026-07-10, DEC-034)**, as an AI Memory & Context Engine: a new Context Builder (`app/ai/context.py`) assembles business/customer/lead/appointment/KB context plus a persisted, regenerate-when-needed conversation summary (`app/ai/memory.py`, `conversations.summary`/`summary_message_count`) before every LLM call, replacing the previous bare "last 20 raw messages" window with real memory of everything older. No new REST endpoints or frontend — purely an AI-pipeline capability.
+5. **Conversation memory** — **done (Sprint 31, 2026-07-10, DEC-034)**, as an AI Memory & Context Engine: a new Context Builder (`app/ai/context.py`) assembles business/customer/lead/appointment/KB context plus a persisted, regenerate-when-needed conversation summary (`app/ai/memory.py`, `conversations.summary`/`summary_message_count`) before every LLM call, replacing the previous bare "last 20 raw messages" window with real memory of everything older. No new REST endpoints or frontend — purely an AI-pipeline capability. **Future consideration (not committed, not scheduled)**: a durable `contact_memories` table for facts that outlive a single conversation (e.g. "prefers evening calls") — an additive extension of this same service, worth building only if repeat-customer personalization becomes a validated need.
 6. **Analytics** — real metrics behind `/analytics` (conversation volume, response time, approval rate). Sequenced after Inbox/handoff since those produce the events analytics would report on.
 7. **Multi-tenant onboarding** — **partially done.** Business + owner `User` provisioning is now self-service (`POST /api/v1/onboarding/business`, `/onboarding` page — see `ONBOARDING_IMPLEMENTATION_PLAN.md` Milestone A, done 2026-07-05). Still manual/not built: connecting the business's own WhatsApp number (still only via `scripts/seed_business.py`), knowledge-base ingestion from a website/PDF, and the test-drive playground — tracked as Milestones B–F in the same plan.
 8. **Billing** — no billing model, no Stripe/payment integration exists anywhere in the codebase today. Sequenced last: billing only matters once there's more than one paying tenant, which depends on Multi-tenant onboarding above.
 9. **CRM Foundation** — **done (Sprint 28, 2026-07-09; AI tool registration added Sprint 30, 2026-07-10, DEC-033).** `Lead`/`LeadEvent` tables (DEC-031), full CRUD (`/api/v1/leads`), and a live `/customers` list/detail page (editable Lead card + a Timeline aggregating message history with CRM activity, `GET /customers/{id}/timeline`). As of Sprint 30, the AI can also propose `create_lead`/`update_lead_stage`/`set_lead_follow_up` during a conversation (`app/ai/lead_tools.py`), approval-gated exactly like the calendar tools — no schema or REST changes, since Sprint 28's model/API already covered everything except giving the AI a way to call it. Sequenced ahead of Analytics (#6) since pipeline/conversion metrics need lead data to exist first. Still open: a dedicated Leads/pipeline board view (Kanban-style, grouped by stage — only the Customer-centric view was built), and an assignee picker in the frontend (the backend/API fully support `assigned_to`, but there's no `GET /api/v1/users` staff-list endpoint yet to populate a picker with).
 
-Items 6 and 8 above remain **not yet implemented**; 2, 3, 4, 5, 7, and 9 have completed or partial work, annotated inline above.
+10. **Event durability (transactional outbox)** — **design target only, not yet built.** The mechanism for `REL-1`/`SCALE-2` (`IMPLEMENTATION_PLAN.md` Milestone 3): a domain write and its event committed in the same Postgres transaction, relayed separately, with an idempotency key per job. No Kafka/Redis Streams needed at this scale — see Architectural Principles #2.
+11. **Workflow engine** — **design target only, not yet built.** A Postgres-backed step machine (definitions/runs/run_steps, a trigger matcher, timers via delayed jobs backstopped by a sweeper, wait-for-event nodes) — the mechanism behind the follow-up sequences and appointment reminders already named as future scope, currently undesigned. Mirrors the existing `CalendarProvider`-style interface-plus-service shape (Architectural Principles #3) rather than an ad hoc cron job.
+
+Items 6 and 8 above remain **not yet implemented**; 2, 3, 4, 5, 7, and 9 have completed or partial work, annotated inline above; 10 and 11 are design targets only, with no implementation scheduled.
 
 ---
 

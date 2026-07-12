@@ -1,5 +1,14 @@
 # HIRA — Implementation Plan
 
+> **HIRA v1.x Architecture Baseline** (architecture consolidation, 2026-07-12)
+> This roadmap is now considered the HIRA v1.x architecture baseline.
+> Changes to this roadmap should only occur when:
+> - production usage demonstrates a limitation,
+> - significant technical constraints appear,
+> - or the business direction intentionally changes.
+>
+> Architecture should evolve from evidence, not preference.
+
 Remediation roadmap derived from the senior backend architecture audit (see chat history / `.claude/PROGRESS.md` for the audit itself). This plan does not introduce new findings — it sequences the existing ones into a realistic roadmap.
 
 **Stage definitions used below** (since "blocks X" needs a shared meaning):
@@ -53,6 +62,8 @@ Each finding keeps its original severity from the audit. Effort uses S (hours–
 
 **→ Pilot can realistically begin after Milestone 0 + Milestone 1.**
 
+**Design note (architecture consolidation, 2026-07-12)**: when `DEPLOY-2` (centralized logging) is implemented, structured log lines for LLM calls must carry `{model, tokens_in, tokens_out, cost, latency_ms, tenant}`, and PII must be redacted before any line is written. This is a specification for that future work, not new work today — see `ARCHITECTURE.md` → Architectural Principles.
+
 ---
 
 ## Milestone 2 — Production Hardening (Multi-Tenant General Availability)
@@ -73,6 +84,8 @@ Each finding keeps its original severity from the audit. Effort uses S (hours–
 
 **Stopgap for Pilot**: SEC-3 (prompt injection guardrails) is the one Milestone-2 item worth pulling forward conceptually — not by doing the engineering early, but by **restricting the pilot business to Assisted Mode** (human reviews every reply before send) rather than Autonomous Mode. That sidesteps the risk entirely at zero engineering cost until real guardrails are built.
 
+**Design note (architecture consolidation, 2026-07-12)**: when `SEC-3` is implemented, the guardrail must reject any generated price, discount, or date that is not sourced from a tool result — a concrete acceptance criterion for that milestone, not a new one.
+
 ---
 
 ## Milestone 3 — Scale Readiness
@@ -88,6 +101,8 @@ Each finding keeps its original severity from the audit. Effort uses S (hours–
 | SCALE-1 (full) | Full async SQLAlchemy migration (if the Milestone-0 quick fix proves insufficient under load) | Critical→High (downgraded once quick fix ships) | XL | Load testing shows the quick fix (`def` route) is insufficient | Scale | 27 |
 
 **Milestone 3 total effort**: **4–8 weeks**, dominated by the two XL items (durable queue, and — only if needed — full async migration). Recommend load-testing before committing engineering time to either; the Milestone-0 quick fixes may hold up longer than expected at realistic small-business message volumes.
+
+**Design note (architecture consolidation, 2026-07-12)**: when `REL-1`/`SCALE-2` (durable task queue) is implemented, build it as a Postgres transactional outbox — the domain write and its event written in the same transaction, relayed separately — with an idempotency key per job, rather than reaching for Kafka/Redis Streams (this scale doesn't warrant either). Structure the eventual worker as a second entrypoint (`api`/`worker`) in the same repo, consistent with the modular-monolith principle, and give it per-tenant concurrency fairness from the start rather than retrofitting it later.
 
 ---
 

@@ -1,5 +1,14 @@
 # roadmap/
 
+> **HIRA v1.x Architecture Baseline** (architecture consolidation, 2026-07-12)
+> This roadmap is now considered the HIRA v1.x architecture baseline.
+> Changes to this roadmap should only occur when:
+> - production usage demonstrates a limitation,
+> - significant technical constraints appear,
+> - or the business direction intentionally changes.
+>
+> Architecture should evolve from evidence, not preference.
+
 **Purpose**: Where HIRA is headed — the sequencing of features, verticals, and milestones from MVP to the longer-term AI Business Operating System vision.
 
 **Will eventually contain**:

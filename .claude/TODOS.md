@@ -246,6 +246,22 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 
 ---
 
+## AI Quality
+
+> Added by the architecture consolidation (2026-07-12). Independent of the Infrastructure section above — no deployment or hosting dependency, cheap, and closes a real (not hypothetical) gap.
+
+### AI-EVAL-1 — Golden-set regression suite for AI reply quality
+
+- **Description**: HIRA has shipped four prompt versions (`SYSTEM_PROMPT_VERSION` v1→v4, see DECISIONS.md DEC-034 and prior) with no automated check that a prompt or provider change didn't regress reply quality — only manual/live spot-checks. Build a golden set of ~20–30 representative conversation scenarios (FAQ answering, booking, lead capture, escalation triggers) with expected behaviors, scored automatically whenever `SYSTEM_PROMPT_VERSION` or `LLM_PROVIDER`/model changes.
+- **Priority**: P2
+- **Category**: Technical
+- **Estimated effort**: M
+- **Dependencies**: None
+- **Status**: To Do
+- **Success criteria**: A runnable eval suite exists (e.g. under `backend/tests/` or a dedicated `evals/` script), scores are captured per run, and CI (or a documented manual step) runs it whenever the system prompt or LLM provider/model changes.
+
+---
+
 ## Next Sprint
 
 > Begins only after a vertical is selected (TASK-004) and architecture/stack are finalized. High-priority work immediately following the current sprint. Implementation tasks will be added here once validation gates pass — intentionally not pre-populated to avoid speculative MVP scope.
