@@ -1,6 +1,8 @@
 # HIRA
 
-HIRA is an AI receptionist that answers customer messages on WhatsApp for small businesses, grounded in each business's own knowledge base, with a human able to approve, edit, or override every reply.
+**HIRA is an AI employee — not a chatbot.**
+
+Software gets installed and configured. HIRA gets hired: it takes over a real job — answering customers on WhatsApp, keeping the calendar, and tracking every lead — grounded in the business's own knowledge, with a human able to review or override anything it does. It's the first hire in a direction we're building toward one validated step at a time: more AI employees, then an AI Business Operating System. See [Vision](#vision) for exactly what that means and what it doesn't mean yet.
 
 It runs as a modular-monolith FastAPI backend and a Next.js dashboard. The backend is functionally complete against a single real test business (WhatsApp Cloud API, Groq LLM, Google Calendar, a lead pipeline, and a memory layer all work end-to-end); it has not yet been deployed anywhere or run with more than one tenant at a time. See [Current Status](#current-status) for exactly what that means in practice.
 
@@ -8,15 +10,17 @@ It runs as a modular-monolith FastAPI backend and a Next.js dashboard. The backe
 
 ## Why HIRA Exists
 
-Small businesses that take bookings — clinics, salons, gyms, consultants — get a steady stream of repetitive WhatsApp questions: "are you open today?", "how much does X cost?", "can I move my appointment?". Answering them takes a person's attention all day, and a slow or missed reply loses the customer to whoever replies first. Hiring a receptionist is expensive and doesn't scale with message volume; ignoring WhatsApp isn't an option when that's where the customers already are.
+Small businesses that take bookings — clinics, salons, gyms, consultants — don't lose customers because they can't chat. They lose them because nobody has time to answer instantly, keep the calendar straight, *and* follow up on every lead, all day, every day. The same attention a repetitive WhatsApp question ("are you open today?", "how much does X cost?", "can I move my appointment?") demands is attention that isn't going to the warm lead who needs a follow-up call. A slow reply loses the customer to whoever answers first. Hiring a person for this doesn't scale with message volume; ignoring WhatsApp isn't an option when that's where the customers already are.
 
-HIRA answers those messages automatically, using facts the business itself provided (hours, pricing, policies, FAQs), and hands off to a human whenever it's uncertain or asked to. The goal is not to remove the human from the loop — it's to remove the repetitive parts of their job.
+HIRA takes over that job: answering from the business's own knowledge, booking straight into the calendar, and logging and progressing leads — handing off to a human whenever it's uncertain or asked to. The goal is not to remove the human from the loop; it's to remove the job that was eating their day.
 
 ---
 
 ## What HIRA Is Today
 
 Everything below is implemented and either live-verified against real external services or covered by the automated test suite. Nothing in this section is aspirational — see [Vision](#vision) and [Roadmap](#roadmap) for what isn't built yet.
+
+It's also all one system, not a bundle of bots. HIRA doesn't hand a conversation off between a separate chat bot, a separate booking bot, and a separate CRM — one AI agent holds the conversation, the customer's history, and the tools to act on both, so a WhatsApp message can end in a booked appointment or an updated lead, not just a sent reply.
 
 - **AI customer conversations on WhatsApp.** A message to a business's connected WhatsApp number is received via Meta's Cloud API (webhook, HMAC-verified), stored, and answered by an LLM whose reply is grounded in that business's knowledge base — never invented pricing, hours, or policy.
 - **Knowledge base.** Business facts are chunked, embedded (a local, on-device embedding model — no external call per query), and retrieved by semantic similarity search (PostgreSQL + pgvector) for every incoming message. Entries can be created directly or imported from a website.
@@ -37,13 +41,13 @@ Everything below is implemented and either live-verified against real external s
 
 HIRA's long-term direction, in three stages:
 
-**AI Receptionist** *(what's being built now)*
+**AI Employee — the Receptionist role** *(what's built and running today)* — one AI employee, doing the front-line job of a receptionist: conversations, scheduling, and a lead/CRM system of record, all under human review.
 ↓
-**AI Employees** — additional AI roles beyond receptionist (sales follow-up, support, others to be determined by validated need)
+**AI Employees** — additional roles beyond the Receptionist (sales follow-up, support, others), each added only once a validated need justifies it, not speculatively.
 ↓
-**AI Business Operating System** — a platform where a small business "hires" AI employees across its functions
+**AI Business Operating System** — a platform where a business adds AI employees the way it adds people.
 
-This is a direction, not a plan with dates. HIRA deliberately stays narrow — proving the receptionist product works for real businesses — before any of the later stages are built. Nothing beyond "AI Receptionist" exists in the codebase today.
+This is a direction, not a plan with dates. HIRA deliberately stays narrow — proving the first employee earns its keep with real businesses — before building any additional role. Nothing beyond the Receptionist role described in [What HIRA Is Today](#what-hira-is-today) exists in the codebase now; "AI Employees" (plural) and "AI Business Operating System" are where this is headed, not what it is.
 
 ---
 
