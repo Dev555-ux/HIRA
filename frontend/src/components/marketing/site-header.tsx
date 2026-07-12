@@ -1,4 +1,4 @@
-import { LayoutDashboard } from "lucide-react";
+import { Bot } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -18,7 +18,7 @@ export function SiteHeader() {
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <LayoutDashboard className="size-4" aria-hidden="true" />
+            <Bot className="size-4" aria-hidden="true" />
           </span>
           HIRA
         </Link>

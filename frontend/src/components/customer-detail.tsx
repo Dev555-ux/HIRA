@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, ArrowLeft, History, Pencil, Plus, Tag, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, History, Pencil, Plus, Tag, Trash2, Users } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -59,13 +59,13 @@ export function CustomerDetailPane({
   if (customerId === null) {
     return (
       <Card className="hidden min-h-[420px] lg:flex">
-        <CardContent className="flex h-full w-full items-center justify-center p-6">
-          <div className="text-center text-sm text-muted-foreground">
-            <Badge variant="secondary" className="mb-3">
-              Customer profile
-            </Badge>
-            <p>Select a customer to view their profile, pipeline, and timeline.</p>
-          </div>
+        <CardContent className="flex w-full items-center justify-center p-6">
+          <EmptyState
+            icon={Users}
+            title="No customer selected"
+            description="Select a customer to view their profile, pipeline, and timeline."
+            className="border-0"
+          />
         </CardContent>
       </Card>
     );

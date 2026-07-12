@@ -125,7 +125,7 @@ export default function KnowledgeBasePage() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="grid grid-cols-[1fr_1fr_100px_88px] gap-4 border-b px-5 py-3 text-xs font-medium text-muted-foreground">
+          <div className="hidden gap-4 border-b px-5 py-3 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[1fr_1fr_100px_88px]">
             <span>Title</span>
             <span>Content</span>
             <span>Updated</span>
@@ -179,31 +179,35 @@ export default function KnowledgeBasePage() {
             filtered.map((entry) => (
               <div
                 key={entry.id}
-                className="grid grid-cols-[1fr_1fr_100px_88px] items-center gap-4 border-b px-5 py-3 text-sm last:border-0"
+                className="border-b px-5 py-3 text-sm transition-colors last:border-0 hover:bg-accent/50 sm:grid sm:grid-cols-[1fr_1fr_100px_88px] sm:items-center sm:gap-4"
               >
-                <span className="truncate font-medium">{entry.title}</span>
-                <span className="truncate text-muted-foreground">{entry.content}</span>
-                <span className="text-xs text-muted-foreground">
-                  {formatRelativeTime(entry.updated_at)}
+                <span className="block truncate font-medium">{entry.title}</span>
+                <span className="mt-0.5 line-clamp-2 text-muted-foreground sm:mt-0 sm:truncate sm:line-clamp-none">
+                  {entry.content}
                 </span>
-                <div className="flex justify-end gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Edit entry"
-                    onClick={() => setDialogTarget(entry)}
-                  >
-                    <Pencil />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Delete entry"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setDeleteTarget(entry)}
-                  >
-                    <Trash2 />
-                  </Button>
+                <div className="mt-2 flex items-center justify-between sm:mt-0 sm:contents">
+                  <span className="text-xs text-muted-foreground">
+                    {formatRelativeTime(entry.updated_at)}
+                  </span>
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Edit entry"
+                      onClick={() => setDialogTarget(entry)}
+                    >
+                      <Pencil />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Delete entry"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTarget(entry)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}

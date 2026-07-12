@@ -2,6 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import * as React from "react";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 
 interface State {
@@ -27,18 +28,16 @@ export class ErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
-          <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-destructive/15">
-            <AlertTriangle className="size-6 text-destructive" />
-          </div>
-          <h3 className="text-sm font-semibold">Something went wrong</h3>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            {this.state.message ?? "An unexpected error occurred."}
-          </p>
-          <Button className="mt-4" size="sm" variant="outline" onClick={this.reset}>
-            Try again
-          </Button>
-        </div>
+        <EmptyState
+          icon={AlertTriangle}
+          title="Something went wrong"
+          description={this.state.message ?? "An unexpected error occurred."}
+          action={
+            <Button size="sm" variant="outline" onClick={this.reset}>
+              Try again
+            </Button>
+          }
+        />
       );
     }
     return this.props.children;

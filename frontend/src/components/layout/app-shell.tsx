@@ -6,13 +6,16 @@ import { useState } from "react";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { Topbar } from "@/components/layout/topbar";
 
-function Brand() {
+function Brand({ action }: { action?: React.ReactNode }) {
   return (
-    <div className="flex h-14 items-center gap-2 border-b px-5">
-      <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-        <Bot className="size-4" />
+    <div className="flex h-14 items-center justify-between gap-2 border-b px-5">
+      <div className="flex items-center gap-2">
+        <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <Bot className="size-4" aria-hidden="true" />
+        </div>
+        <span className="text-sm font-semibold tracking-tight">HIRA</span>
       </div>
-      <span className="text-sm font-semibold tracking-tight">HIRA</span>
+      {action}
     </div>
   );
 }
@@ -31,15 +34,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Mobile navigation */}
       <Dialog.Root open={mobileOpen} onOpenChange={setMobileOpen}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 md:hidden" />
-          <Dialog.Content className="fixed inset-y-0 left-0 z-50 w-64 border-r bg-background md:hidden">
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 md:hidden data-[state=open]:animate-overlay-show data-[state=closed]:animate-overlay-hide" />
+          <Dialog.Content className="fixed inset-y-0 left-0 z-50 w-64 border-r bg-background md:hidden data-[state=open]:animate-sheet-left-show data-[state=closed]:animate-sheet-left-hide">
             <Dialog.Title className="sr-only">Navigation</Dialog.Title>
-            <div className="flex items-center justify-between border-b px-5 h-14">
-              <span className="text-sm font-semibold">HIRA</span>
-              <Dialog.Close aria-label="Close navigation">
-                <X className="size-5" />
-              </Dialog.Close>
-            </div>
+            <Brand
+              action={
+                <Dialog.Close
+                  aria-label="Close navigation"
+                  className="rounded-md p-1.5 opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </Dialog.Close>
+              }
+            />
             <SidebarNav onNavigate={() => setMobileOpen(false)} />
           </Dialog.Content>
         </Dialog.Portal>

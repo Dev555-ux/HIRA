@@ -314,10 +314,10 @@ Current technical debt is limited to production-infrastructure hardening — see
 
 **Sprint 35 audit findings (2026-07-10) — Medium/Low, not fixed this sprint:**
 
-- **Analytics' "Pending approvals" tile has no error state.** `usePending()` on `/analytics` has no `isError` handling — a failed fetch silently shows `0` instead of a retryable error, the same bug class fixed on `/dashboard` and `/knowledge-base` this sprint. Lower priority than those two: `/analytics` is still a mostly-placeholder page (3 of 4 tiles already show "Coming soon"), so the stakes of a silent failure here are much lower than on the pages a beta owner actually depends on daily.
 - **Appointment booking doesn't prevent picking a start time in the past.** Neither the "New appointment" nor "Reschedule" forms validate that `starts_at` is in the future before submitting — the backend would presumably still book it (no evidence either way it's rejected server-side). Cosmetic/edge-case: an owner mis-clicking a past date gets a weird historical appointment row, not a security or data-integrity issue.
-- **Dashboard's "AI activity" tile unconditionally shows "Live."** Pre-existing (noted in PROGRESS.md Session 34) — it doesn't reflect whether Groq is actually reachable, since detecting that needs a new backend health signal. Not re-flagged as new; restated here only because Sprint 35's audit reconfirmed it's still the case.
 - **Settings' WhatsApp configuration remains disabled placeholders.** Pre-existing, unchanged — no backend endpoint exists for self-serve WhatsApp connection (`ONBOARD-D`/`ONBOARD-E`).
+
+**Resolved since Sprint 35:** the Analytics "Pending approvals" no-error-state gap (fixed Sprint 42) and the Dashboard's always-"Live" AI activity tile (replaced with a real Upcoming Appointments KPI, Sprint 40) — both removed from this list rather than left stale.
 
 **Sprint 36 backend audit findings (2026-07-10) — deferred by explicit instruction, not fixed this sprint:**
 

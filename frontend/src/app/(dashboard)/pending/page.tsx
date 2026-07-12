@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCheck, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, CheckCheck, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { PendingReplyCard } from "@/components/pending-reply-card";
@@ -34,7 +34,7 @@ export default function PendingPage() {
 
       {isError && (
         <EmptyState
-          icon={X}
+          icon={AlertTriangle}
           title="Couldn't load pending replies"
           description={(error as Error).message}
           action={

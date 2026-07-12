@@ -200,3 +200,28 @@
 @utility animate-toast-hide {
   animation: toast-hide 150ms ease-in forwards;
 }
+
+/* Mobile nav drawer (app-shell.tsx uses raw Radix Dialog for a left-edge
+   sheet, not the centered ui/dialog.tsx) — same data-state-driven approach. */
+@keyframes sheet-left-show {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sheet-left-hide {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@utility animate-sheet-left-show {
+  animation: sheet-left-show 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@utility animate-sheet-left-hide {
+  animation: sheet-left-hide 150ms ease-in;
+}
