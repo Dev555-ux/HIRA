@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "@/components/ui/toast";
@@ -22,7 +22,7 @@ import { api } from "@/lib/api";
 
 const mockAuth: AuthContextValue = {
   getToken: async () => "test-token",
-  user: null,
+  user: { name: "Dev", email: "dev@test.com", imageUrl: null },
   isLoaded: true,
   mocked: true,
   signOut: vi.fn(),
@@ -91,6 +91,46 @@ describe("DashboardPage", () => {
     );
   });
 
+  it("greets the signed-in owner by name with a real-data summary sentence", async () => {
+    vi.mocked(api.listPending).mockResolvedValue([
+      {
+        id: "msg-1",
+        conversation_id: "conv-1",
+        body: "Yes, we're open!",
+        created_at: new Date().toISOString(),
+        customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
+        conversation_preview: null,
+      },
+    ]);
+
+    renderWithProviders(<DashboardPage />);
+
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Dev");
+    expect(
+      await screen.findByText("You have 1 reply waiting for review and no appointments booked."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a reassuring KPI hint when there's nothing pending", async () => {
+    renderWithProviders(<DashboardPage />);
+    expect(await screen.findByText("Everything reviewed")).toBeInTheDocument();
+  });
+
+  it("shows an actionable KPI hint when replies are pending", async () => {
+    vi.mocked(api.listPending).mockResolvedValue([
+      {
+        id: "msg-1",
+        conversation_id: "conv-1",
+        body: "Yes, we're open!",
+        created_at: new Date().toISOString(),
+        customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
+        conversation_preview: null,
+      },
+    ]);
+    renderWithProviders(<DashboardPage />);
+    expect(await screen.findByText("Awaiting your review")).toBeInTheDocument();
+  });
+
   it("shows the pending-approval count and customer name", async () => {
     vi.mocked(api.listPending).mockResolvedValue([
       {
@@ -106,7 +146,9 @@ describe("DashboardPage", () => {
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("Yes, we're open!")).toBeInTheDocument();
-    expect(screen.getByText("Jordan Lee")).toBeInTheDocument();
+    // Appears twice deliberately: once in "Needs your attention" (the full
+    // draft) and once in "Recent activity" (the compact log entry).
+    expect(screen.getAllByText("Jordan Lee").length).toBeGreaterThan(0);
   });
 
   it("shows a retryable error instead of a misleading zero when pending approvals fail to load", async () => {
@@ -148,7 +190,9 @@ describe("DashboardPage", () => {
     // Wait for the appointment data itself to render before asserting the
     // rest — "Upcoming appointments" is static label text present from the
     // first render, so it resolves before the async data does.
-    expect(await screen.findByText("Jordan Lee")).toBeInTheDocument();
+    // Appears twice deliberately: once in "Upcoming appointments" and once
+    // in "Recent activity" (the same booking, logged).
+    await waitFor(() => expect(screen.getAllByText("Jordan Lee").length).toBeGreaterThan(0));
     expect(screen.getAllByText("Upcoming appointments")).toHaveLength(2);
     expect(screen.getByText("Booked")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument(); // the KPI count
@@ -172,7 +216,7 @@ describe("DashboardPage", () => {
     expect(await screen.findAllByText("Couldn't load")).not.toHaveLength(0);
   });
 
-  it("shows recent conversations with customer name, preview, and status badge", async () => {
+  it("merges conversations into Recent activity with their message preview", async () => {
     const conversation: Conversation = {
       id: "conv-1",
       status: "escalated",
@@ -191,13 +235,49 @@ describe("DashboardPage", () => {
 
     expect(await screen.findByText("Morgan Reyes")).toBeInTheDocument();
     expect(screen.getByText("Can I speak to someone about a refund?")).toBeInTheDocument();
-    expect(screen.getByText("Escalated")).toBeInTheDocument();
   });
 
-  it("shows a meaningful empty state when there are no recent conversations", async () => {
+  it("merges pending replies and appointments into Recent activity, most recent first", async () => {
+    vi.mocked(api.listPending).mockResolvedValue([
+      {
+        id: "msg-1",
+        conversation_id: "conv-1",
+        body: "Yes, we're open!",
+        created_at: "2026-08-01T12:00:00Z",
+        customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
+        conversation_preview: null,
+      },
+    ]);
+    vi.mocked(api.listAppointments).mockResolvedValue([
+      {
+        id: "appt-1",
+        customer: { id: "cust-3", display_name: "Sam Torres", wa_phone: "+15557654321" },
+        conversation_id: null,
+        starts_at: "2026-08-05T14:00:00",
+        ends_at: "2026-08-05T15:00:00",
+        status: "booked",
+        created_at: "2026-08-02T09:00:00Z",
+        updated_at: "2026-08-02T09:00:00Z",
+      },
+    ]);
+
     renderWithProviders(<DashboardPage />);
 
-    expect(await screen.findByText("No conversations yet")).toBeInTheDocument();
+    expect(await screen.findByText("Reply drafted, awaiting your approval")).toBeInTheDocument();
+    expect(screen.getByText(/Appointment booked for/)).toBeInTheDocument();
+    expect(screen.getAllByText("Sam Torres").length).toBeGreaterThan(0);
+
+    // Sam Torres's appointment was created after Jordan Lee's pending reply,
+    // so it should appear first in the feed.
+    const feed = await screen.findByTestId("activity-feed");
+    const names = Array.from(feed.querySelectorAll("p.font-medium")).map((el) => el.textContent);
+    expect(names.indexOf("Sam Torres")).toBeLessThan(names.indexOf("Jordan Lee"));
+  });
+
+  it("shows a meaningful empty state when there is no recent activity", async () => {
+    renderWithProviders(<DashboardPage />);
+
+    expect(await screen.findByText("Waiting for your first customer")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Try the Playground" })).toHaveAttribute(
       "href",
       "/playground",
