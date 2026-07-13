@@ -25,19 +25,19 @@ Each finding keeps its original severity from the audit. Effort uses S (hours–
 
 **Goal**: close the issues that would embarrass or actively hurt a real pilot business, before any real external customer talks to HIRA. Everything here is cheap (S, one M) relative to its impact — this is the highest-ROI block of work in the whole plan.
 
-| ID | Finding | Priority | Effort | Dependencies | Blocks | Order |
-|---|---|---|---|---|---|---|
-| SEC-1 | Insecure default secrets (`WHATSAPP_APP_SECRET`/`VERIFY_TOKEN`/`ACCESS_TOKEN` fall back to guessable defaults) | Critical | S | None | Pilot, Production | 1 |
-| SCALE-1 | Async route blocks on sync DB I/O (quick fix: `receive` → `def`) | Critical | S | None | Production, Scale (not Pilot at low volume, but free to fix now) | 2 |
-| REL-3 | Double-send race on `approve_and_send` | Medium | S | None | Production (cheap enough to just fix now) | 3 |
-| AI-2 | No relevance threshold on KB retrieval | Medium | S | None | Pilot (reply quality) | 4 |
-| AI-3 | Non-text messages silently dropped (empty-body reply) | Medium | S | None | Pilot (real customers will send voice notes/images) | 5 |
-| REL-2 | No fallback reply / escalation on AI generation failure | High | M | None | Pilot, Production | 6 |
-| API-1 | No reject endpoint (Assisted Mode workflow incomplete) | Medium | S | None | Pilot (core workflow gap) | 7 |
-| PERF-1 | `expire_on_commit=True` default (extra round-trip per commit) | Medium | S | None | — (free win, bundle in) | 8 |
-| SEC-2 | No CORS configuration | High | S | Needs the real frontend origin decided (can stub with env-driven origin) | Pilot, Production | 9 |
+| ID | Finding | Priority | Effort | Dependencies | Blocks | Order | Status (verified 2026-07-13, Sprint 43) |
+|---|---|---|---|---|---|---|---|
+| SEC-1 | Insecure default secrets (`WHATSAPP_APP_SECRET`/`VERIFY_TOKEN`/`ACCESS_TOKEN` fall back to guessable defaults) | Critical | S | None | Pilot, Production | 1 | **Open** — `app/core/config.py` still defaults to `dev-verify-token`/`dev-app-secret`/`dev-access-token`, no production guard |
+| SCALE-1 | Async route blocks on sync DB I/O (quick fix: `receive` → `def`) | Critical | S | None | Production, Scale (not Pilot at low volume, but free to fix now) | 2 | **Open** — `app/webhooks/whatsapp.py`'s `receive` is still `async def` doing sync `db` calls directly |
+| REL-3 | Double-send race on `approve_and_send` | Medium | S | None | Production (cheap enough to just fix now) | 3 | **Done** — `app/services/replies.py`'s `approve_and_send` already claims via a conditional `pending_approval -> sending` UPDATE before any side effect; doc was stale |
+| AI-2 | No relevance threshold on KB retrieval | Medium | S | None | Pilot (reply quality) | 4 | **Open** — `app/ai/knowledge_base.py`'s `search`/`retrieve_context` still return the top-k nearest regardless of distance |
+| AI-3 | Non-text messages silently dropped (empty-body reply) | Medium | S | None | Pilot (real customers will send voice notes/images) | 5 | **Open** — `app/webhooks/whatsapp.py` still only processes `msg.get("type") == "text"` |
+| REL-2 | No fallback reply / escalation on AI generation failure | High | M | None | Pilot, Production | 6 | **Open** — `generate_and_store_reply`'s except block still only logs + rolls back; no Message row, customer gets silence |
+| API-1 | No reject endpoint (Assisted Mode workflow incomplete) | Medium | S | None | Pilot (core workflow gap) | 7 | **Done** — `POST /messages/{id}/reject` exists in `app/api/dashboard.py`; doc was stale |
+| PERF-1 | `expire_on_commit=True` default (extra round-trip per commit) | Medium | S | None | — (free win, bundle in) | 8 | **Open** — `app/db/session.py`'s `sessionmaker` still has no `expire_on_commit=False` |
+| SEC-2 | No CORS configuration | High | S | Needs the real frontend origin decided (can stub with env-driven origin) | Pilot, Production | 9 | **Done** — `CORSMiddleware` configured in `app/main.py` (Sprint 34) |
 
-**Milestone 0 total effort**: ~1 (M) + 8 (S) ≈ **1–1.5 weeks** for one engineer.
+**Milestone 0 total effort**: ~1 (M) + 8 (S) ≈ **1–1.5 weeks** for one engineer. **Actual remaining effort as of 2026-07-13: 6 of 9 items still open** (SEC-1, SCALE-1, AI-2, AI-3, REL-2, PERF-1) — see `documentation/DEMO_AND_PILOT_READINESS.md` for the full re-verification.
 
 **Why this grouping**: every item here is S or M effort and either closes a real security hole (SEC-1), prevents a bad first customer impression (AI-2, AI-3, REL-2, API-1), or is free to fix while touching adjacent code (PERF-1, REL-3). None require new infrastructure — they're all code-only changes, consistent with "do not modify source code" for *this* planning document, but flagged as the first implementation pass once work begins.
 

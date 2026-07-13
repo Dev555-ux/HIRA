@@ -211,6 +211,11 @@ export default function DashboardPage() {
                   icon={CalendarClock}
                   title="No upcoming appointments"
                   description="Bookings the AI (or you) make will show up here."
+                  action={
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/appointments">New appointment</Link>
+                    </Button>
+                  }
                   className="border-0 py-8"
                 />
               ) : (
@@ -281,7 +286,12 @@ export default function DashboardPage() {
             <EmptyState
               icon={InboxIcon}
               title="No conversations yet"
-              description="Conversations started by customers on WhatsApp will show up here."
+              description="Conversations started by customers on WhatsApp will show up here. While you wait, try the Playground to see how the Receptionist responds."
+              action={
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/playground">Try the Playground</Link>
+                </Button>
+              }
               className="border-0 py-10"
             />
           ) : (

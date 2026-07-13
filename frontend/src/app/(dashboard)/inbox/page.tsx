@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { ChannelBadge } from "@/components/channel-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -160,6 +161,13 @@ function ConversationList({
               hasQuery
                 ? "Try a different search term or filter."
                 : "Conversations will appear here once a customer messages your WhatsApp number."
+            }
+            action={
+              !hasQuery && (
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/playground">Try the Playground</Link>
+                </Button>
+              )
             }
             className="border-0 py-16"
           />

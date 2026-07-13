@@ -155,6 +155,10 @@ describe("DashboardPage", () => {
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("No upcoming appointments")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "New appointment" })).toHaveAttribute(
+      "href",
+      "/appointments",
+    );
   });
 
   it("shows a retryable error for the appointments widget when it fails to load", async () => {
@@ -191,6 +195,10 @@ describe("DashboardPage", () => {
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("No conversations yet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Try the Playground" })).toHaveAttribute(
+      "href",
+      "/playground",
+    );
   });
 
   it("refreshes pending, conversations, and appointments when Refresh is clicked", async () => {
