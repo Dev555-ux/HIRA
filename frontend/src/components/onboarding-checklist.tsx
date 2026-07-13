@@ -58,7 +58,9 @@ export function OnboardingChecklist({ business }: { business: Business }) {
       icon: BookOpen,
       status: knowledgeImportDone ? "done" : "available",
       trailing: knowledgeImportDone ? (
-        <Badge variant="success">Done</Badge>
+        <Badge variant="success" className="animate-fade-in">
+          Done
+        </Badge>
       ) : (
         <Button asChild size="sm" variant="outline">
           <Link href="/knowledge-base">Get started</Link>
@@ -71,7 +73,9 @@ export function OnboardingChecklist({ business }: { business: Business }) {
       icon: MessageCircle,
       status: whatsappConnected ? "done" : "blocked",
       trailing: whatsappConnected ? (
-        <Badge variant="success">Connected</Badge>
+        <Badge variant="success" className="animate-fade-in">
+          Connected
+        </Badge>
       ) : (
         <Button asChild size="sm" variant="outline">
           <Link href="/settings">{whatsappNeedsRetry ? "Retry" : "Connect"}</Link>
@@ -95,7 +99,9 @@ export function OnboardingChecklist({ business }: { business: Business }) {
       icon: Rocket,
       status: isLive ? "done" : prerequisitesMet ? "available" : "blocked",
       trailing: isLive ? (
-        <Badge variant="success">Live</Badge>
+        <Badge variant="success" className="animate-fade-in">
+          Live
+        </Badge>
       ) : prerequisitesMet ? (
         <Button size="sm" variant="outline" onClick={handleEnableAI}>
           Enable AI
@@ -111,7 +117,7 @@ export function OnboardingChecklist({ business }: { business: Business }) {
   const doneCount = steps.filter((step) => step.status === "done").length;
 
   return (
-    <Card className="mb-6">
+    <Card className="mb-6 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md">
       <CardHeader className="flex-row items-center justify-between">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="size-4 text-success" />

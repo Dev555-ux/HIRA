@@ -24,6 +24,27 @@ describe("DashboardHero", () => {
     ).toBeInTheDocument();
   });
 
+  it("greets with the first name only, not the full name", async () => {
+    render(
+      <DashboardHero
+        name="Jordan A. Whitfield-Smith"
+        summary="Summary."
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent("Jordan");
+    expect(heading).not.toHaveTextContent("Whitfield-Smith");
+  });
+
+  it("applies the one-time entrance animation to its root, not to anything that re-renders on its own", () => {
+    const { container } = render(
+      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} />,
+    );
+    expect(container.querySelector(".animate-fade-in-up")).toBeInTheDocument();
+  });
+
   it("renders exactly one h1", () => {
     render(
       <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} />,

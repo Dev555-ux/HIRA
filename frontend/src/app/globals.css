@@ -225,3 +225,53 @@
 @utility animate-sheet-left-hide {
   animation: sheet-left-hide 150ms ease-in;
 }
+
+/* Sprint 46 — dashboard micro-interactions. Two small, general-purpose
+   entrance animations (not tied to any one component) so a "gentle fade"
+   moment (a checklist badge landing on Done, a KPI value replacing its
+   skeleton, the hero's one-time entrance) reuses the same two keyframes
+   instead of each growing its own. Both are mount-triggered CSS animations,
+   not transitions — React re-rendering a component with new props does not
+   replay a CSS `animation`, only mounting a new element does, so these never
+   fire on ordinary refetches. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@utility animate-fade-in {
+  animation: fade-in 200ms ease-out;
+}
+@utility animate-fade-in-up {
+  animation: fade-in-up 200ms ease-out;
+}
+
+/* Global reduced-motion guard (Sprint 46). Every animation/transition in this
+   file — old and new — collapses to effectively instant for anyone who has
+   asked the OS for reduced motion, per this sprint's explicit accessibility
+   requirement. This was a pre-existing gap (dialog/popover/toast/sheet had
+   no such guard before); fixing it here covers all of them at once rather
+   than annotating each new class individually. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

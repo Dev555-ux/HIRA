@@ -116,6 +116,20 @@ describe("OnboardingChecklist", () => {
     expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
   });
 
+  it("fades completed-step badges in rather than popping them in instantly", async () => {
+    vi.mocked(api.listKbEntries).mockResolvedValue([
+      { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+    ]);
+    renderChecklist(
+      business({ whatsapp_connection_status: "connected", onboarding_status: "live" }),
+    );
+
+    await waitFor(() => expect(screen.getByText("3 of 4 done")).toBeInTheDocument());
+    expect(screen.getByText("Done")).toHaveClass("animate-fade-in");
+    expect(screen.getByText("Connected")).toHaveClass("animate-fade-in");
+    expect(screen.getByText("Live")).toHaveClass("animate-fade-in");
+  });
+
   it("links Knowledge Import and Test AI to the real, already-live pages", async () => {
     vi.mocked(api.listKbEntries).mockResolvedValue([]);
     renderChecklist(business());

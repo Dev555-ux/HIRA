@@ -33,6 +33,12 @@ import { describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
 const PREVIEW_ROWS = 5;
 const ACTIVITY_ROWS = 6;
 
+// Shared, restrained hover treatment for this page's content cards (Sprint
+// 46) — a ~2px lift and a slightly deeper shadow, nothing else. Kept as one
+// constant so all four cards below move identically rather than each
+// hand-rolling a slightly different value.
+const CARD_HOVER = "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md";
+
 function customerLabel(customer: { display_name: string | null; wa_phone: string } | null): string {
   return customer?.display_name || customer?.wa_phone || "Unknown customer";
 }
@@ -213,7 +219,7 @@ export default function DashboardPage() {
 
       {/* Primary row: what needs action now, and what's coming up next. */}
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className={`lg:col-span-2 ${CARD_HOVER}`}>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-base">Needs your attention</CardTitle>
             <Button asChild size="sm" variant="ghost">
@@ -231,14 +237,14 @@ export default function DashboardPage() {
                     Retry
                   </Button>
                 }
-                className="border-0 py-10"
+                className="border-0 py-12"
               />
             ) : pendingCount === 0 ? (
               <EmptyState
                 icon={CheckCheck}
                 title="Nothing pending"
                 description="HIRA is keeping up — a new reply will show up here the moment a customer writes in and needs your review."
-                className="border-0 py-10"
+                className="border-0 py-12"
               />
             ) : (
               <ul className="divide-y">
@@ -267,7 +273,7 @@ export default function DashboardPage() {
         </Card>
 
         <div className="flex flex-col gap-4">
-          <Card>
+          <Card className={CARD_HOVER}>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="text-base">Upcoming appointments</CardTitle>
               <Button asChild size="sm" variant="ghost">
@@ -285,7 +291,7 @@ export default function DashboardPage() {
                       Retry
                     </Button>
                   }
-                  className="border-0 py-8"
+                  className="border-0 py-10"
                 />
               ) : appointmentCount === 0 ? (
                 <EmptyState
@@ -297,7 +303,7 @@ export default function DashboardPage() {
                       <Link href="/appointments">New appointment</Link>
                     </Button>
                   }
-                  className="border-0 py-8"
+                  className="border-0 py-10"
                 />
               ) : (
                 <ul className="space-y-3">
@@ -323,7 +329,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-muted/30">
+          <Card className={`bg-muted/30 ${CARD_HOVER}`}>
             <CardHeader>
               <CardTitle className="text-base">System status</CardTitle>
             </CardHeader>
@@ -345,7 +351,7 @@ export default function DashboardPage() {
           approvals, and bookings — a retrospective "what happened" view,
           distinct from "Needs your attention"'s prescriptive "what to do
           now." */}
-      <Card className="mt-8">
+      <Card className={`mt-8 ${CARD_HOVER}`}>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Recent activity</CardTitle>
           <Button asChild size="sm" variant="ghost">
@@ -363,7 +369,7 @@ export default function DashboardPage() {
                   Retry
                 </Button>
               }
-              className="border-0 py-10"
+              className="border-0 py-12"
             />
           ) : activity.length === 0 ? (
             <EmptyState
@@ -375,13 +381,13 @@ export default function DashboardPage() {
                   <Link href="/playground">Try the Playground</Link>
                 </Button>
               }
-              className="border-0 py-10"
+              className="border-0 py-12"
             />
           ) : (
             <ul className="divide-y" data-testid="activity-feed">
               {activity.map((entry) => (
-                <li key={entry.id} className="flex items-center gap-3 px-6 py-3">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                <li key={entry.id} className="group flex items-center gap-3 px-6 py-3">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 transition-colors duration-200 group-hover:bg-primary/15">
                     <entry.icon className="size-4 text-primary" />
                   </div>
                   <div className="min-w-0 flex-1">
