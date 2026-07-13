@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthContext, type AuthContextValue } from "@/lib/auth-context";
+import { ToastProvider } from "@/components/ui/toast";
 import type { Business } from "@/lib/types";
 import { OnboardingChecklist } from "./onboarding-checklist";
 
@@ -40,7 +42,9 @@ function renderChecklist(biz: Business) {
   return render(
     <QueryClientProvider client={qc}>
       <AuthContext.Provider value={mockAuth}>
-        <OnboardingChecklist business={biz} />
+        <ToastProvider>
+          <OnboardingChecklist business={biz} />
+        </ToastProvider>
       </AuthContext.Provider>
     </QueryClientProvider>,
   );
@@ -49,13 +53,21 @@ function renderChecklist(biz: Business) {
 describe("OnboardingChecklist", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("computes 0 of 4 done for a brand-new business with no KB entries", async () => {
+  it("never shows a 'Coming soon' placeholder", async () => {
     vi.mocked(api.listKbEntries).mockResolvedValue([]);
     renderChecklist(business());
 
     await waitFor(() => expect(screen.getByText("0 of 4 done")).toBeInTheDocument());
-    // WhatsApp Connection and Go Live have no self-serve path yet.
-    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
+    expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
+  });
+
+  it("shows Connect and a disabled Complete-setup-first state for a brand-new business", async () => {
+    vi.mocked(api.listKbEntries).mockResolvedValue([]);
+    renderChecklist(business());
+
+    await waitFor(() => expect(screen.getByText("0 of 4 done")).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: "Connect" })).toHaveAttribute("href", "/settings");
+    expect(screen.getByRole("button", { name: "Complete setup first" })).toBeDisabled();
   });
 
   it("marks Knowledge Import done once at least one KB entry exists", async () => {
@@ -68,13 +80,39 @@ describe("OnboardingChecklist", () => {
     expect(screen.getByText("Done")).toBeInTheDocument();
   });
 
-  it("marks WhatsApp Connection and Go Live done from real business fields", async () => {
+  it("shows Retry when WhatsApp connection is pending verification", async () => {
     vi.mocked(api.listKbEntries).mockResolvedValue([]);
+    renderChecklist(business({ whatsapp_connection_status: "pending_verification" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "Retry" })).toHaveAttribute("href", "/settings"),
+    );
+  });
+
+  it("shows Enable AI once prerequisites are met, and it's a real toast, not a fake success", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.listKbEntries).mockResolvedValue([
+      { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+    ]);
+    renderChecklist(business({ whatsapp_connection_status: "connected" }));
+
+    const enableButton = await screen.findByRole("button", { name: "Enable AI" });
+    await user.click(enableButton);
+
+    expect(await screen.findByText("We'll take it from here")).toBeInTheDocument();
+  });
+
+  it("marks WhatsApp Connection Connected and Go Live Live from real business fields", async () => {
+    vi.mocked(api.listKbEntries).mockResolvedValue([
+      { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+    ]);
     renderChecklist(
       business({ whatsapp_connection_status: "connected", onboarding_status: "live" }),
     );
 
-    await waitFor(() => expect(screen.getByText("2 of 4 done")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("3 of 4 done")).toBeInTheDocument());
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
     expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
   });
 

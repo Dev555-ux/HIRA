@@ -3,54 +3,108 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 import { useKbEntries } from "@/hooks/use-knowledge-base";
 import type { Business } from "@/lib/types";
 
-type StepStatus = "done" | "available" | "unavailable";
+type StepStatus = "done" | "available" | "blocked";
 
 interface ChecklistStep {
   label: string;
   description: string;
   icon: typeof BookOpen;
-  href?: string;
   status: StepStatus;
+  trailing: React.ReactNode;
 }
 
-/** Next-steps shown after signup. Status per step is computed from real data
- * (KB entry count, business.whatsapp_connection_status, business.onboarding_status)
- * — nothing here is a fabricated claim. "Knowledge Import" and "Test AI" are
- * already-live features (linked); "WhatsApp Connection" and "Go Live" have no
- * self-serve path yet, so they stay honestly labeled "Coming soon"
- * (see ONBOARDING_IMPLEMENTATION_PLAN.md Milestones D/F). */
+/** Next-steps shown after signup. Every step's status and trailing control is
+ * computed from real data (KB entry count, business.whatsapp_connection_status,
+ * business.onboarding_status) — nothing here is a fabricated claim.
+ *
+ * WhatsApp Connection and Go Live have no self-serve backend action yet (see
+ * ONBOARDING_IMPLEMENTATION_PLAN.md Milestones D/F — TODO once those land).
+ * Rather than a dead "Coming soon" label, "Connect"/"Retry" route to Settings
+ * — the one real page that already shows WhatsApp connection state — and
+ * "Enable AI" surfaces an honest toast instead of pretending to flip a switch
+ * that doesn't exist server-side. */
 export function OnboardingChecklist({ business }: { business: Business }) {
   const { data: kbEntries } = useKbEntries();
+  const { toast } = useToast();
+
+  const knowledgeImportDone = (kbEntries?.length ?? 0) > 0;
+  const whatsappConnected = business.whatsapp_connection_status === "connected";
+  // "pending_verification" is the schema's only other non-connected state
+  // today (nothing sets it yet — see the Business model) — it's the closest
+  // real signal to "something needs your attention," so it maps to Retry
+  // rather than Connect.
+  const whatsappNeedsRetry = business.whatsapp_connection_status === "pending_verification";
+  const isLive = business.onboarding_status === "live";
+  // Go Live's real prerequisites: the two steps that actually gate real
+  // customer traffic. Test AI is a self-serve sandbox, not a precondition.
+  const prerequisitesMet = knowledgeImportDone && whatsappConnected;
+
+  function handleEnableAI() {
+    toast({
+      title: "We'll take it from here",
+      description:
+        "Going live isn't self-serve yet — reach out and we'll enable real customer conversations for you.",
+    });
+  }
 
   const steps: ChecklistStep[] = [
     {
       label: "Knowledge Import",
       description: "Teach HIRA about your business from your website, PDFs, or FAQs.",
       icon: BookOpen,
-      href: "/knowledge-base",
-      status: (kbEntries?.length ?? 0) > 0 ? "done" : "available",
+      status: knowledgeImportDone ? "done" : "available",
+      trailing: knowledgeImportDone ? (
+        <Badge variant="success">Done</Badge>
+      ) : (
+        <Button asChild size="sm" variant="outline">
+          <Link href="/knowledge-base">Get started</Link>
+        </Button>
+      ),
     },
     {
       label: "WhatsApp Connection",
       description: "Connect the WhatsApp number your customers already message.",
       icon: MessageCircle,
-      status: business.whatsapp_connection_status === "connected" ? "done" : "unavailable",
+      status: whatsappConnected ? "done" : "blocked",
+      trailing: whatsappConnected ? (
+        <Badge variant="success">Connected</Badge>
+      ) : (
+        <Button asChild size="sm" variant="outline">
+          <Link href="/settings">{whatsappNeedsRetry ? "Retry" : "Connect"}</Link>
+        </Button>
+      ),
     },
     {
       label: "Test AI",
       description: "Try HIRA yourself before a real customer does.",
       icon: MessageSquareText,
-      href: "/playground",
       status: "available",
+      trailing: (
+        <Button asChild size="sm" variant="outline">
+          <Link href="/playground">Get started</Link>
+        </Button>
+      ),
     },
     {
       label: "Go Live",
       description: "Turn HIRA on for real customer conversations.",
       icon: Rocket,
-      status: business.onboarding_status === "live" ? "done" : "unavailable",
+      status: isLive ? "done" : prerequisitesMet ? "available" : "blocked",
+      trailing: isLive ? (
+        <Badge variant="success">Live</Badge>
+      ) : prerequisitesMet ? (
+        <Button size="sm" variant="outline" onClick={handleEnableAI}>
+          Enable AI
+        </Button>
+      ) : (
+        <Button size="sm" variant="outline" disabled>
+          Complete setup first
+        </Button>
+      ),
     },
   ];
 
@@ -78,13 +132,7 @@ export function OnboardingChecklist({ business }: { business: Business }) {
                 <p className="text-sm font-medium">{step.label}</p>
                 <p className="truncate text-xs text-muted-foreground">{step.description}</p>
               </div>
-              {step.status === "done" && <Badge variant="success">Done</Badge>}
-              {step.status === "unavailable" && <Badge variant="outline">Coming soon</Badge>}
-              {step.status === "available" && step.href && (
-                <Button asChild size="sm" variant="outline">
-                  <Link href={step.href}>Get started</Link>
-                </Button>
-              )}
+              {step.trailing}
             </li>
           ))}
         </ul>

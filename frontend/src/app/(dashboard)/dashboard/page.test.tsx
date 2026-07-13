@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "@/components/ui/toast";
 import { AuthContext, type AuthContextValue } from "@/lib/auth-context";
 import type { Appointment, Conversation, OnboardingStatus } from "@/lib/types";
 import DashboardPage from "./page";
@@ -42,7 +43,9 @@ function renderWithProviders(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <AuthContext.Provider value={mockAuth}>{ui}</AuthContext.Provider>
+      <AuthContext.Provider value={mockAuth}>
+        <ToastProvider>{ui}</ToastProvider>
+      </AuthContext.Provider>
     </QueryClientProvider>,
   );
 }
