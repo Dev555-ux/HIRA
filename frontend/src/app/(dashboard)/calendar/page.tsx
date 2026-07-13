@@ -170,9 +170,16 @@ function ConnectionCard() {
             </Button>
           </div>
         ) : (
-          <Button size="sm" onClick={handleConnect} disabled={startConnect.isPending}>
-            <ExternalLink /> {startConnect.isPending ? "Connecting…" : "Connect Google Calendar"}
-          </Button>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Once connected, HIRA checks your real availability before offering a time, and
+              books, reschedules, or cancels appointments directly on this calendar — nothing
+              gets double-booked.
+            </p>
+            <Button size="sm" onClick={handleConnect} disabled={startConnect.isPending}>
+              <ExternalLink /> {startConnect.isPending ? "Connecting…" : "Connect Google Calendar"}
+            </Button>
+          </div>
         )}
       </CardContent>
 
@@ -298,6 +305,10 @@ function SettingsForm({
         <CardTitle className="text-base">Timezone &amp; working hours</CardTitle>
       </CardHeader>
       <CardContent>
+        <p className="mb-4 text-sm text-muted-foreground">
+          HIRA only offers appointment times inside these hours, in this timezone — closed days
+          and hours outside this range are never offered to a customer.
+        </p>
         <form onSubmit={handleSubmit(onSave)} className="space-y-4" noValidate>
           <label className="block max-w-xs space-y-1.5">
             <span className="text-sm font-medium">Timezone</span>

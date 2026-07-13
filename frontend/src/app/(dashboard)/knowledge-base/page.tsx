@@ -90,8 +90,8 @@ export default function KnowledgeBasePage() {
     const result = await importWebsite.mutateAsync(values);
     setIsImportOpen(false);
     toast({
-      title: "Imported successfully",
-      description: `Pages imported: ${result.pages_imported}\nKnowledge entries created: ${result.entries_created}`,
+      title: `HIRA learned ${result.entries_created} new ${result.entries_created === 1 ? "fact" : "facts"} about your business`,
+      description: `Imported from ${result.pages_imported} ${result.pages_imported === 1 ? "page" : "pages"}.`,
       variant: "success",
     });
   }
@@ -161,7 +161,7 @@ export default function KnowledgeBasePage() {
               description={
                 entries?.length
                   ? "Try a different search term."
-                  : "Add FAQs and business facts here. Entries are chunked and embedded locally for semantic search."
+                  : "Add FAQs and business facts here — HIRA checks these before answering every customer question."
               }
               action={
                 !entries?.length ? (
@@ -281,8 +281,8 @@ function KbEntryForm({
         <DialogTitle>{entry ? "Edit entry" : "Add entry"}</DialogTitle>
         <DialogDescription>
           {entry
-            ? "Editing re-embeds this entry so search stays accurate."
-            : "This fact is chunked and embedded automatically for semantic search."}
+            ? "HIRA relearns this fact right away, so future answers stay accurate."
+            : "HIRA turns this into something it can find instantly the next time a customer asks something related."}
         </DialogDescription>
       </DialogHeader>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>

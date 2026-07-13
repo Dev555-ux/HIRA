@@ -1,16 +1,29 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  BookOpen,
+  Building2,
+  CalendarClock,
+  Globe,
+  MessageCircle,
+  Palette,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { useCalendarStatus } from "@/hooks/use-calendar";
+import { useKbEntries } from "@/hooks/use-knowledge-base";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
@@ -18,82 +31,231 @@ import { useAuthContext } from "@/lib/auth-context";
 import type { AiReplyMode } from "@/lib/types";
 import { cn, describeWhatsAppConnection } from "@/lib/utils";
 
+// Shared, restrained hover treatment (Sprint 46's dashboard pattern, reused
+// here rather than forked into a shared component — it's a plain Tailwind
+// string, not a component).
+const CARD_HOVER =
+  "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md";
+
 export default function SettingsPage() {
-  const { mocked } = useAuthContext();
+  const { mocked, openProfile } = useAuthContext();
   const { data: onboarding } = useOnboardingStatus();
+  const { data: kbEntries } = useKbEntries();
+  const { data: calendarStatus } = useCalendarStatus();
   const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
   const business = onboarding?.business;
 
   return (
     <>
-      <PageHeader title="Settings" description="Configure your business and integrations." />
+      <PageHeader
+        title="Settings"
+        description="Everything HIRA knows about your business, and how your employee behaves."
+      />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Business information</CardTitle>
+      <Section title="Your business">
+        <Card className={cn("lg:col-span-2", CARD_HOVER)}>
+          <CardHeader className="flex-row items-center gap-3 space-y-0">
+            <SectionIcon icon={Building2} />
+            <CardTitle className="text-base">Business profile</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Editing business name and industry is coming soon — for now these are set at
-              signup.
+              This is what HIRA was told about {business?.name ?? "your business"} at signup.
+              Editing these here isn&apos;t self-serve yet — reach out if anything needs to
+              change.
             </p>
-            <Row label="Business name" value={business?.name ?? "—"} />
-            <Row label="Industry" value={business?.industry ?? "Not set"} />
-            <Row
-              label="Timezone"
-              value={
-                <span className="flex items-center gap-2">
-                  {business?.timezone ?? "UTC"}
-                  <Button asChild size="sm" variant="ghost" className="h-auto p-0 underline">
-                    <Link href="/calendar">Change</Link>
-                  </Button>
-                </span>
-              }
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ProfileField
+                label="Business name"
+                value={business?.name ?? "—"}
+                why="Shown across your dashboard, and used whenever HIRA needs to refer to your business by name."
+              />
+              <ProfileField
+                label="Industry"
+                value={business?.industry ?? "Not set"}
+                why="Recorded at signup. HIRA's answers are grounded in your Knowledge Base, not this label — add specifics there for the best replies, whatever your industry."
+              />
+              <ProfileField
+                label="Country"
+                value={business?.country ?? "Not set"}
+                why="For your own records — not currently used to change how HIRA behaves."
+              />
+              <ProfileField
+                label="Contact email"
+                value={business?.contact_email ?? "Not set"}
+                why="How the HIRA team can reach you about your account. Never shared with customers."
+              />
+            </div>
           </CardContent>
         </Card>
+      </Section>
 
+      <Section title="Your employee">
         <AiReplyModeCard />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">AI settings</CardTitle>
+        <Card className={CARD_HOVER}>
+          <CardHeader className="flex-row items-center gap-3 space-y-0">
+            <SectionIcon icon={BookOpen} />
+            <CardTitle className="text-base">Knowledge</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <Row label="Model" value="llama-3.3-70b-versatile" />
-            <Row label="Embeddings" value="local bge-small (384d)" />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Integration status</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <Row label="Clerk auth" value={<Badge variant={mocked ? "warning" : "success"}>{mocked ? "Mock (dev)" : "Connected"}</Badge>} />
-            <Row label="Groq" value={<Badge variant="success">Live</Badge>} />
-            <Row
-              label="WhatsApp"
-              value={<Badge variant={whatsapp.variant}>{whatsapp.label}</Badge>}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">WhatsApp configuration</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Connecting your own WhatsApp number is coming soon.
+              HIRA checks these facts before answering every customer question — the more you
+              add, the fewer questions it has to guess at.
             </p>
-            <Field label="Phone number ID" placeholder="Not connected yet" disabled />
-            <Field label="Access token" placeholder="Not connected yet" disabled />
+            {kbEntries ? (
+              <p className="text-2xl font-semibold tracking-tight">{kbEntries.length}</p>
+            ) : (
+              <Skeleton className="h-8 w-10" />
+            )}
+            <p className="text-xs text-muted-foreground">
+              {kbEntries?.length ? "facts taught so far" : "No facts taught yet"}
+            </p>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/knowledge-base">Manage Knowledge Base</Link>
+            </Button>
           </CardContent>
         </Card>
-      </div>
+
+        <Card className={CARD_HOVER}>
+          <CardHeader className="flex-row items-center gap-3 space-y-0">
+            <SectionIcon icon={CalendarClock} />
+            <CardTitle className="text-base">Working hours &amp; calendar</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              HIRA only offers appointment times inside your working hours, in your timezone —
+              and once Google Calendar is connected, it checks real availability before booking
+              anything.
+            </p>
+            <Row
+              label="Google Calendar"
+              value={
+                calendarStatus ? (
+                  <Badge variant={calendarStatus.connected ? "success" : "secondary"}>
+                    {calendarStatus.connected ? "Connected" : "Not connected"}
+                  </Badge>
+                ) : (
+                  <Skeleton className="h-5 w-20" />
+                )
+              }
+            />
+            <Row label="Timezone" value={business?.timezone ?? "UTC"} />
+            <Button asChild size="sm" variant="outline">
+              <Link href="/calendar">
+                {calendarStatus?.connected ? "Manage calendar" : "Connect Google Calendar"}
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </Section>
+
+      <Section title="Connections">
+        <Card className={CARD_HOVER}>
+          <CardHeader className="flex-row items-center gap-3 space-y-0">
+            <SectionIcon icon={MessageCircle} />
+            <CardTitle className="text-base">WhatsApp</CardTitle>
+            <Badge variant={whatsapp.variant} className="ml-auto">
+              {whatsapp.label}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {whatsapp.label === "Connected" ? (
+              <p className="text-sm text-muted-foreground">
+                Your WhatsApp Business number is connected — every message customers send there
+                reaches HIRA automatically, and every reply sends from that same number.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Connecting your WhatsApp Business number is what lets HIRA read customer
+                  messages and reply from your business&apos;s own number — customers keep messaging
+                  the number they already know.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  This isn&apos;t self-serve yet: reach out to the HIRA team with your WhatsApp
+                  Business number and we&apos;ll connect it for you.
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className={CARD_HOVER}>
+          <CardHeader className="flex-row items-center gap-3 space-y-0">
+            <SectionIcon icon={Activity} />
+            <CardTitle className="text-base">Systems</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <Row label="Sign-in" value={<Badge variant={mocked ? "warning" : "success"}>{mocked ? "Mock (dev)" : "Connected"}</Badge>} />
+            <Row label="AI provider" value={<Badge variant="success">Groq — llama-3.3-70b</Badge>} />
+            <Row label="Knowledge search" value={<Badge variant="success">local, on-device</Badge>} />
+          </CardContent>
+        </Card>
+      </Section>
+
+      <Section title="Account">
+        <Card className={CARD_HOVER}>
+          <CardHeader className="flex-row items-center gap-3 space-y-0">
+            <SectionIcon icon={Palette} />
+            <CardTitle className="text-base">Appearance</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Switch between light and dark, or follow your system.
+            </p>
+            <ThemeToggle />
+          </CardContent>
+        </Card>
+
+        <Card className={CARD_HOVER}>
+          <CardHeader className="flex-row items-center gap-3 space-y-0">
+            <SectionIcon icon={ShieldCheck} />
+            <CardTitle className="text-base">Security</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Your password, two-factor authentication, and active sessions are managed through
+              your sign-in provider, not HIRA directly.
+            </p>
+            <Button size="sm" variant="outline" onClick={openProfile}>
+              Manage account security
+            </Button>
+          </CardContent>
+        </Card>
+      </Section>
     </>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-8">
+      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h2>
+      <div className="grid gap-4 lg:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
+function SectionIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
+      <Icon className="size-4 text-primary" />
+    </div>
+  );
+}
+
+function ProfileField({ label, value, why }: { label: string; value: string; why: string }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">{label}</span>
+        <span className="text-sm text-muted-foreground">{value}</span>
+      </div>
+      <p className="text-xs text-muted-foreground">{why}</p>
+    </div>
   );
 }
 
@@ -145,9 +307,10 @@ function AiReplyModeCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">AI Reply Mode</CardTitle>
+    <Card className={CARD_HOVER}>
+      <CardHeader className="flex-row items-center gap-3 space-y-0">
+        <SectionIcon icon={Globe} />
+        <CardTitle className="text-base">How your employee responds</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {isLoading ? (
@@ -181,9 +344,14 @@ function AiReplyModeCard() {
           </div>
         )}
         {!isError && (
-          <Button size="sm" onClick={handleSave} disabled={controlsDisabled || !isDirty}>
-            {isSaving ? "Saving…" : "Save"}
-          </Button>
+          <>
+            <Button size="sm" onClick={handleSave} disabled={controlsDisabled || !isDirty}>
+              {isSaving ? "Saving…" : "Save"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Either way, you can escalate any conversation to yourself from Pending Replies.
+            </p>
+          </>
         )}
       </CardContent>
     </Card>
@@ -230,23 +398,13 @@ function ModeOption({
   );
 }
 
-function Field({
-  label,
-  ...props
-}: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <label className="block space-y-1.5">
-      <span className="text-sm font-medium">{label}</span>
-      <Input {...props} />
-    </label>
-  );
-}
-
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between">
       <span className="text-muted-foreground">{label}</span>
-      <span>{value}</span>
+      {/* A plain div, not a span: value can be a Badge or Skeleton (both
+          render a div), and a div can't validly nest inside a span. */}
+      <div>{value}</div>
     </div>
   );
 }

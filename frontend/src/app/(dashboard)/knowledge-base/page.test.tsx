@@ -109,9 +109,10 @@ describe("KnowledgeBasePage — website import", () => {
     await user.type(screen.getByPlaceholderText("https://example.com"), "https://example.com");
     await user.click(screen.getByRole("button", { name: "Import Website" }));
 
-    expect(await screen.findByText("Imported successfully")).toBeInTheDocument();
-    expect(screen.getByText(/pages imported: 1/i)).toBeInTheDocument();
-    expect(screen.getByText(/knowledge entries created: 4/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText("HIRA learned 4 new facts about your business"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Imported from 1 page.")).toBeInTheDocument();
 
     // Dialog closed after success.
     expect(screen.queryByText("Import website")).not.toBeInTheDocument();
