@@ -53,8 +53,8 @@ export function OnboardingChecklist({ business }: { business: Business }) {
 
   const steps: ChecklistStep[] = [
     {
-      label: "Knowledge Import",
-      description: "Teach HIRA about your business from your website, PDFs, or FAQs.",
+      label: "Teach HIRA",
+      description: "Add facts about your business, or import them straight from your website.",
       icon: BookOpen,
       status: knowledgeImportDone ? "done" : "available",
       trailing: knowledgeImportDone ? (

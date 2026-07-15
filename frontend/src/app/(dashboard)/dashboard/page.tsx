@@ -335,7 +335,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <StatusRow label="AI provider (Groq)" ok />
-              <StatusRow label="Embeddings (local bge-small)" ok />
+              <StatusRow label="Knowledge search" ok />
               <StatusRow
                 label="WhatsApp integration"
                 ok={onboarding?.business?.whatsapp_connection_status === "connected"}

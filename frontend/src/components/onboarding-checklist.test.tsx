@@ -70,7 +70,7 @@ describe("OnboardingChecklist", () => {
     expect(screen.getByRole("button", { name: "Complete setup first" })).toBeDisabled();
   });
 
-  it("marks Knowledge Import done once at least one KB entry exists", async () => {
+  it("marks Teach HIRA done once at least one KB entry exists", async () => {
     vi.mocked(api.listKbEntries).mockResolvedValue([
       { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
     ]);
@@ -130,7 +130,7 @@ describe("OnboardingChecklist", () => {
     expect(screen.getByText("Live")).toHaveClass("animate-fade-in");
   });
 
-  it("links Knowledge Import and Test AI to the real, already-live pages", async () => {
+  it("links Teach HIRA and Test AI to the real, already-live pages", async () => {
     vi.mocked(api.listKbEntries).mockResolvedValue([]);
     renderChecklist(business());
 

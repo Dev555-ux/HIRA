@@ -59,7 +59,7 @@ export default function PlaygroundPage() {
     <>
       <PageHeader
         title="Playground"
-        description="Test-drive the Receptionist. Every message runs through the exact same pipeline a real WhatsApp customer would hit — knowledge base retrieval, then the LLM."
+        description="Test-drive the Receptionist. Every message goes through the exact same steps a real WhatsApp customer would trigger — HIRA checks what it's learned, then replies."
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -150,7 +150,7 @@ export default function PlaygroundPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <BookOpen className="size-4" /> Retrieved Knowledge Base entries
+                <BookOpen className="size-4" /> What HIRA used to answer
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -162,12 +162,13 @@ export default function PlaygroundPage() {
               )}
               {!sendMessage.isPending && retrieved !== null && retrieved.length === 0 && (
                 <p className="text-sm text-muted-foreground">
-                  No matching knowledge base entries were found for the last message.
+                  Nothing in Business Knowledge matched the last message — HIRA answered from
+                  general conversation alone.
                 </p>
               )}
               {!sendMessage.isPending && retrieved === null && (
                 <p className="text-sm text-muted-foreground">
-                  Retrieved entries will appear here after you send a message.
+                  The facts HIRA leans on will appear here after you send a message.
                 </p>
               )}
               {!sendMessage.isPending && retrieved && retrieved.length > 0 && (

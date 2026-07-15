@@ -1,8 +1,19 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, BookOpen, Globe, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  Check,
+  Globe,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -30,7 +41,7 @@ import {
   useUpdateKbEntry,
 } from "@/hooks/use-knowledge-base";
 import { ApiError } from "@/lib/api";
-import type { KbEntry } from "@/lib/types";
+import type { ImportWebsiteResult, KbEntry } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/utils";
 
 const schema = z.object({
@@ -48,6 +59,14 @@ type WebsiteFormValues = z.infer<typeof websiteSchema>;
 
 // The dialog target: "new" for the create form, an entry for editing, or null (closed).
 type DialogTarget = KbEntry | "new" | null;
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
 
 export default function KnowledgeBasePage() {
   const [query, setQuery] = useState("");
@@ -74,40 +93,38 @@ export default function KnowledgeBasePage() {
   async function handleConfirmDelete() {
     if (!deleteTarget) return;
     await deleteEntry.mutateAsync(deleteTarget.id);
+    toast({ title: "Removed — HIRA won't reference this anymore." });
     setDeleteTarget(null);
   }
 
   async function handleSubmit(values: FormValues) {
     if (dialogTarget === "new") {
       await createEntry.mutateAsync(values);
+      toast({ title: "HIRA learned this fact.", variant: "success" });
     } else if (dialogTarget) {
       await updateEntry.mutateAsync({ id: dialogTarget.id, payload: values });
+      toast({ title: "Updated — HIRA will use this right away.", variant: "success" });
     }
     setDialogTarget(null);
   }
 
-  async function handleImportWebsite(values: WebsiteFormValues) {
-    const result = await importWebsite.mutateAsync(values);
+  function closeImportDialog() {
+    importWebsite.reset();
     setIsImportOpen(false);
-    toast({
-      title: `HIRA learned ${result.entries_created} new ${result.entries_created === 1 ? "fact" : "facts"} about your business`,
-      description: `Imported from ${result.pages_imported} ${result.pages_imported === 1 ? "page" : "pages"}.`,
-      variant: "success",
-    });
   }
 
   return (
     <>
       <PageHeader
-        title="Knowledge Base"
-        description="Facts the Receptionist uses to answer customers."
+        title="Business Knowledge"
+        description="Everything HIRA has learned about your business so far."
         action={
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)}>
               <Globe /> Import Website
             </Button>
             <Button size="sm" onClick={() => setDialogTarget("new")}>
-              <Plus /> Add entry
+              <Plus /> Add a fact
             </Button>
           </div>
         }
@@ -117,7 +134,7 @@ export default function KnowledgeBasePage() {
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search knowledge base…"
+          placeholder="Search what HIRA knows…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -143,7 +160,7 @@ export default function KnowledgeBasePage() {
           {isError && (
             <EmptyState
               icon={AlertTriangle}
-              title="Couldn't load knowledge base"
+              title="Couldn't load your business knowledge"
               description={error instanceof Error ? error.message : "Something went wrong."}
               action={
                 <Button size="sm" onClick={() => refetch()}>
@@ -156,17 +173,17 @@ export default function KnowledgeBasePage() {
 
           {!isLoading && !isError && filtered.length === 0 && (
             <EmptyState
-              icon={BookOpen}
-              title={entries?.length ? "No matches" : "No knowledge entries yet"}
+              icon={Sparkles}
+              title={entries?.length ? "No matches" : "HIRA doesn't know this yet"}
               description={
                 entries?.length
-                  ? "Try a different search term."
-                  : "Add FAQs and business facts here — HIRA checks these before answering every customer question."
+                  ? `Nothing matches "${query}" — try a different word.`
+                  : "Add a fact, or import your website, and HIRA will start using it to answer customers immediately."
               }
               action={
                 !entries?.length ? (
                   <Button size="sm" onClick={() => setDialogTarget("new")}>
-                    <Plus /> Add entry
+                    <Plus /> Add a fact
                   </Button>
                 ) : undefined
               }
@@ -230,13 +247,23 @@ export default function KnowledgeBasePage() {
 
       <Dialog
         open={isImportOpen}
-        onOpenChange={(open) => !importWebsite.isPending && setIsImportOpen(open)}
+        onOpenChange={(open) => {
+          if (open) {
+            setIsImportOpen(true);
+          } else if (!importWebsite.isPending) {
+            closeImportDialog();
+          }
+        }}
       >
         {isImportOpen && (
-          <ImportWebsiteForm
-            onSubmit={handleImportWebsite}
-            onCancel={() => setIsImportOpen(false)}
+          <ImportWebsiteDialog
+            onSubmit={(values) => importWebsite.mutate(values)}
+            onCancel={closeImportDialog}
+            onDone={closeImportDialog}
             isPending={importWebsite.isPending}
+            isSuccess={importWebsite.isSuccess}
+            result={importWebsite.data}
+            submittedUrl={importWebsite.variables?.url}
             error={importWebsite.error}
           />
         )}
@@ -278,7 +305,7 @@ function KbEntryForm({
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>{entry ? "Edit entry" : "Add entry"}</DialogTitle>
+        <DialogTitle>{entry ? "Edit fact" : "Teach HIRA a fact"}</DialogTitle>
         <DialogDescription>
           {entry
             ? "HIRA relearns this fact right away, so future answers stay accurate."
@@ -315,7 +342,7 @@ function KbEntryForm({
 
         <DialogFooter>
           <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving…" : entry ? "Save changes" : "Add entry"}
+            {isPending ? "Saving…" : entry ? "Save changes" : "Teach HIRA"}
           </Button>
         </DialogFooter>
       </form>
@@ -323,17 +350,57 @@ function KbEntryForm({
   );
 }
 
-function ImportWebsiteForm({
+// What HIRA is actually doing, in order — reading the page (the real HTTP
+// fetch), extracting the readable text from it, organizing it into chunks
+// (the real chunking step), then embedding those chunks so replies can use
+// them (the real indexing step). All four are genuinely part of the one
+// backend request; there's no server-sent progress signal to confirm timing
+// precisely, so this advances on a timer and simply holds on the last line
+// until the real response arrives — it never claims done before HIRA is.
+const IMPORT_STAGES = [
+  "Reading your website…",
+  "Extracting useful information…",
+  "Organizing business knowledge…",
+  "Preparing AI responses…",
+];
+
+function useImportStageCaption(active: boolean): string {
+  const [stageIndex, setStageIndex] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setStageIndex(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setStageIndex((i) => Math.min(i + 1, IMPORT_STAGES.length - 1));
+    }, 1300);
+    return () => clearInterval(interval);
+  }, [active]);
+
+  return IMPORT_STAGES[stageIndex];
+}
+
+function ImportWebsiteDialog({
   onSubmit,
   onCancel,
+  onDone,
   isPending,
+  isSuccess,
+  result,
+  submittedUrl,
   error,
 }: {
-  onSubmit: (values: WebsiteFormValues) => Promise<void>;
+  onSubmit: (values: WebsiteFormValues) => void;
   onCancel: () => void;
+  onDone: () => void;
   isPending: boolean;
+  isSuccess: boolean;
+  result: ImportWebsiteResult | undefined;
+  submittedUrl: string | undefined;
   error: unknown;
 }) {
+  const caption = useImportStageCaption(isPending);
   const {
     register,
     handleSubmit,
@@ -343,28 +410,79 @@ function ImportWebsiteForm({
     defaultValues: { url: "" },
   });
 
+  if (isSuccess && result) {
+    const factWord = result.entries_created === 1 ? "fact" : "facts";
+    const preview = result.entries.slice(0, 5);
+    return (
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>HIRA is ready</DialogTitle>
+          <DialogDescription>
+            {result.entries_created} new {factWord} learned
+            {submittedUrl ? ` from ${hostnameOf(submittedUrl)}` : ""}.
+          </DialogDescription>
+        </DialogHeader>
+        {preview.length > 0 && (
+          <ul className="space-y-2.5 rounded-lg border p-4">
+            {preview.map((entry) => (
+              <li key={entry.id} className="flex items-start gap-2 text-sm">
+                <Check className="mt-0.5 size-4 shrink-0 text-success" />
+                <span className="line-clamp-2 text-muted-foreground">{entry.content}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {result.entries.length > preview.length && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            +{result.entries.length - preview.length} more
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onDone}>
+            Done
+          </Button>
+          <Button asChild>
+            <Link href="/playground">Ask HIRA what it learned</Link>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    );
+  }
+
+  if (isPending) {
+    return (
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Teaching HIRA about your business</DialogTitle>
+          <DialogDescription>This usually takes a few seconds.</DialogDescription>
+        </DialogHeader>
+        <div className="flex items-center gap-3 rounded-lg border p-4">
+          <RefreshCw className="size-5 shrink-0 animate-spin text-muted-foreground" />
+          <p key={caption} className="animate-fade-in text-sm text-muted-foreground">
+            {caption}
+          </p>
+        </div>
+      </DialogContent>
+    );
+  }
+
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Import website</DialogTitle>
+        <DialogTitle>Teach HIRA from your website</DialogTitle>
         <DialogDescription>
-          We&apos;ll fetch the page, clean up the text, and add it to your knowledge base.
+          HIRA will read the page, pull out the useful parts, and remember them the way it
+          remembers everything else you&apos;ve taught it.
         </DialogDescription>
       </DialogHeader>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Website URL</span>
-          <Input
-            placeholder="https://example.com"
-            disabled={isPending}
-            {...register("url")}
-          />
+          <Input placeholder="https://example.com" {...register("url")} />
           {errors.url && (
             <span className="block text-xs text-destructive">{errors.url.message}</span>
           )}
         </label>
-
-        {isPending && <p className="text-sm text-muted-foreground">Importing website…</p>}
 
         {error != null && (
           <p className="text-sm text-destructive">
@@ -375,11 +493,11 @@ function ImportWebsiteForm({
         )}
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel} disabled={isPending}>
+          <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Importing website…" : "Import Website"}
+          <Button type="submit">
+            <Globe /> Teach HIRA
           </Button>
         </DialogFooter>
       </form>

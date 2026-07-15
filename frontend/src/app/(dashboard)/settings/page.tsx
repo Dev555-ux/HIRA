@@ -73,7 +73,7 @@ export default function SettingsPage() {
               <ProfileField
                 label="Industry"
                 value={business?.industry ?? "Not set"}
-                why="Recorded at signup. HIRA's answers are grounded in your Knowledge Base, not this label — add specifics there for the best replies, whatever your industry."
+                why="Recorded at signup. HIRA's answers are grounded in what you've taught it, not this label — add specifics under Business Knowledge for the best replies, whatever your industry."
               />
               <ProfileField
                 label="Country"
@@ -96,7 +96,7 @@ export default function SettingsPage() {
         <Card className={CARD_HOVER}>
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={BookOpen} />
-            <CardTitle className="text-base">Knowledge</CardTitle>
+            <CardTitle className="text-base">Business Knowledge</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
@@ -112,7 +112,7 @@ export default function SettingsPage() {
               {kbEntries?.length ? "facts taught so far" : "No facts taught yet"}
             </p>
             <Button asChild size="sm" variant="outline">
-              <Link href="/knowledge-base">Manage Knowledge Base</Link>
+              <Link href="/knowledge-base">Manage Business Knowledge</Link>
             </Button>
           </CardContent>
         </Card>

@@ -136,7 +136,14 @@ def import_website(
 
     entries = index_entry(db, principal.business_id, title or url, text, provider=provider)
     db.commit()
-    return {"pages_imported": 1, "entries_created": len(entries)}
+    # `entries` (not just the count) lets the frontend show what was actually
+    # learned, not just a number — same objects index_entry already built,
+    # just also serialized here rather than discarded.
+    return {
+        "pages_imported": 1,
+        "entries_created": len(entries),
+        "entries": [{"id": str(e.id), "title": e.title, "content": e.content} for e in entries],
+    }
 
 
 @router.patch("/{entry_id}")

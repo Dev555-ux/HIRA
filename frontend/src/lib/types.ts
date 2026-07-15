@@ -337,6 +337,10 @@ export interface ImportWebsitePayload {
 export interface ImportWebsiteResult {
   pages_imported: number;
   entries_created: number;
+  // What was actually learned, not just the count — shown in the post-import
+  // summary. Every chunk from one page shares the page's title (see the
+  // KbEntry comment above), so it's the content, not the title, that varies.
+  entries: { id: string; title: string; content: string }[];
 }
 
 // AI Playground (/api/v1/onboarding/playground/message) — a synchronous

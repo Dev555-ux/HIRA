@@ -23,7 +23,7 @@ export const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/pending", label: "Pending Replies", icon: CheckCheck },
-  { href: "/knowledge-base", label: "Knowledge Base", icon: BookOpen },
+  { href: "/knowledge-base", label: "Business Knowledge", icon: BookOpen },
   { href: "/playground", label: "Playground", icon: Sparkles },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/leads", label: "Leads", icon: Target },

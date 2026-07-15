@@ -63,7 +63,13 @@ def test_import_indexes_extracted_text_and_reports_counts(db_session):
     resp = client.post("/api/v1/kb/website", headers=_auth(), json={"url": "https://example.com/hours"})
 
     assert resp.status_code == 201
-    assert resp.json() == {"pages_imported": 1, "entries_created": 2}
+    body = resp.json()
+    assert body["pages_imported"] == 1
+    assert body["entries_created"] == 2
+    # The response includes what was actually learned, not just a count —
+    # this is what the frontend's post-import summary shows the owner.
+    assert {e["title"] for e in body["entries"]} == {"Opening Hours"}
+    assert {e["content"] for e in body["entries"]} == {"We open at 9am.", "We close at 5pm."}
     stored = db_session.query(KbEntry).filter_by(business_id=biz.id).all()
     assert len(stored) == 2
     assert {e.title for e in stored} == {"Opening Hours"}

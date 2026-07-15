@@ -90,7 +90,7 @@ describe("SettingsPage", () => {
       expect(screen.getByText("owner@brightsmile.test")).toBeInTheDocument();
       // Every field explains why HIRA needs it, not just a bare value.
       expect(
-        screen.getByText(/HIRA's answers are grounded in your Knowledge Base/i),
+        screen.getByText(/HIRA's answers are grounded in what you've taught it/i),
       ).toBeInTheDocument();
       expect(screen.getByText(/Never shared with customers/i)).toBeInTheDocument();
     });
@@ -121,7 +121,7 @@ describe("SettingsPage", () => {
 
       expect(await screen.findByText("2")).toBeInTheDocument();
       expect(screen.getByText("facts taught so far")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Manage Knowledge Base" })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: "Manage Business Knowledge" })).toHaveAttribute(
         "href",
         "/knowledge-base",
       );
