@@ -11,6 +11,10 @@ function aiReplyModeCard() {
   return screen.getByText("How your employee responds").closest<HTMLElement>(".rounded-xl")!;
 }
 
+function aiEmployeeCard() {
+  return screen.getByText("AI Employee").closest<HTMLElement>(".rounded-xl")!;
+}
+
 vi.mock("@/lib/api", () => ({
   ApiError: class extends Error {},
   api: {
@@ -299,6 +303,70 @@ describe("SettingsPage", () => {
           await screen.findByRole("heading", { name: "Connect WhatsApp" }),
         ).toBeInTheDocument();
       });
+    });
+  });
+
+  describe("AI Employee", () => {
+    it("shows status, knowledge learned, and reply mode in business language, never model/provider names", async () => {
+      vi.mocked(api.listKbEntries).mockResolvedValue([
+        { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+        { id: "2", title: "Pricing", content: "$50", created_at: "", updated_at: "" },
+      ]);
+      renderWithProviders();
+
+      await screen.findByText("AI Employee");
+      const card = aiEmployeeCard();
+      expect(await within(card).findByText("Setting up")).toBeInTheDocument(); // onboarding_status: "created"
+      expect(await within(card).findByText("2 facts")).toBeInTheDocument();
+      expect(await within(card).findByText("Assisted")).toBeInTheDocument();
+
+      expect(
+        screen.queryByText(/groq|claude|llama|embedding|bge|local_bge|ai provider/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows Live once the business has gone live", async () => {
+      vi.mocked(api.getOnboardingStatus).mockResolvedValue({
+        has_business: true,
+        business: { ...onboardingStatus.business!, onboarding_status: "live" },
+      });
+      renderWithProviders();
+
+      await screen.findByText("AI Employee");
+      const card = aiEmployeeCard();
+      expect(await within(card).findByText("Live")).toBeInTheDocument();
+      expect(within(card).queryByText("Setting up")).not.toBeInTheDocument();
+    });
+
+    it("shows Autonomous once that's the saved reply mode", async () => {
+      vi.mocked(api.getSettings).mockResolvedValue({ mode: "autonomous" });
+      renderWithProviders();
+
+      await screen.findByText("AI Employee");
+      expect(await within(aiEmployeeCard()).findByText("Autonomous")).toBeInTheDocument();
+    });
+  });
+
+  describe("No implementation details leak anywhere on the page", () => {
+    it("never shows the old 'Systems' card or any internal model/provider name", async () => {
+      vi.mocked(api.listKbEntries).mockResolvedValue([
+        { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+      ]);
+      vi.mocked(api.getCalendarStatus).mockResolvedValue({
+        connected: true,
+        calendar_id: "primary",
+      });
+      renderWithProviders();
+
+      await screen.findByText("AI Employee");
+
+      expect(screen.queryByText("Systems")).not.toBeInTheDocument();
+      expect(screen.queryByText("Integrations")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(
+          /groq|llama|claude|embedding|bge|local_bge|mock \(dev\)|on-device|phone number id|access token/i,
+        ),
+      ).not.toBeInTheDocument();
     });
   });
 

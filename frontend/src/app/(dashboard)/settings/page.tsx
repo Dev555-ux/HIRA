@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Activity,
   AlertTriangle,
   Bot,
   BookOpen,
@@ -41,7 +40,7 @@ import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
-import type { AiReplyMode } from "@/lib/types";
+import type { AiReplyMode, Business } from "@/lib/types";
 import { cn, describeWhatsAppConnection } from "@/lib/utils";
 
 // Shared, restrained hover treatment (Sprint 46's dashboard pattern, reused
@@ -51,7 +50,7 @@ const CARD_HOVER =
   "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md";
 
 export default function SettingsPage() {
-  const { mocked, openProfile } = useAuthContext();
+  const { openProfile } = useAuthContext();
   const { data: onboarding } = useOnboardingStatus();
   const { data: kbEntries } = useKbEntries();
   const { data: calendarStatus } = useCalendarStatus();
@@ -109,6 +108,8 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Your employee">
+        <AiEmployeeCard business={business} kbCount={kbEntries?.length} />
+
         <AiReplyModeCard />
 
         <Card className={CARD_HOVER}>
@@ -169,7 +170,7 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Connections">
-        <Card className={CARD_HOVER}>
+        <Card className={cn("lg:col-span-2", CARD_HOVER)}>
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={MessageCircle} />
             <CardTitle className="text-base">WhatsApp</CardTitle>
@@ -208,18 +209,6 @@ export default function SettingsPage() {
           onOpenChange={setIsWhatsAppWizardOpen}
           businessName={business?.name ?? "your business"}
         />
-
-        <Card className={CARD_HOVER}>
-          <CardHeader className="flex-row items-center gap-3 space-y-0">
-            <SectionIcon icon={Activity} />
-            <CardTitle className="text-base">Systems</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <Row label="Sign-in" value={<Badge variant={mocked ? "warning" : "success"}>{mocked ? "Mock (dev)" : "Connected"}</Badge>} />
-            <Row label="AI provider" value={<Badge variant="success">Groq — llama-3.3-70b</Badge>} />
-            <Row label="Knowledge search" value={<Badge variant="success">local, on-device</Badge>} />
-          </CardContent>
-        </Card>
       </Section>
 
       <Section title="Account">
@@ -284,6 +273,68 @@ function ProfileField({ label, value, why }: { label: string; value: string; why
       </div>
       <p className="text-xs text-muted-foreground">{why}</p>
     </div>
+  );
+}
+
+// An at-a-glance summary — no model names, no provider names, nothing a
+// business owner would need to look up. Every field here is real data
+// already fetched elsewhere on this page (business.onboarding_status,
+// the knowledge-base count, AI Reply Mode); this card just answers "is my
+// employee on and working" in one glance, without requiring reading the
+// three detailed cards below it to piece that together.
+function AiEmployeeCard({
+  business,
+  kbCount,
+}: {
+  business?: Business | null;
+  kbCount?: number;
+}) {
+  const { data: settings } = useSettings();
+  const isLive = business?.onboarding_status === "live";
+
+  return (
+    <Card className={CARD_HOVER}>
+      <CardHeader className="flex-row items-center gap-3 space-y-0">
+        <SectionIcon icon={Bot} />
+        <CardTitle className="text-base">AI Employee</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <Row
+          label="Status"
+          value={
+            business ? (
+              <Badge variant={isLive ? "success" : "secondary"}>
+                {isLive ? "Live" : "Setting up"}
+              </Badge>
+            ) : (
+              <Skeleton className="h-5 w-16" />
+            )
+          }
+        />
+        <Row
+          label="Knowledge learned"
+          value={
+            kbCount != null ? (
+              `${kbCount} ${kbCount === 1 ? "fact" : "facts"}`
+            ) : (
+              <Skeleton className="h-5 w-16" />
+            )
+          }
+        />
+        <Row
+          label="Reply mode"
+          value={
+            settings ? (
+              <Badge variant="secondary">
+                {settings.mode === "autonomous" ? "Autonomous" : "Assisted"}
+              </Badge>
+            ) : (
+              <Skeleton className="h-5 w-20" />
+            )
+          }
+        />
+      </CardContent>
+    </Card>
   );
 }
 
