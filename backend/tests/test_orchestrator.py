@@ -13,7 +13,7 @@ from app.ai.tools import BOOK_APPOINTMENT, CHECK_AVAILABILITY, preview_tool_call
 from app.calendar.providers.base import CalendarNotConnectedError
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
-from app.models import Appointment, Business, Conversation, Message
+from app.models import Appointment, Business, Conversation, Escalation, Message
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_knowledge_base import FakeEmbeddingProvider
 from app.ai.knowledge_base import index_entry
@@ -151,6 +151,71 @@ def test_generate_and_store_reply_persists_pending_outbound(db_session, monkeypa
     assert outbound[0].status == "pending_approval"
     assert outbound[0].body == "Yes, we're open today!"
     assert outbound[0].ai_meta["model"] == "mock-1"
+
+
+# --- AI-3: non-text inbound messages get an honest reply, not silence -----
+
+
+def test_non_text_message_gets_canned_reply_without_calling_the_llm(db_session, monkeypatch):
+    _, conversation = _setup_business_with_kb(db_session)
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+
+    def _fail_if_called(name=None):
+        raise AssertionError("the LLM must not be called for a non-text message")
+
+    monkeypatch.setattr("app.ai.orchestrator.get_llm_provider", _fail_if_called)
+
+    # app/webhooks/whatsapp.py::_extract_text collapses a non-text inbound
+    # message (image/audio/video/...) to "" before dispatch.
+    processing.generate_and_store_reply(conversation.id, "")
+
+    outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
+    assert len(outbound) == 1
+    assert outbound[0].status == "pending_approval"
+    assert outbound[0].type == "text"
+    assert "only read text" in outbound[0].body
+    assert outbound[0].ai_meta["model"] == "none"
+
+
+# --- REL-2: an AI generation failure leaves a trace, not silence -----------
+
+
+def test_generation_failure_escalates_instead_of_leaving_silence(db_session, monkeypatch):
+    _, conversation = _setup_business_with_kb(db_session)
+    conversation_id = conversation.id
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+
+    def _boom(db, conversation, user_text, *, llm=None, embedding=None):
+        raise RuntimeError("simulated LLM provider outage")
+
+    monkeypatch.setattr(processing, "generate_reply", _boom)
+
+    processing.generate_and_store_reply(conversation_id, "are you open today?")
+
+    outbound = db_session.scalars(
+        select(Message).where(
+            Message.conversation_id == conversation_id, Message.direction == "outbound"
+        )
+    ).all()
+    assert len(outbound) == 1
+    assert outbound[0].status == "escalated"
+    assert "flagged for you to follow up" in outbound[0].body
+
+    conversation = db_session.get(Conversation, conversation_id)
+    assert conversation.status == "escalated"
+
+    escalations = db_session.scalars(
+        select(Escalation).where(Escalation.conversation_id == conversation_id)
+    ).all()
+    assert len(escalations) == 1
+    assert escalations[0].reason == "external_failure"
+    assert escalations[0].status == "open"
 
 
 def test_assisted_mode_stores_proposed_tool_call_without_executing(db_session, monkeypatch):

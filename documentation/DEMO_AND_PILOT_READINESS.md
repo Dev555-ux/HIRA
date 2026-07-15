@@ -255,3 +255,15 @@ None of the above required a code change in this sprint (explicitly a
 copy/dataset/UX sprint, not a remediation one) — they're re-verified and
 reported here so the founder is deciding from current facts, not a
 five-day-old assumption.
+
+### Update — 2026-07-15 (Sprint 50, "Production Hardening & Release Candidate")
+
+All six Milestone 0 items still open above (`SEC-1`, `SCALE-1`, `AI-2`,
+`AI-3`, `REL-2`, `PERF-1`) are now **Done** — see `IMPLEMENTATION_PLAN.md`'s
+table and `.claude/PROGRESS.md` Session 51 for the fixes and their
+verification. Of "the actual blockers" list above, items 2 (`REL-2`) and 4
+(`SEC-1`) are resolved. Items 1 (no self-serve WhatsApp connection) and 3
+(no permanent hosting) are unchanged — both are real, both are outside
+Milestone 0 (self-serve WhatsApp needs Meta business verification; hosting
+is Milestone 1 / a founder infrastructure decision), and neither was in
+scope for this sprint's hard rule against inventing backend functionality.

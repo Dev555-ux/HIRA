@@ -160,7 +160,7 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 - **Priority**: P2
 - **Category**: Technical
 - **Status**: To Do
-- **Dependencies**: ONBOARD-A; should not ship before `SEC-1`/`SEC-2` (see `IMPLEMENTATION_PLAN.md` Milestone 0) are done.
+- **Dependencies**: ONBOARD-A. `SEC-1`/`SEC-2` (see `IMPLEMENTATION_PLAN.md` Milestone 0) are both done as of Sprint 50 (2026-07-15), so that precondition is cleared.
 
 ### ONBOARD-E — WhatsApp Embedded Signup (v2)
 

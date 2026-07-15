@@ -45,3 +45,45 @@ def test_missing_database_url_error_names_where_to_fix_it(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(RuntimeError, match="Railway"):
         _load_settings(_env_file=None)
+
+
+# --- SEC-1: refuse to start in production with insecure default secrets ----
+
+
+def test_dev_defaults_are_fine_outside_production():
+    settings = _settings(database_url="postgresql+psycopg://u:p@host/db")
+    assert settings.environment == "development"
+    assert settings.whatsapp_app_secret == "dev-app-secret"
+
+
+def test_production_with_dev_defaults_is_rejected(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="WHATSAPP_APP_SECRET"):
+        _load_settings(
+            _env_file=None,
+            database_url="postgresql+psycopg://u:p@host/db",
+            environment="production",
+        )
+
+
+def test_production_names_every_still_insecure_secret(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(
+        RuntimeError, match="WHATSAPP_VERIFY_TOKEN.*WHATSAPP_APP_SECRET.*WHATSAPP_ACCESS_TOKEN"
+    ):
+        _load_settings(
+            _env_file=None,
+            database_url="postgresql+psycopg://u:p@host/db",
+            environment="production",
+        )
+
+
+def test_production_with_real_secrets_starts_fine():
+    settings = _settings(
+        database_url="postgresql+psycopg://u:p@host/db",
+        environment="production",
+        whatsapp_verify_token="a-real-verify-token",
+        whatsapp_app_secret="a-real-app-secret-from-meta",
+        whatsapp_access_token="a-real-access-token-from-meta",
+    )
+    assert settings.environment == "production"

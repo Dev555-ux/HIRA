@@ -24,6 +24,16 @@ from app.models import KbEntry
 
 logger = logging.getLogger(__name__)
 
+# AI-2: cosine distance (0 = identical, 2 = opposite) above which a KB chunk
+# is treated as "nothing relevant" rather than grounding a reply. Without
+# this, an off-topic message (small talk, a question the KB has no coverage
+# for) still returned the k nearest rows by sheer proximity ranking and the
+# LLM would ground its answer in whatever those happened to be — a starting
+# point picked to comfortably separate "topically related" from "just
+# noise" for BAAI/bge-small (see app/core/config.py's embedding_model);
+# revisit once real pilot retrieval logs exist to tune against.
+DEFAULT_MAX_DISTANCE = 0.6
+
 
 def index_entry(
     db: Session,
@@ -98,8 +108,13 @@ def search(
     *,
     provider: EmbeddingProvider | None = None,
     k: int = 5,
+    max_distance: float = DEFAULT_MAX_DISTANCE,
 ) -> list[tuple[KbEntry, float]]:
-    """Return up to `k` (entry, cosine_distance) pairs for this business, nearest first."""
+    """Return up to `k` (entry, cosine_distance) pairs for this business,
+    nearest first, dropping anything farther than `max_distance` (AI-2) —
+    the k-nearest rows are still fetched first, then filtered, so this only
+    ever removes weak matches and never pulls in one that isn't already
+    among the k nearest."""
     provider = provider or get_embedding_provider()
     query_vector = provider.embed_query(query)
     distance = KbEntry.embedding.cosine_distance(query_vector).label("distance")
@@ -109,7 +124,8 @@ def search(
         .order_by(distance)
         .limit(k)
     )
-    return [(entry, float(dist)) for entry, dist in db.execute(stmt).all()]
+    results = [(entry, float(dist)) for entry, dist in db.execute(stmt).all()]
+    return [(entry, dist) for entry, dist in results if dist <= max_distance]
 
 
 def retrieve_context(
@@ -119,6 +135,13 @@ def retrieve_context(
     *,
     provider: EmbeddingProvider | None = None,
     k: int = 5,
+    max_distance: float = DEFAULT_MAX_DISTANCE,
 ) -> list[KbEntry]:
-    """Return the most relevant KB entries to ground a response."""
-    return [entry for entry, _distance in search(db, business_id, query, provider=provider, k=k)]
+    """Return the most relevant KB entries to ground a response (empty if
+    nothing in the KB clears `max_distance` — see `search`)."""
+    return [
+        entry
+        for entry, _distance in search(
+            db, business_id, query, provider=provider, k=k, max_distance=max_distance
+        )
+    ]

@@ -259,14 +259,17 @@ def test_get_upcoming_appointments_returns_soonest_first(db_session):
 
 
 def test_get_upcoming_appointments_respects_limit(db_session):
+    # Anchored to the real current time, not the module's fixed NOW constant
+    # — see test_get_upcoming_appointments_returns_soonest_first above for why.
+    now = datetime.now(timezone.utc)
     biz, customer = _business_and_customer(db_session)
     service = _service(db_session, biz.id)
     for i in range(3):
         service.book_appointment(
             customer_id=customer.id,
             conversation_id=None,
-            starts_at=NOW + timedelta(days=i + 1),
-            ends_at=NOW + timedelta(days=i + 1, minutes=30),
+            starts_at=now + timedelta(days=i + 1),
+            ends_at=now + timedelta(days=i + 1, minutes=30),
             summary=f"Appt {i}",
         )
 

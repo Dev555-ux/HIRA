@@ -6,14 +6,29 @@ they are never hard-coded or committed. In production (Railway), the same
 variables are set on the service's Variables tab instead of a .env file.
 """
 
-from pydantic import ValidationError, field_validator
+from pydantic import ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Kept as one constant so the production guard below (_reject_insecure_
+# production_secrets) can't silently drift out of sync with the actual
+# dev defaults declared on the fields further down.
+_INSECURE_WHATSAPP_DEFAULTS = {
+    "whatsapp_verify_token": "dev-verify-token",
+    "whatsapp_app_secret": "dev-app-secret",
+    "whatsapp_access_token": "dev-access-token",
+}
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str
+
+    # Which environment this process is running as. Local dev/tests never set
+    # this (default "development"); Railway's production service must set
+    # ENVIRONMENT=production — see _reject_insecure_production_secrets below,
+    # the only thing this value gates today.
+    environment: str = "development"
 
     @field_validator("database_url")
     @classmethod
@@ -85,6 +100,35 @@ class Settings(BaseSettings):
     # (Sprint 34) — set this to the real deployed frontend domain in
     # production, or that origin is CORS-blocked.
     frontend_url: str = "http://localhost:3000"
+
+    @model_validator(mode="after")
+    def _reject_insecure_production_secrets(self) -> "Settings":
+        """SEC-1: whatsapp_verify_token/app_secret/access_token default to
+        guessable dev values so the webhook runs locally with no setup. That
+        default is safe only because local dev is never internet-reachable
+        under Meta's real signature scheme — deployed with ENVIRONMENT=
+        production and any of them still unset, the HMAC signature check in
+        app/webhooks/whatsapp.py::_signature_valid becomes forgeable (anyone
+        who reads this source knows dev-app-secret) and the verify-token
+        handshake becomes guessable. Fails fast at startup, the same
+        actionable-error pattern _load_settings already uses for a missing
+        DATABASE_URL, rather than deploying silently insecure.
+        """
+        if self.environment != "production":
+            return self
+        insecure = [
+            field
+            for field, default in _INSECURE_WHATSAPP_DEFAULTS.items()
+            if getattr(self, field) == default
+        ]
+        if insecure:
+            names = ", ".join(f.upper() for f in insecure)
+            raise ValueError(
+                f"{names} still set to its insecure default with ENVIRONMENT=production. "
+                "Set real values in the Railway service's Variables tab — see "
+                "backend/.env.example and documentation/WHATSAPP_INTEGRATION.md."
+            )
+        return self
 
 
 def _load_settings(**overrides) -> Settings:

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
@@ -59,18 +60,37 @@ def _signature_valid(raw_body: bytes, header: str | None) -> bool:
     return hmac.compare_digest(expected, header.removeprefix("sha256="))
 
 
+async def _read_raw_body(request: Request) -> bytes:
+    """The only part of this route that genuinely needs to be async (Starlette's
+    Request.body() has no sync equivalent). FastAPI awaits dependencies
+    regardless of whether the route itself is sync or async, so pulling this
+    into its own dependency lets `receive` below be a plain `def` — see its
+    docstring for why that matters (SCALE-1)."""
+    return await request.body()
+
+
 @router.post("/whatsapp")
-async def receive(
+def receive(
     request: Request,
     background_tasks: BackgroundTasks,
+    raw_body: bytes = Depends(_read_raw_body),
     db: Session = Depends(get_db),
     dispatch=Depends(get_reply_dispatcher),
 ) -> Response:
-    raw_body = await request.body()
+    """SCALE-1: this used to be `async def`, but everything it does after
+    reading the body — the signature check, and above all `_persist_inbound`'s
+    synchronous `db.scalars`/`db.commit()` calls — is blocking I/O. Under an
+    `async def` route, FastAPI runs the whole function on the single event
+    loop, so one slow Postgres round-trip stalls every other concurrent
+    request the process is serving. A plain `def` route makes FastAPI run it
+    in a worker thread instead, so this webhook (the highest-traffic endpoint
+    in the app, and one Meta expects a fast ack from) can't starve the rest
+    of the API under load.
+    """
     if not _signature_valid(raw_body, request.headers.get("X-Hub-Signature-256")):
         return Response(status_code=403)
 
-    payload = await request.json()
+    payload = json.loads(raw_body)
     new_inbound = _persist_inbound(db, payload)
     for conversation_id, user_text in new_inbound:
         dispatch(background_tasks, conversation_id, user_text)

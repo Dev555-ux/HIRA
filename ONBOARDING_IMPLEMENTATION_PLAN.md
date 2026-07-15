@@ -69,7 +69,7 @@ Effort scale matches `IMPLEMENTATION_PLAN.md` (the existing pre-pilot-hardening 
 | **Frontend** | Step-by-step wizard with inline screenshots/annotated links per field, live green-check validation per the architecture doc. |
 | **Testing** | Unit: connect endpoint rejects invalid tokens (mocked Graph API 401) without writing to `businesses`. Manual: full run against a real (test) WhatsApp number, re-verifying the exact webhook-subscription gap that caused the Session 19 incident doesn't recur. |
 | **Estimated effort** | M (2–3 days) |
-| **Dependencies** | Milestone A. Should ship only after `IMPLEMENTATION_PLAN.md`'s Milestone 0 items `SEC-1` (insecure default secrets) and `SEC-2` (CORS) are done — connecting real business credentials through a system with default/guessable secrets is the wrong order. |
+| **Dependencies** | Milestone A. `IMPLEMENTATION_PLAN.md`'s Milestone 0 items `SEC-1` (insecure default secrets) and `SEC-2` (CORS) — connecting real business credentials through a system with default/guessable secrets would be the wrong order — are both **done** as of Sprint 50 (2026-07-15), so this milestone is no longer blocked on them. |
 | **Risk** | Medium. This is still "copy an ID and a token from Meta's dashboard" — meaningfully better than editing `.env`, but not yet the one-click magic the brief envisions. Flagged honestly in the UX doc rather than oversold. |
 
 ### Milestone E — WhatsApp Embedded Signup (v2, the real "one click" experience)
