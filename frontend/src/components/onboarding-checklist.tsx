@@ -78,7 +78,7 @@ export function OnboardingChecklist({ business }: { business: Business }) {
         </Badge>
       ) : (
         <Button asChild size="sm" variant="outline">
-          <Link href="/settings">{whatsappNeedsRetry ? "Retry" : "Connect"}</Link>
+          <Link href="/settings?whatsapp=connect">{whatsappNeedsRetry ? "Retry" : "Connect"}</Link>
         </Button>
       ),
     },

@@ -22,6 +22,11 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
+const mockSearchParams = vi.fn(() => new URLSearchParams());
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => mockSearchParams(),
+}));
+
 import { api } from "@/lib/api";
 
 const openProfile = vi.fn();
@@ -68,6 +73,7 @@ function renderWithProviders(auth: AuthContextValue = mockAuth()) {
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSearchParams.mockReturnValue(new URLSearchParams());
     vi.mocked(api.getOnboardingStatus).mockResolvedValue(onboardingStatus);
     vi.mocked(api.listKbEntries).mockResolvedValue([]);
     vi.mocked(api.getCalendarStatus).mockResolvedValue({ connected: false, calendar_id: null });
@@ -166,12 +172,14 @@ describe("SettingsPage", () => {
 
       expect(screen.queryByText("Phone number ID")).not.toBeInTheDocument();
       expect(screen.queryByText("Access token")).not.toBeInTheDocument();
+      expect(screen.queryByText(/webhook|token|graph api|cloud api|oauth/i)).not.toBeInTheDocument();
       expect(
         screen.getByText(/customers keep messaging the number they already know/i),
       ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Connect WhatsApp" })).toBeInTheDocument();
     });
 
-    it("shows the connected explanation once connected", async () => {
+    it("shows the reward and a test-message CTA once connected, not a dead badge", async () => {
       vi.mocked(api.getOnboardingStatus).mockResolvedValue({
         has_business: true,
         business: { ...onboardingStatus.business!, whatsapp_connection_status: "connected" },
@@ -179,8 +187,118 @@ describe("SettingsPage", () => {
       renderWithProviders();
 
       expect(
-        await screen.findByText(/every message customers send there reaches HIRA automatically/i),
+        await screen.findByText(/customers can message your business through WhatsApp/i),
       ).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Send a test message" })).toHaveAttribute(
+        "href",
+        "/playground",
+      );
+    });
+
+    it("shows business-language status, not the raw backend enum", async () => {
+      vi.mocked(api.getOnboardingStatus).mockResolvedValue({
+        has_business: true,
+        business: {
+          ...onboardingStatus.business!,
+          whatsapp_connection_status: "pending_verification",
+        },
+      });
+      renderWithProviders();
+
+      expect(await screen.findByText("Needs attention")).toBeInTheDocument();
+      expect(screen.queryByText("pending_verification")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Continue setup" })).toBeInTheDocument();
+    });
+
+    describe("connection wizard", () => {
+      function mockClipboard(writeText: (text: string) => Promise<void>) {
+        Object.defineProperty(navigator, "clipboard", {
+          value: { writeText },
+          configurable: true,
+        });
+      }
+
+      it("walks from why-connect to the request details, and copies them", async () => {
+        const user = userEvent.setup();
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        mockClipboard(writeText);
+        renderWithProviders();
+
+        await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
+        expect(screen.getByRole("heading", { name: "Connect WhatsApp" })).toBeInTheDocument();
+        expect(
+          screen.getByText(/nothing changes for them/i),
+        ).toBeInTheDocument();
+        // No OAuth, no fake redirect — the dialog is the whole flow.
+        expect(screen.queryByText(/redirecting/i)).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        expect(
+          screen.getByRole("heading", { name: "Your WhatsApp Business number" }),
+        ).toBeInTheDocument();
+
+        const copyButton = screen.getByRole("button", { name: /copy request details/i });
+        expect(copyButton).toBeDisabled();
+
+        await user.type(screen.getByPlaceholderText("+1 555 000 1234"), "+15550001234");
+        expect(copyButton).not.toBeDisabled();
+
+        await user.click(copyButton);
+        expect(writeText).toHaveBeenCalledWith(
+          expect.stringContaining("Bright Smile Dental Studio"),
+        );
+        expect(writeText).toHaveBeenCalledWith(expect.stringContaining("+15550001234"));
+        expect(await screen.findByText("Copied")).toBeInTheDocument();
+      });
+
+      it("shows an honest error if the copy itself fails, not a silent no-op", async () => {
+        const user = userEvent.setup();
+        const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+        mockClipboard(writeText);
+        renderWithProviders();
+
+        await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.type(screen.getByPlaceholderText("+1 555 000 1234"), "+15550001234");
+        await user.click(screen.getByRole("button", { name: /copy request details/i }));
+
+        expect(await screen.findByText("Couldn't copy automatically")).toBeInTheDocument();
+        expect(screen.getByText(/select the text above and copy it manually/i)).toBeInTheDocument();
+      });
+
+      it("resets back to the intro step after closing and reopening", async () => {
+        const user = userEvent.setup();
+        renderWithProviders();
+
+        await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        expect(
+          screen.getByRole("heading", { name: "Your WhatsApp Business number" }),
+        ).toBeInTheDocument();
+
+        // The details step has Back/Copy, not Cancel — close via the dialog's
+        // own Close control instead, same as a user pressing Escape or
+        // clicking outside.
+        await user.click(screen.getByRole("button", { name: "Close" }));
+        expect(
+          screen.queryByRole("heading", { name: "Your WhatsApp Business number" }),
+        ).not.toBeInTheDocument();
+
+        await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
+        expect(screen.getByRole("heading", { name: "Connect WhatsApp" })).toBeInTheDocument();
+        expect(
+          screen.queryByRole("heading", { name: "Your WhatsApp Business number" }),
+        ).not.toBeInTheDocument();
+      });
+
+      it("opens automatically when navigated here with ?whatsapp=connect", async () => {
+        mockSearchParams.mockReturnValue(new URLSearchParams("whatsapp=connect"));
+        renderWithProviders();
+
+        expect(
+          await screen.findByRole("heading", { name: "Connect WhatsApp" }),
+        ).toBeInTheDocument();
+      });
     });
   });
 

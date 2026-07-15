@@ -3,9 +3,12 @@
 import {
   Activity,
   AlertTriangle,
+  Bot,
   BookOpen,
   Building2,
   CalendarClock,
+  Clock,
+  Copy,
   Globe,
   MessageCircle,
   Palette,
@@ -13,13 +16,23 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useCalendarStatus } from "@/hooks/use-calendar";
@@ -42,11 +55,16 @@ export default function SettingsPage() {
   const { data: onboarding } = useOnboardingStatus();
   const { data: kbEntries } = useKbEntries();
   const { data: calendarStatus } = useCalendarStatus();
+  const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false);
   const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
   const business = onboarding?.business;
+  const whatsappConnected = onboarding?.business?.whatsapp_connection_status === "connected";
 
   return (
     <>
+      <Suspense fallback={null}>
+        <WhatsAppWizardAutoOpen onOpen={() => setIsWhatsAppWizardOpen(true)} />
+      </Suspense>
       <PageHeader
         title="Settings"
         description="Everything HIRA knows about your business, and how your employee behaves."
@@ -160,26 +178,36 @@ export default function SettingsPage() {
             </Badge>
           </CardHeader>
           <CardContent className="space-y-3">
-            {whatsapp.label === "Connected" ? (
-              <p className="text-sm text-muted-foreground">
-                Your WhatsApp Business number is connected — every message customers send there
-                reaches HIRA automatically, and every reply sends from that same number.
-              </p>
+            {whatsappConnected ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Your AI employee is connected — customers can message your business through
+                  WhatsApp right now, and HIRA replies from that same number automatically.
+                </p>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/playground">Send a test message</Link>
+                </Button>
+              </>
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Connecting your WhatsApp Business number is what lets HIRA read customer
-                  messages and reply from your business&apos;s own number — customers keep messaging
-                  the number they already know.
+                  {whatsapp.label === "Needs attention"
+                    ? "We're finishing your WhatsApp connection. If we need anything else from you, we'll ask for it here."
+                    : "Connecting your WhatsApp Business number is what lets HIRA read customer messages and reply from your business's own number — customers keep messaging the number they already know."}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  This isn&apos;t self-serve yet: reach out to the HIRA team with your WhatsApp
-                  Business number and we&apos;ll connect it for you.
-                </p>
+                <Button size="sm" variant="outline" onClick={() => setIsWhatsAppWizardOpen(true)}>
+                  {whatsapp.label === "Needs attention" ? "Continue setup" : "Connect WhatsApp"}
+                </Button>
               </>
             )}
           </CardContent>
         </Card>
+
+        <WhatsAppConnectWizard
+          open={isWhatsAppWizardOpen}
+          onOpenChange={setIsWhatsAppWizardOpen}
+          businessName={business?.name ?? "your business"}
+        />
 
         <Card className={CARD_HOVER}>
           <CardHeader className="flex-row items-center gap-3 space-y-0">
@@ -406,5 +434,146 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
           render a div), and a div can't validly nest inside a span. */}
       <div>{value}</div>
     </div>
+  );
+}
+
+// The onboarding checklist links here with ?whatsapp=connect so "Connect"/
+// "Continue setup" opens the wizard directly instead of landing the owner on
+// Settings and making them find and click the button again. useSearchParams
+// requires a Suspense boundary in the App Router — same pattern the Calendar
+// page already uses for its own ?calendar=connected query param.
+function WhatsAppWizardAutoOpen({ onOpen }: { onOpen: () => void }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("whatsapp") === "connect") {
+      onOpen();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+  return null;
+}
+
+type WhatsAppWizardStep = "intro" | "details";
+
+/** WhatsApp has no self-serve connect flow yet (no OAuth, no backend endpoint
+ * to receive a connection request) — this wizard doesn't pretend otherwise.
+ * It explains what connecting means, then turns the owner's WhatsApp Business
+ * number into a copyable request they can hand to the HIRA team through
+ * whatever channel they already use. Nothing here is submitted anywhere;
+ * the number is held in local component state only, for building the
+ * copied text, and is discarded when the dialog closes. */
+function WhatsAppConnectWizard({
+  open,
+  onOpenChange,
+  businessName,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  businessName: string;
+}) {
+  const [step, setStep] = useState<WhatsAppWizardStep>("intro");
+  const [waNumber, setWaNumber] = useState("");
+  const { toast } = useToast();
+
+  function close(open: boolean) {
+    onOpenChange(open);
+    if (!open) {
+      setStep("intro");
+      setWaNumber("");
+    }
+  }
+
+  async function handleCopy() {
+    const details = `Connect WhatsApp for ${businessName}\nWhatsApp Business number: ${waNumber.trim()}`;
+    try {
+      await navigator.clipboard.writeText(details);
+      toast({
+        title: "Copied",
+        description: "Paste this wherever you already reach the HIRA team.",
+        variant: "success",
+      });
+    } catch {
+      toast({
+        title: "Couldn't copy automatically",
+        description: "Select the text above and copy it manually instead.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={close}>
+      {open && step === "intro" && (
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect WhatsApp</DialogTitle>
+            <DialogDescription>
+              This is how customers will reach your new employee.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-3">
+            <li className="flex items-start gap-3 text-sm">
+              <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" />
+              <span className="text-muted-foreground">
+                Customers keep messaging the WhatsApp number they already know — nothing changes
+                for them.
+              </span>
+            </li>
+            <li className="flex items-start gap-3 text-sm">
+              <Bot className="mt-0.5 size-4 shrink-0 text-primary" />
+              <span className="text-muted-foreground">
+                HIRA reads every message and replies from that same number, grounded in what
+                you&apos;ve taught it.
+              </span>
+            </li>
+            <li className="flex items-start gap-3 text-sm">
+              <Clock className="mt-0.5 size-4 shrink-0 text-primary" />
+              <span className="text-muted-foreground">
+                Connecting isn&apos;t instant — it&apos;s a short, guided step the HIRA team does
+                with you, not an automatic signup.
+              </span>
+            </li>
+          </ul>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => close(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => setStep("details")}>Continue</Button>
+          </DialogFooter>
+        </DialogContent>
+      )}
+      {open && step === "details" && (
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Your WhatsApp Business number</DialogTitle>
+            <DialogDescription>
+              Add the number your customers already message — we&apos;ll use this to connect it.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">WhatsApp Business number</span>
+            <Input
+              placeholder="+1 555 000 1234"
+              value={waNumber}
+              onChange={(e) => setWaNumber(e.target.value)}
+            />
+          </label>
+          <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+            <p className="font-medium">Connect WhatsApp for {businessName}</p>
+            <p className="text-muted-foreground">
+              WhatsApp Business number: {waNumber.trim() || "—"}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStep("intro")}>
+              Back
+            </Button>
+            <Button onClick={handleCopy} disabled={!waNumber.trim()}>
+              <Copy /> Copy request details
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      )}
+    </Dialog>
   );
 }

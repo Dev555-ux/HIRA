@@ -16,7 +16,7 @@ export function describeWhatsAppConnection(
     case "connected":
       return { label: "Connected", variant: "success" };
     case "pending_verification":
-      return { label: "Verification pending", variant: "warning" };
+      return { label: "Needs attention", variant: "warning" };
     case "not_connected":
     default:
       return { label: "Not connected", variant: "secondary" };

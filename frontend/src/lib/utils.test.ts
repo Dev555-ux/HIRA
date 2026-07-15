@@ -40,7 +40,7 @@ describe("describeWhatsAppConnection", () => {
       variant: "success",
     });
     expect(describeWhatsAppConnection("pending_verification")).toEqual({
-      label: "Verification pending",
+      label: "Needs attention",
       variant: "warning",
     });
     expect(describeWhatsAppConnection("not_connected")).toEqual({

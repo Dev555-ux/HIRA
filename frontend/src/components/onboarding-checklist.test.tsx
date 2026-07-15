@@ -66,7 +66,10 @@ describe("OnboardingChecklist", () => {
     renderChecklist(business());
 
     await waitFor(() => expect(screen.getByText("0 of 4 done")).toBeInTheDocument());
-    expect(screen.getByRole("link", { name: "Connect" })).toHaveAttribute("href", "/settings");
+    expect(screen.getByRole("link", { name: "Connect" })).toHaveAttribute(
+      "href",
+      "/settings?whatsapp=connect",
+    );
     expect(screen.getByRole("button", { name: "Complete setup first" })).toBeDisabled();
   });
 
@@ -85,7 +88,10 @@ describe("OnboardingChecklist", () => {
     renderChecklist(business({ whatsapp_connection_status: "pending_verification" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("link", { name: "Retry" })).toHaveAttribute("href", "/settings"),
+      expect(screen.getByRole("link", { name: "Retry" })).toHaveAttribute(
+        "href",
+        "/settings?whatsapp=connect",
+      ),
     );
   });
 
