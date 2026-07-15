@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "@/components/ui/toast";
@@ -274,6 +274,44 @@ describe("DashboardPage", () => {
     expect(names.indexOf("Sam Torres")).toBeLessThan(names.indexOf("Jordan Lee"));
   });
 
+  it("doesn't show the same pending draft twice in Recent activity", async () => {
+    // A conversation whose latest message IS the still-pending draft used to
+    // produce two rows for the same event: "Reply drafted, awaiting your
+    // approval" (from the pending list) and the draft's own text again (from
+    // the conversation preview, since that draft is the conversation's most
+    // recent message).
+    vi.mocked(api.listPending).mockResolvedValue([
+      {
+        id: "msg-1",
+        conversation_id: "conv-1",
+        body: "Yes, we're open Saturday from 9 to 5 -- would you like to book a slot?",
+        created_at: "2026-08-01T12:00:00Z",
+        customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
+        conversation_preview: null,
+      },
+    ]);
+    vi.mocked(api.listConversations).mockResolvedValue({
+      data: [
+        {
+          id: "conv-1",
+          status: "active",
+          customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
+          last_message_at: "2026-08-01T12:00:00Z",
+          preview: "Yes, we're open Saturday from 9 to 5 -- would you like to book a slot?",
+          has_pending_approval: true,
+          created_at: "2026-08-01T12:00:00Z",
+        },
+      ],
+      meta: { total: 1, limit: 5, offset: 0 },
+    });
+
+    renderWithProviders(<DashboardPage />);
+
+    expect(await screen.findByText("Reply drafted, awaiting your approval")).toBeInTheDocument();
+    const feed = await screen.findByTestId("activity-feed");
+    expect(within(feed).getAllByText("Jordan Lee")).toHaveLength(1);
+  });
+
   it("shows a meaningful empty state when there is no recent activity", async () => {
     renderWithProviders(<DashboardPage />);
 
@@ -282,6 +320,30 @@ describe("DashboardPage", () => {
       "href",
       "/playground",
     );
+  });
+
+  it("shows real WhatsApp status, never internal AI provider/model names", async () => {
+    renderWithProviders(<DashboardPage />);
+
+    await screen.findByText("WhatsApp status");
+    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/groq|llama|claude|embedding|ai provider|knowledge search/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reflects a not-connected WhatsApp status honestly", async () => {
+    vi.mocked(api.getOnboardingStatus).mockResolvedValue({
+      has_business: true,
+      business: {
+        ...onboardingStatus.business!,
+        whatsapp_connection_status: "not_connected",
+      } as OnboardingStatus["business"],
+    });
+    renderWithProviders(<DashboardPage />);
+
+    await screen.findByText("WhatsApp status");
+    expect(screen.getByText("Not connected")).toBeInTheDocument();
   });
 
   it("refreshes pending, conversations, and appointments when Refresh is clicked", async () => {

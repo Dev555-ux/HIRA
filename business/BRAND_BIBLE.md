@@ -235,7 +235,7 @@ If HIRA were a person, they'd be the operations hire every small business owner 
 
 ## 16. Homepage Messaging Hierarchy
 
-The order a first-time visitor should meet the idea in, and the job each section does. Maps directly onto `frontend/src/components/marketing/*` (built Sprint 41) — several of those sections still say "AI receptionist" and need a copy pass against this document; see §20.
+The order a first-time visitor should meet the idea in, and the job each section does. Maps directly onto `frontend/src/components/marketing/*` (built Sprint 41). The copy pass against this document (§20) is done — verified by both a full source read and `marketing-page.test.tsx`'s own assertion that the page never claims HIRA is an "AI receptionist" anywhere.
 
 1. **Hero** — one sharp claim (a headline from the *contrarian* set in §11, e.g. "Not a chatbot. An employee.") plus one sentence of proof and a single CTA.
 2. **Problem** — the real cost of a slow reply and a cold lead.
@@ -291,7 +291,7 @@ Commit fully to **"AI employee, hired not installed"** as the spine of everythin
 
 Concrete next steps, in order:
 
-1. **Rewrite the live marketing site's hero, solution, and features copy** (`frontend/src/components/marketing/*`, and the `metadata` export in `frontend/src/app/page.tsx`). The current hero headline — *"An AI receptionist that answers WhatsApp before your customer gives up"* — was correct for its sprint and is now the exact positioning this document retires. Not done in this pass; this document is the reference to write against, not the rewrite itself.
-2. **Sync `.claude/PROJECT_CONTEXT.md`'s "What HIRA Is" section** — it still opens with "AI receptionist platform," which now contradicts `README.md`'s own already-updated positioning ("HIRA is an AI employee — not a chatbot"). Small, mechanical fix; flagged here rather than silently left stale.
+1. **Rewrite the live marketing site's hero, solution, and features copy** (`frontend/src/components/marketing/*`, and the `metadata` export in `frontend/src/app/page.tsx`). **Done** — verified in Sprint 51's RC audit: the hero, metadata title/description, and every marketing section now read "AI employee"/"the Receptionist," and `marketing-page.test.tsx` guards against the old claim regressing.
+2. **Sync `.claude/PROJECT_CONTEXT.md`'s "What HIRA Is" section.** **Done** — it now opens "HIRA is an AI employee businesses hire..." and explicitly points back to this document.
 3. **Hold the line on "AI Employees" (plural) and "AI Business Operating System"** — vision language only, every time, paired with the current-state disclaimer, exactly as `README.md` already does. The moment that discipline slips in a deck or a landing page, the brand starts making promises the codebase hasn't earned yet.
 4. **Treat this document as load-bearing.** The same way the codebase checks itself against `.claude/CLAUDE.md`, every future landing page, deck slide, or feature announcement should be checked against this file before it ships. Logged as `DEC-036` in `.claude/DECISIONS.md`.

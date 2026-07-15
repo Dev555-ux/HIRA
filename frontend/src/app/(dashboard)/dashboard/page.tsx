@@ -118,6 +118,7 @@ export default function DashboardPage() {
   // draft text or "Upcoming appointments"'s own listing verbatim.
   const activity = useMemo<ActivityEntry[]>(() => {
     const entries: ActivityEntry[] = [];
+    const pendingConversationIds = new Set((pending ?? []).map((p) => p.conversation_id));
     for (const p of pending ?? []) {
       entries.push({
         id: `pending-${p.id}`,
@@ -128,6 +129,12 @@ export default function DashboardPage() {
       });
     }
     for (const c of recentConversations) {
+      // A conversation whose latest message *is* a still-pending draft
+      // already has its own, more specific entry above (and its own badge
+      // in "Needs your attention") — showing it again here with the same
+      // draft text as a generic "conversation preview" read as the same
+      // event happening twice.
+      if (pendingConversationIds.has(c.id)) continue;
       entries.push({
         id: `conversation-${c.id}`,
         icon: MessageSquare,
@@ -331,13 +338,11 @@ export default function DashboardPage() {
 
           <Card className={`bg-muted/30 ${CARD_HOVER}`}>
             <CardHeader>
-              <CardTitle className="text-base">System status</CardTitle>
+              <CardTitle className="text-base">WhatsApp status</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <StatusRow label="AI provider (Groq)" ok />
-              <StatusRow label="Knowledge search" ok />
               <StatusRow
-                label="WhatsApp integration"
+                label="WhatsApp"
                 ok={onboarding?.business?.whatsapp_connection_status === "connected"}
                 note={whatsapp.label}
                 variant={whatsapp.variant}

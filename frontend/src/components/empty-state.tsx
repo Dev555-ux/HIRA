@@ -24,7 +24,13 @@ export function EmptyState({
       <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted">
         <Icon className="size-6 text-muted-foreground" />
       </div>
-      <h3 className="text-sm font-semibold">{title}</h3>
+      {/* h2, not h3: this renders directly under each page's own h1 with no
+          guaranteed h2 in between (e.g. Playground, Customers, Leads,
+          Analytics have no section headings) — h3 here would skip a level
+          for exactly those pages. Pages that do have their own h2 sections
+          (Dashboard, Settings) just end up with a sibling h2, which is a
+          normal, valid heading structure, not a second violation. */}
+      <h2 className="text-sm font-semibold">{title}</h2>
       {description && (
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
       )}
