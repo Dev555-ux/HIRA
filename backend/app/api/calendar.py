@@ -14,7 +14,6 @@ import logging
 import uuid
 from datetime import datetime
 from urllib.parse import urlencode
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
@@ -26,6 +25,7 @@ from app.calendar import credentials as calendar_credentials
 from app.calendar import oauth
 from app.calendar.factory import get_appointment_service
 from app.calendar.oauth import OAuthStateError
+from app.core.timezones import validate_timezone
 from app.calendar.providers.base import (
     CalendarAuthError,
     CalendarConflictError,
@@ -91,10 +91,7 @@ class UpdateCalendarSettingsRequest(BaseModel):
     def _valid_timezone(cls, value: str | None) -> str | None:
         if value is None:
             return value
-        try:
-            ZoneInfo(value)
-        except ZoneInfoNotFoundError as exc:
-            raise ValueError(f"Unknown timezone: {value}") from exc
+        validate_timezone(value)
         return value
 
     @field_validator("working_hours")

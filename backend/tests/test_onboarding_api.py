@@ -118,6 +118,23 @@ def test_create_business_rejects_invalid_owner_email(db_session):
     assert resp.status_code == 422
 
 
+def test_create_business_rejects_invalid_timezone(db_session):
+    # Regression: the onboarding form's timezone field is free text with no
+    # frontend format check — the backend must reject an unrecognized IANA
+    # key itself, matching app/api/calendar.py's existing validation, or a
+    # bad value (e.g. "asia" instead of "Asia/Kolkata") gets stored and later
+    # crashes every AI reply for that business (app/ai/prompts.py).
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_badtz"})
+
+    resp = client.post(
+        "/api/v1/onboarding/business",
+        json={**VALID_PAYLOAD, "timezone": "asia"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+
+
 def test_create_business_is_idempotent_for_same_clerk_user(db_session):
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_twice"})
 

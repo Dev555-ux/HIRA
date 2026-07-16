@@ -15,6 +15,7 @@ from datetime import date, datetime, time as dt_time
 from zoneinfo import ZoneInfo
 
 from app.calendar.providers.base import TimeSlot
+from app.core.timezones import safe_zoneinfo
 
 _DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
@@ -36,7 +37,7 @@ def filter_by_working_hours(
     if not working_hours:
         return slots
 
-    tz = ZoneInfo(timezone)
+    tz = safe_zoneinfo(timezone)
     clipped: list[TimeSlot] = []
     for slot in slots:
         clipped.extend(_clip_slot(slot, working_hours, tz))

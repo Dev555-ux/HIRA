@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.playground import playground_reply
 from app.auth.dependencies import Principal, get_current_principal, get_verified_clerk_user_id
+from app.core.timezones import validate_timezone
 from app.db.session import get_db
 from app.models import Business
 from app.services.provisioning import get_business_for_clerk_user, provision_business
@@ -99,6 +100,12 @@ def create_business(
         raise HTTPException(status_code=422, detail="A valid owner email is required")
     if payload.contact_email and not _looks_like_email(payload.contact_email):
         raise HTTPException(status_code=422, detail="Business email is not a valid email address")
+    timezone = (payload.timezone or "").strip() or None
+    if timezone is not None:
+        try:
+            validate_timezone(timezone)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     business = provision_business(
         db,
@@ -108,7 +115,7 @@ def create_business(
         industry=(payload.industry or "").strip() or None,
         contact_email=(payload.contact_email or "").strip() or None,
         country=(payload.country or "").strip() or None,
-        timezone=(payload.timezone or "").strip() or None,
+        timezone=timezone,
     )
     return {"data": _serialize_business(business)}
 
