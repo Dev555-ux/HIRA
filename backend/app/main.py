@@ -118,11 +118,22 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 # settings.frontend_url so a deployed frontend isn't CORS-blocked once
 # FRONTEND_URL is set to the real domain (Sprint 34). allow_origins only
 # does exact string matches, so Vercel preview deployments (random
-# *.vercel.app subdomains per branch/PR) can never be listed individually —
-# they're matched separately via allow_origin_regex below. Without that
-# regex, Starlette's CORSMiddleware rejects any non-matching Origin on the
-# preflight with a 400 "Disallowed CORS origin", which is what was breaking
-# every OPTIONS request from Vercel.
+# hira-<branch/hash>-<team>.vercel.app subdomains per branch/PR) can never
+# be listed individually — they're matched separately via allow_origin_regex
+# below. Without that regex, Starlette's CORSMiddleware rejects any
+# non-matching Origin on the preflight with a 400 "Disallowed CORS origin",
+# which is what was breaking every OPTIONS request from Vercel.
+#
+# A11 (Sprint S1 security audit): this regex previously matched
+# `https://.*\.vercel\.app` — *any* site hosted on Vercel, not just this
+# project's own deployments, since Vercel is a shared multi-tenant host
+# anyone can deploy to. Narrowed to require the subdomain start with
+# "hira-", matching this project's actual preview-deployment naming
+# (Vercel names previews after the project, "hira"). This isn't a perfect
+# allowlist — nothing stops a third party from naming their own Vercel
+# project "hira-something" — but it closes the "literally anyone on
+# vercel.app" gap the audit flagged. Tighten further to this project's
+# exact Vercel team/project slug once a real deployment fixes what that is.
 _CORS_ORIGINS = {
     "http://localhost:3000",
     "http://localhost:3001",
@@ -133,8 +144,11 @@ _CORS_ORIGINS = {
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(_CORS_ORIGINS),
-    allow_origin_regex=r"https://.*\.vercel\.app",
-    allow_credentials=True,
+    allow_origin_regex=r"https://hira-[a-zA-Z0-9-]*\.vercel\.app",
+    # A11: no cookie-based credential is ever sent cross-origin — the
+    # frontend authenticates via an explicit `Authorization: Bearer` header
+    # (frontend/src/lib/api.ts), never `credentials: "include"` — so this
+    # was doing nothing but widening the policy for no functional benefit.
     allow_methods=["*"],
     allow_headers=["*"],
 )

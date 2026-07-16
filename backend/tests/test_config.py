@@ -87,3 +87,42 @@ def test_production_with_real_secrets_starts_fine():
         whatsapp_access_token="a-real-access-token-from-meta",
     )
     assert settings.environment == "production"
+
+
+# --- A1 (Sprint S2A security fix): refuse to start in production with mock auth enabled ----
+
+
+def _real_whatsapp_secrets() -> dict:
+    return {
+        "whatsapp_verify_token": "a-real-verify-token",
+        "whatsapp_app_secret": "a-real-app-secret-from-meta",
+        "whatsapp_access_token": "a-real-access-token-from-meta",
+    }
+
+
+def test_mock_auth_is_fine_outside_production():
+    settings = _settings(database_url="postgresql+psycopg://u:p@host/db", allow_mock_auth=True)
+    assert settings.allow_mock_auth is True
+
+
+def test_production_with_mock_auth_enabled_is_rejected(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="ALLOW_MOCK_AUTH"):
+        _load_settings(
+            _env_file=None,
+            database_url="postgresql+psycopg://u:p@host/db",
+            environment="production",
+            allow_mock_auth=True,
+            **_real_whatsapp_secrets(),
+        )
+
+
+def test_production_with_mock_auth_disabled_starts_fine():
+    settings = _settings(
+        database_url="postgresql+psycopg://u:p@host/db",
+        environment="production",
+        allow_mock_auth=False,
+        **_real_whatsapp_secrets(),
+    )
+    assert settings.environment == "production"
+    assert settings.allow_mock_auth is False
