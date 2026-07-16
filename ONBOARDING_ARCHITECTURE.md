@@ -245,23 +245,35 @@ Called from `POST /api/v1/onboarding/business` the first time a newly-signed-up 
 
 `run_ingestion_job()` uses FastAPI's `BackgroundTasks`, exactly like `generate_and_store_reply()` does today — **no new task-queue infrastructure** (no Celery/RQ). This is a deliberate consistency choice, not an oversight: `IMPLEMENTATION_PLAN.md` (REL-1/SCALE-2) already identifies that the lack of a durable queue is a real gap, but explicitly defers building one until real load justifies it. Onboarding ingestion jobs are: (a) low-frequency (once per business, not per message), (b) already have a natural retry UI (the owner can just re-submit the URL if a job fails), and (c) already surfaced via job-status polling. Adding a queue here first, ahead of the durable-queue work already planned for the core message pipeline, would be solving the same problem twice in two different ways — building it once, properly, when the core pipeline needs it, covers both. The one operational implication (same one that already exists for `generate_and_store_reply`) is stated plainly: **if the backend process restarts mid-crawl, that job is lost** and shows as stuck; a cheap mitigation is a job-level timeout (e.g., mark `failed` if `status='processing'` for >5 minutes) checked lazily on the next poll — a few lines, not a queue.
 
-### 4.4 The "test drive" playground reuses the real reply path
+### 4.4 Demo Chat (formerly "playground") reuses the real reply path — and now really executes its actions
 
-`ai/playground.py`:
+`ai/playground.py` (module kept its original name; the user-facing feature is "Demo Chat" — Sprint 51):
 
 ```
 def get_or_create_playground_conversation(db, business_id) -> Conversation:
-    """One synthetic customer per business (wa_phone='__playground__'), excluded
-    from real inbox/analytics queries by filtering that phone value."""
+    """One synthetic customer per business (wa_phone='__playground__',
+    display_name='Demo Chat'), excluded from real inbox/analytics queries
+    by filtering that phone value."""
     ...
 
-def playground_reply(db, business_id, user_text) -> LLMResponse:
+def playground_reply(db, business_id, user_text) -> tuple[LLMResponse, list[KbEntry], str, dict | None]:
     conversation = get_or_create_playground_conversation(db, business_id)
-    response, _ = generate_reply(db, conversation, user_text)  # unmodified orchestrator call
-    return response
+    response, retrieved = generate_reply(db, conversation, user_text)  # unmodified orchestrator call
+    message_type, body, extra = response_to_message_fields(response)
+    if message_type == "tool_call":
+        # No human reviewer is waiting on a demo conversation, so the
+        # proposed action is executed immediately via the same
+        # execute_tool_call/confirmation_message_for Autonomous Mode's
+        # _auto_send already uses — not previewed-only, and not a second
+        # execution path.
+        result = execute_tool_call(db, business_id, tool_call, customer_id=..., conversation_id=..., commit=True)
+        body = confirmation_message_for(tool_call, result) if result.success else result.message
+        tool_outcome = {"name": tool_call.name, "success": result.success}
+    ...
+    return response, retrieved, body, tool_outcome
 ```
 
-This is the single most important reuse decision in this design: the owner's "test drive" during onboarding calls **the identical code path** (`orchestrator.generate_reply`) that a real WhatsApp customer message will call in production. There is no separate "demo mode" AI logic to maintain or that could silently drift from what customers actually experience. The only new concept is a dedicated synthetic `Customer` row per business (marker phone number) so playground conversations don't pollute the real inbox/analytics — one `WHERE wa_phone != '__playground__'` filter added to whatever future `/inbox` and `/analytics` endpoints query (both currently placeholders anyway, per `ARCHITECTURE.md` §4).
+This is the single most important reuse decision in this design: Demo Chat calls **the identical code path** (`orchestrator.generate_reply`) that a real WhatsApp customer message calls in production, and — as of Sprint 51 — actually executes whatever the model proposes (booking, lead creation) through the exact same `execute_tool_call` dispatcher Autonomous Mode uses, rather than only showing an editable preview. There is no separate "demo mode" AI logic to maintain or that could silently drift from what customers actually experience. The only new concepts are (a) a dedicated synthetic `Customer` row per business (marker phone number, `display_name="Demo Chat"`) so Demo Chat conversations don't pollute the real inbox/analytics — one `WHERE wa_phone != '__playground__'` filter added to whatever future `/inbox` and `/analytics` endpoints query — and (b) `GET /api/v1/onboarding/playground/history`, a thin read endpoint over that same conversation's already-persisted `Message` rows, so the frontend can reload the transcript after a refresh instead of relying on local-only React state. See `.claude/DECISIONS.md` DEC-037 for the full reasoning and trade-offs.
 
 ---
 
