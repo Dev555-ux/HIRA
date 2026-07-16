@@ -21,10 +21,10 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/demo", label: "Demo Chat", icon: Sparkles },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/pending", label: "Pending Replies", icon: CheckCheck },
   { href: "/knowledge-base", label: "Business Knowledge", icon: BookOpen },
-  { href: "/playground", label: "Playground", icon: Sparkles },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/leads", label: "Leads", icon: Target },
   { href: "/appointments", label: "Appointments", icon: CalendarClock },

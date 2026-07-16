@@ -46,7 +46,7 @@ function CenteredMessage({
 // it can safely assume get_current_principal will succeed. Previously, any
 // *error* from the status check (as opposed to a clean "no business yet"
 // result) fell through to rendering the dashboard anyway — a genuinely
-// unprovisioned account could reach pages like Playground/Analytics/Business
+// unprovisioned account could reach pages like Demo Chat/Analytics/Business
 // Knowledge, whose own calls then 401 ("Unknown user"), surfacing as opaque
 // network errors. Every branch below now renders something explicit; none
 // of them fall through to <AppShell> except the one confirmed-provisioned case.

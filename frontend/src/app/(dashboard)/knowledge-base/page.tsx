@@ -442,7 +442,7 @@ function ImportWebsiteDialog({
             Done
           </Button>
           <Button asChild>
-            <Link href="/playground">Ask HIRA what it learned</Link>
+            <Link href="/demo">Ask HIRA what it learned</Link>
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -152,7 +152,7 @@ describe("KnowledgeBasePage — website import", () => {
       expect(screen.getByText("Consultations start at $60.")).toBeInTheDocument();
 
       const cta = screen.getByRole("link", { name: "Ask HIRA what it learned" });
-      expect(cta).toHaveAttribute("href", "/playground");
+      expect(cta).toHaveAttribute("href", "/demo");
 
       // List refreshed: one call on mount, one after the mutation invalidates the query.
       await waitFor(() => expect(api.listKbEntries).toHaveBeenCalledTimes(2));

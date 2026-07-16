@@ -27,6 +27,7 @@ import type {
   OnboardingStatus,
   PaginatedEnvelope,
   PendingReply,
+  PlaygroundHistory,
   PlaygroundResponse,
   RegenerateResult,
   RejectResult,
@@ -176,6 +177,12 @@ export const api = {
       "/api/v1/onboarding/playground/message",
       getToken,
       { method: "POST", body: JSON.stringify({ message }) },
+    ).then((r) => r.data),
+
+  getPlaygroundHistory: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<PlaygroundHistory>>(
+      "/api/v1/onboarding/playground/history",
+      getToken,
     ).then((r) => r.data),
 
   getSettings: (getToken: GetToken) =>

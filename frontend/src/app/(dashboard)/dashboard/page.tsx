@@ -380,10 +380,10 @@ export default function DashboardPage() {
             <EmptyState
               icon={Sparkles}
               title="Waiting for your first customer"
-              description="HIRA is set up and listening — as soon as a customer messages you, replies, bookings, and conversations will start showing up here. Not ready to wait? Try it yourself in the Playground."
+              description="HIRA is set up and listening — as soon as a customer messages you, replies, bookings, and conversations will start showing up here. Not ready to wait? Try it yourself in Demo Chat."
               action={
                 <Button asChild size="sm" variant="outline">
-                  <Link href="/playground">Try the Playground</Link>
+                  <Link href="/demo">Try Demo Chat</Link>
                 </Button>
               }
               className="border-0 py-12"

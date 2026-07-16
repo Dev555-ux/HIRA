@@ -14,7 +14,7 @@ const STEPS = [
     step: "3",
     title: "Test it yourself",
     description:
-      "Try real conversations in the Playground before a single customer sees a reply.",
+      "Try real conversations in Demo Chat before a single customer sees a reply.",
   },
   {
     step: "4",

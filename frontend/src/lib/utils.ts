@@ -23,6 +23,15 @@ export function describeWhatsAppConnection(
   }
 }
 
+// Per-message chat timestamp ("2:34 PM"), distinct from formatRelativeTime's
+// "10m ago" — a persistent transcript reads better with a fixed clock time
+// than a relative one that changes every time you look at it.
+export function formatMessageTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 export function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
