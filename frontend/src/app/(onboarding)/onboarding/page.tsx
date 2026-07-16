@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { ApiError } from "@/lib/api";
@@ -10,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
-import { useCreateBusiness } from "@/hooks/use-onboarding";
+import { useCreateBusiness, useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useAuthContext } from "@/lib/auth-context";
 
 const INDUSTRIES = [
@@ -42,6 +43,9 @@ export default function OnboardingPage() {
   const { user } = useAuthContext();
   const { toast } = useToast();
   const createBusiness = useCreateBusiness();
+  const { refetch: refetchOnboardingStatus } = useOnboardingStatus();
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -50,6 +54,7 @@ export default function OnboardingPage() {
 
   const onSubmit = handleSubmit(async (values) => {
     if (!user?.email) return; // guarded in the UI below; nothing to submit without it
+    setVerifyError(null);
     try {
       await createBusiness.mutateAsync({
         name: values.name,
@@ -59,6 +64,19 @@ export default function OnboardingPage() {
         country: values.country || undefined,
         timezone: values.timezone || undefined,
       });
+
+      // Don't navigate on the strength of the POST alone — confirm the same
+      // provisioning check the dashboard layout gates on actually reflects a
+      // real Business/User row first, so arriving at /dashboard can never
+      // race ahead of what the backend itself can already see.
+      setIsVerifying(true);
+      const confirmed = await refetchOnboardingStatus();
+      setIsVerifying(false);
+      if (!confirmed.data?.has_business) {
+        setVerifyError("We couldn't confirm your account is ready yet — please try again.");
+        return;
+      }
+
       toast({
         title: "You're all set!",
         description: "Let's get your AI employee ready.",
@@ -66,6 +84,7 @@ export default function OnboardingPage() {
       });
       router.replace("/dashboard");
     } catch {
+      setIsVerifying(false);
       // surfaced below via createBusiness.isError
     }
   });
@@ -122,13 +141,14 @@ export default function OnboardingPage() {
                 : "Something went wrong — please try again."}
             </p>
           )}
+          {verifyError && <p className="text-sm text-destructive">{verifyError}</p>}
 
           <Button
             type="submit"
             className="w-full"
-            disabled={createBusiness.isPending || !user?.email}
+            disabled={createBusiness.isPending || isVerifying || !user?.email}
           >
-            {createBusiness.isPending ? "Setting up…" : "Continue"}
+            {createBusiness.isPending ? "Setting up…" : isVerifying ? "Confirming…" : "Continue"}
           </Button>
         </form>
       </CardContent>
