@@ -26,10 +26,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from zoneinfo import ZoneInfo
-
 from app.ai.context import ConversationContext
 from app.ai.llm.base import ChatMessage
+from app.core.timezones import safe_zoneinfo
 from app.models import Business, KbEntry, Lead, Message
 
 SYSTEM_PROMPT_VERSION = "v4"
@@ -86,7 +85,7 @@ def _format_knowledge(entries: list[KbEntry]) -> str:
 def _format_scheduling_context(business: Business | None) -> str:
     if business is None:
         return ""
-    tz = ZoneInfo(business.timezone)
+    tz = safe_zoneinfo(business.timezone, business_id=business.id)
     now_local = datetime.now(tz)
     lines = [
         f"Current date/time for this business: {now_local.isoformat()} ({business.timezone}).",

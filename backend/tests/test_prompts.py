@@ -51,6 +51,18 @@ def test_scheduling_context_included_when_business_has_working_hours():
     assert "tue: closed" in prompt
 
 
+def test_falls_back_to_utc_for_unknown_timezone():
+    # Regression: a business with an invalid/legacy `timezone` value (e.g.
+    # "asia" instead of "Asia/Kolkata") must not crash reply generation —
+    # every AI reply builds this prompt, so one bad value would 500 the
+    # whole conversation instead of just degrading to UTC.
+    business = _business(timezone="asia")
+
+    prompt = build_system_prompt(_context(business=business))
+
+    assert "(asia)" in prompt
+
+
 def test_customer_name_included_when_known():
     customer = _customer(display_name="Alex Rivera")
 

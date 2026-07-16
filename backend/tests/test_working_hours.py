@@ -91,3 +91,14 @@ def test_respects_business_timezone_not_utc():
     assert len(result) == 1
     assert result[0].starts_at == datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
     assert result[0].ends_at == datetime(2026, 8, 3, 14, 0, tzinfo=timezone.utc)
+
+
+def test_falls_back_to_utc_for_unknown_timezone():
+    # Regression: a business with an invalid/legacy timezone value (e.g.
+    # "asia" instead of "Asia/Kolkata") must not crash availability lookups —
+    # falls back to treating the business as UTC instead.
+    slots = [_slot("2026-08-03T10:00", "2026-08-03T11:00")]  # a Monday
+
+    result = filter_by_working_hours(slots, working_hours=HOURS, timezone="asia")
+
+    assert result == slots
