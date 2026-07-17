@@ -48,6 +48,13 @@ LeadStage = Literal["new", "contacted", "qualified", "proposal_sent", "negotiati
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 MAX_PHONE_LENGTH = 32
+# source matches Lead.source's own String(64) column (app/models.py) —
+# without this, an oversized value fails at commit with a raw DB error
+# instead of a clean 422. notes has no DB-side bound (Lead.notes is Text),
+# matching customers.py's own MAX_NOTES_LENGTH convention for the same kind
+# of field.
+MAX_SOURCE_LENGTH = 64
+MAX_NOTES_LENGTH = 4096
 
 
 class CreateLeadRequest(BaseModel):
@@ -62,18 +69,18 @@ class CreateLeadRequest(BaseModel):
     wa_phone: str | None = Field(default=None, max_length=MAX_PHONE_LENGTH)
     email: EmailStr | None = None
     stage: LeadStage = "new"
-    source: str | None = None
+    source: str | None = Field(default=None, max_length=MAX_SOURCE_LENGTH)
     estimated_value: float | None = Field(default=None, ge=0)
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=MAX_NOTES_LENGTH)
     next_follow_up_at: datetime | None = None
     assigned_to: uuid.UUID | None = None
 
 
 class UpdateLeadRequest(BaseModel):
     stage: LeadStage | None = None
-    source: str | None = None
+    source: str | None = Field(default=None, max_length=MAX_SOURCE_LENGTH)
     estimated_value: float | None = Field(default=None, ge=0)
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=MAX_NOTES_LENGTH)
     next_follow_up_at: datetime | None = None
     assigned_to: uuid.UUID | None = None
 

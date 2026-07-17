@@ -56,12 +56,132 @@ def test_unhandled_exception_returns_generic_500_and_is_logged(db_session, caplo
         resp = client.get("/api/v1/leads", headers={"Authorization": "Bearer tok"})
 
     assert resp.status_code == 500
-    assert resp.json() == {"detail": "Internal server error"}
+    assert resp.json() == {"detail": "Something went wrong. Please try again."}
     assert "simulated auth backend failure" not in resp.text
     assert any(
         "Unhandled exception" in record.message and "/api/v1/leads" in record.message
         for record in caplog.records
     )
+    app.dependency_overrides.clear()
+
+
+def test_unhandled_exception_is_captured_by_error_monitoring(db_session, monkeypatch):
+    # Regression: Sentry (app/core/monitoring.py) must see every exception
+    # this handler catches, not just log it (Sprint 52B, Task 3).
+    captured = []
+    monkeypatch.setattr("app.main.capture_exception", captured.append)
+
+    def _boom(_token):
+        raise RuntimeError("simulated auth backend failure")
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_token_verifier] = lambda: _boom
+    client = TestClient(app, raise_server_exceptions=False)
+
+    client.get("/api/v1/leads", headers={"Authorization": "Bearer tok"})
+
+    assert len(captured) == 1
+    assert isinstance(captured[0], RuntimeError)
+    app.dependency_overrides.clear()
+
+
+def test_response_includes_request_id_header(db_session):
+    # Sprint 52B, Task 4 — every response carries a request ID a bug report
+    # can reference, whether or not the caller sent one.
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+
+    resp = client.get("/health")
+
+    assert "X-Request-ID" in resp.headers
+    assert len(resp.headers["X-Request-ID"]) > 0
+    app.dependency_overrides.clear()
+
+
+def test_incoming_request_id_is_reused_not_replaced(db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+
+    resp = client.get("/health", headers={"X-Request-ID": "my-own-id-123"})
+
+    assert resp.headers["X-Request-ID"] == "my-own-id-123"
+    app.dependency_overrides.clear()
+
+
+def test_request_is_logged_with_request_id_status_and_duration(db_session, caplog):
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+
+    with caplog.at_level(logging.INFO, logger="app.request"):
+        resp = client.get("/health")
+
+    request_id = resp.headers["X-Request-ID"]
+    matching = [r for r in caplog.records if request_id in r.message]
+    assert len(matching) == 1
+    line = matching[0].message
+    assert "method=GET" in line
+    assert "path=/health" in line
+    assert "status=200" in line
+    assert "duration_ms=" in line
+    app.dependency_overrides.clear()
+
+
+def test_authenticated_request_log_includes_business_id(db_session, caplog):
+    from app.models import Business, User
+
+    biz = Business(name="A")
+    db_session.add(biz)
+    db_session.flush()
+    user = User(business_id=biz.id, clerk_user_id="user_a", email="a@x.com")
+    db_session.add(user)
+    db_session.commit()
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_token_verifier] = lambda: lambda t: {"sub": "user_a"}
+    client = TestClient(app)
+
+    with caplog.at_level(logging.INFO, logger="app.request"):
+        resp = client.get("/api/v1/leads", headers={"Authorization": "Bearer tok"})
+
+    request_id = resp.headers["X-Request-ID"]
+    matching = [r for r in caplog.records if request_id in r.message]
+    assert len(matching) == 1
+    assert f"business_id={biz.id}" in matching[0].message
+    app.dependency_overrides.clear()
+
+
+def test_pydantic_validation_error_detail_is_a_plain_string(db_session, monkeypatch):
+    # Regression: FastAPI's default RequestValidationError handler returns
+    # `detail` as a *list* of error dicts. Every other error in this app
+    # returns `detail` as a string, and the frontend's error banner
+    # (frontend/src/app/(dashboard)/demo/page.tsx) renders it directly —
+    # coercing a list of objects to a string prints the literal text
+    # "[object Object]" in the UI (Sprint 52B, Task 2/5).
+    from app.models import Business, User
+
+    biz = Business(name="A")
+    db_session.add(biz)
+    db_session.flush()
+    user = User(business_id=biz.id, clerk_user_id="user_a", email="a@x.com")
+    db_session.add(user)
+    db_session.commit()
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_token_verifier] = lambda: lambda t: {"sub": "user_a"}
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/v1/onboarding/playground/message",
+        headers={"Authorization": "Bearer tok"},
+        json={"message": "x" * 5000},
+    )
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert isinstance(detail, str)
+    assert "[object Object]" not in detail
+    assert "message" in detail
+    assert "4096" in detail
     app.dependency_overrides.clear()
 
 

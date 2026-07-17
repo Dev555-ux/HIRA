@@ -101,6 +101,23 @@ class Settings(BaseSettings):
     # production, or that origin is CORS-blocked.
     frontend_url: str = "http://localhost:3000"
 
+    # Error monitoring (Sprint 52B, Task 3). Empty by default — the Sentry
+    # SDK's own public API (capture_exception, set_tag, etc.) is a documented
+    # no-op when sentry_sdk.init() was never called, so nothing needs an
+    # "is this configured" branch anywhere else; it simply does nothing
+    # until a real DSN is set (in Railway's Variables tab for production).
+    sentry_dsn: str = ""
+
+    # Rate limits (Sprint 52B, Task 1) — deliberately configurable rather
+    # than hardcoded, since the right number for a 5-10 person beta and for
+    # a larger launch aren't the same. slowapi's own string format:
+    # "<count>/<second|minute|hour|day>". Business/user-scoped where an
+    # authenticated principal exists (app/core/rate_limit.py); IP-scoped for
+    # the one pre-auth endpoint (business creation).
+    rate_limit_demo_chat: str = "20/minute"
+    rate_limit_kb_upload: str = "10/minute"
+    rate_limit_business_creation: str = "5/hour"
+
     @model_validator(mode="after")
     def _reject_insecure_production_secrets(self) -> "Settings":
         """SEC-1: whatsapp_verify_token/app_secret/access_token default to

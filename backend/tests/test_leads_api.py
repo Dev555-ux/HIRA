@@ -154,6 +154,46 @@ def test_create_lead_rejects_negative_estimated_value(db_session):
     app.dependency_overrides.clear()
 
 
+def test_create_lead_rejects_oversized_notes(db_session):
+    # Regression: notes had no max_length — Sprint 52B, Task 2.
+    from app.api.leads import MAX_NOTES_LENGTH
+
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/leads",
+        json={"customer_id": str(cust.id), "notes": "x" * (MAX_NOTES_LENGTH + 1)},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
+def test_create_lead_rejects_oversized_source(db_session):
+    # Regression: source had no max_length, and Lead.source's own DB column
+    # is String(64) — an oversized value used to fail at commit with a raw
+    # DB error instead of a clean 422 (Sprint 52B, Task 2).
+    from app.api.leads import MAX_SOURCE_LENGTH
+
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/leads",
+        json={"customer_id": str(cust.id), "source": "x" * (MAX_SOURCE_LENGTH + 1)},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
 def test_create_lead_for_unknown_customer_is_404(db_session):
     _seed_business(db_session, "A", "user_a")
     db_session.commit()

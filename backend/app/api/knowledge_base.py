@@ -22,8 +22,8 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, HttpUrl
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,8 @@ from app.ai.embeddings import EmbeddingProvider, get_embedding_provider
 from app.ai.knowledge_base import delete_entry, index_entry, update_entry
 from app.ai.web_import import WebImportError, fetch_page
 from app.auth.dependencies import Principal, get_current_principal
+from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.db.tenant import tenant_query
 from app.models import KbEntry
@@ -43,15 +45,27 @@ router = APIRouter(prefix="/api/v1/kb", tags=["knowledge-base"])
 DEFAULT_KB_LIMIT = 200
 MAX_KB_LIMIT = 200
 
+# Sprint 52B: title matches KbEntry.title's own String(512) column — without
+# this, an oversized title fails at commit with a raw DB error instead of a
+# clean 422. content has no DB-side bound (KbEntry.content is Text, and
+# index_entry() already chunks arbitrarily long input into multiple rows —
+# see app/ai/knowledge_base.py), so this is purely a cost/abuse guard: a
+# manually-typed "fact" is meant to be a short snippet, not a document (that's
+# what /website is for, already scoped to one page) — 20k chars bounds the
+# embedding cost of a single submission without constraining any realistic
+# fact.
+MAX_KB_TITLE_LENGTH = 512
+MAX_KB_CONTENT_LENGTH = 20_000
+
 
 class CreateKbEntryRequest(BaseModel):
-    title: str
-    content: str
+    title: str = Field(max_length=MAX_KB_TITLE_LENGTH)
+    content: str = Field(max_length=MAX_KB_CONTENT_LENGTH)
 
 
 class UpdateKbEntryRequest(BaseModel):
-    title: str | None = None
-    content: str | None = None
+    title: str | None = Field(default=None, max_length=MAX_KB_TITLE_LENGTH)
+    content: str | None = Field(default=None, max_length=MAX_KB_CONTENT_LENGTH)
 
 
 class ImportWebsiteRequest(BaseModel):
@@ -97,7 +111,9 @@ def list_entries(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
+@limiter.limit(lambda: settings.rate_limit_kb_upload)
 def create_entry(
+    request: Request,
     payload: CreateKbEntryRequest,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
@@ -118,7 +134,9 @@ def create_entry(
 
 
 @router.post("/website", status_code=status.HTTP_201_CREATED)
+@limiter.limit(lambda: settings.rate_limit_kb_upload)
 def import_website(
+    request: Request,
     payload: ImportWebsiteRequest,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),

@@ -329,6 +329,12 @@ def test_oauth_callback_redirects_with_error_when_exchange_fails(db_session, mon
     location = urlparse(resp.headers["location"])
     assert parse_qs(location.query)["calendar"] == ["error"]
     assert get_stored_credential(db_session, biz.id) is None
+    # Regression: this used to put str(exc) straight into the redirect URL's
+    # `message` param — a raw underlying oauthlib/google-auth exception could
+    # end up shown in the browser (Sprint 52B, Task 5).
+    assert parse_qs(location.query)["message"] == [
+        "Couldn't connect Google Calendar. Please try again."
+    ]
     app.dependency_overrides.clear()
 
 
