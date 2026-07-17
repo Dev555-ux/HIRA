@@ -18,6 +18,19 @@ follow-up call — bounded by construction, not a loop, so there's no runaway
 risk. A write tool (book/reschedule/cancel/CRM), if proposed, is returned
 as-is on LLMResponse.tool_calls for the caller (app/ai/processing.py,
 app/services/replies.py) to turn into a pending approval or execute, per mode.
+
+Demo Mode (Sprint 55): this is also the earliest point that knows whether
+the business has any Business Knowledge at all (context.has_knowledge, from
+app/ai/context.py). A business with none gets a different system prompt
+(app/ai/prompts.py::build_demo_system_prompt) and no tool schemas — there's
+no real KB to ground answers in yet, and no real calendar/CRM data to check
+tools against, so offering them only invited the model to misfire (e.g.
+proposing check_availability on a bare "Hi"). Every caller of generate_reply
+— this Demo Chat, real WhatsApp inbound, and Assisted Mode's regenerate —
+gets this the same way, since a business with zero Business Knowledge
+behaves identically confusing for a real customer as it does in Demo Chat.
+Once Business Knowledge exists, this branch is never taken and nothing here
+changes from before.
 """
 
 from __future__ import annotations
@@ -29,7 +42,13 @@ from sqlalchemy.orm import Session
 from app.ai.context import RETRIEVAL_K, build_context
 from app.ai.embeddings import EmbeddingProvider
 from app.ai.llm import LLMProvider, LLMResponse, get_llm_provider
-from app.ai.prompts import SYSTEM_PROMPT_VERSION, build_messages, build_system_prompt
+from app.ai.prompts import (
+    DEMO_SYSTEM_PROMPT_VERSION,
+    SYSTEM_PROMPT_VERSION,
+    build_demo_system_prompt,
+    build_messages,
+    build_system_prompt,
+)
 from app.ai.tools import CHECK_AVAILABILITY, TOOL_SCHEMAS, execute_check_availability
 from app.models import Conversation
 
@@ -54,6 +73,19 @@ def generate_reply(
     context = build_context(
         db, conversation, user_text, llm=llm, embedding=embedding, k=RETRIEVAL_K
     )
+
+    if not context.has_knowledge:
+        logger.info(
+            "Generating reply: business=%s conversation=%s prompt=%s (no Business Knowledge yet)",
+            conversation.business_id,
+            conversation.id,
+            DEMO_SYSTEM_PROMPT_VERSION,
+        )
+        demo_system = build_demo_system_prompt(context)
+        messages = build_messages(context.history, user_text)
+        response = llm.generate(system=demo_system, messages=messages)
+        return response, context.retrieved_kb
+
     system = build_system_prompt(context)
     messages = build_messages(context.history, user_text)
 

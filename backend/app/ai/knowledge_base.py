@@ -128,6 +128,22 @@ def search(
     return [(entry, dist) for entry, dist in results if dist <= max_distance]
 
 
+def has_any_entries(db: Session, business_id: uuid.UUID) -> bool:
+    """Whether this business has uploaded any Business Knowledge at all.
+
+    Deliberately distinct from retrieve_context()'s per-query result, which
+    can come back empty even when entries exist (this particular question
+    just didn't match anything within max_distance). This is a business-level
+    fact, not a per-turn one — app/ai/context.py uses it to decide Demo Mode
+    (Sprint 55) vs. the normal RAG flow, and that decision must stay stable
+    across an off-topic question, not flip-flop turn to turn.
+    """
+    return (
+        db.scalars(select(KbEntry.id).where(KbEntry.business_id == business_id).limit(1)).first()
+        is not None
+    )
+
+
 def retrieve_context(
     db: Session,
     business_id: uuid.UUID,

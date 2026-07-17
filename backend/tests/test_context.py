@@ -96,6 +96,32 @@ def test_build_context_includes_retrieved_kb_entries(db_session):
     assert context.retrieved_kb[0].title == "Hours"
 
 
+def test_build_context_has_knowledge_is_false_with_no_kb(db_session):
+    _, _, conversation = _conversation(db_session)
+
+    context = build_context(db_session, conversation, "hi there", llm=MockProvider())
+
+    assert context.has_knowledge is False
+
+
+def test_build_context_has_knowledge_is_true_once_any_entry_exists(db_session):
+    biz, _, conversation = _conversation(db_session)
+    index_entry(
+        db_session, biz.id, "Hours", "We are open 9am to 5pm.", provider=FakeEmbeddingProvider()
+    )
+
+    # Sprint 55: has_knowledge is a business-level fact (any KB entry at
+    # all), independent of whether this particular question's retrieval
+    # matched anything — see test_knowledge_base.py's has_any_entries tests
+    # and test_search_drops_results_below_the_relevance_bar for that
+    # separate, already-covered distinction.
+    context = build_context(
+        db_session, conversation, "hi there", llm=MockProvider(), embedding=FakeEmbeddingProvider()
+    )
+
+    assert context.has_knowledge is True
+
+
 def test_build_context_includes_recent_history(db_session):
     _, _, conversation = _conversation(db_session)
     db_session.add(

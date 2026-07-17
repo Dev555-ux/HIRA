@@ -5,8 +5,8 @@ formatting logic, independent of the Context Builder's assembly."""
 from datetime import datetime, timezone
 
 from app.ai.context import ConversationContext
-from app.ai.prompts import build_system_prompt
-from app.models import Business, Customer, Lead
+from app.ai.prompts import build_demo_system_prompt, build_system_prompt
+from app.models import Business, Customer, Lead, Message
 
 
 def _business(**kwargs):
@@ -28,6 +28,7 @@ def _context(**overrides):
         lead=None,
         upcoming_appointments=[],
         retrieved_kb=[],
+        has_knowledge=True,
         summary=None,
         history=[],
     )
@@ -123,3 +124,64 @@ def test_availability_note_still_appended_when_given():
 
     assert "Availability check result" in prompt
     assert "(Available slots: none)" in prompt
+
+
+def test_demo_prompt_does_not_include_kb_grounding_language():
+    # Sprint 55: Demo Mode is a genuinely separate prompt, not a variant of
+    # the grounded one — it must never tell the model to answer "ONLY using
+    # the knowledge base below" when there is no knowledge base yet.
+    prompt = build_demo_system_prompt(_context())
+
+    assert "Answer ONLY using the information" not in prompt
+    assert "Knowledge base:" not in prompt
+
+
+def test_demo_prompt_explains_capabilities():
+    prompt = build_demo_system_prompt(_context())
+
+    assert "schedul" in prompt.lower() or "book" in prompt.lower()
+    assert "lead" in prompt.lower()
+    assert "remember" in prompt.lower()
+
+
+def test_demo_prompt_includes_business_name_when_known():
+    business = _business(name="Bright Smile Dental")
+
+    prompt = build_demo_system_prompt(_context(business=business))
+
+    assert "Bright Smile Dental" in prompt
+
+
+def test_demo_prompt_includes_suggestions_hint_on_first_turn():
+    # history with no outbound message yet == no assistant reply has been
+    # sent in this conversation == this response will be the first one.
+    context = _context(history=[])
+
+    prompt = build_demo_system_prompt(context)
+
+    assert "first message" in prompt.lower()
+
+
+def test_demo_prompt_omits_suggestions_hint_after_the_first_turn():
+    history = [
+        Message(
+            conversation_id=None,
+            business_id=None,
+            direction="inbound",
+            body="hi",
+            type="text",
+            status="received",
+        ),
+        Message(
+            conversation_id=None,
+            business_id=None,
+            direction="outbound",
+            body="Hello! I'm HIRA.",
+            type="text",
+            status="sent",
+        ),
+    ]
+
+    prompt = build_demo_system_prompt(_context(history=history))
+
+    assert "first message" not in prompt.lower()

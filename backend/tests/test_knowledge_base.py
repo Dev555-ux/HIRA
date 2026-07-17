@@ -3,7 +3,7 @@
 import hashlib
 
 from app.ai.embeddings.base import EmbeddingProvider
-from app.ai.knowledge_base import index_entry, retrieve_context, search
+from app.ai.knowledge_base import has_any_entries, index_entry, retrieve_context, search
 from app.models import Business, KbEntry
 
 
@@ -34,6 +34,33 @@ def _business(db, name):
     db.add(biz)
     db.flush()
     return biz
+
+
+def test_has_any_entries_false_for_a_business_with_no_kb(db_session):
+    biz = _business(db_session, "Clinic A")
+    db_session.flush()
+
+    assert has_any_entries(db_session, biz.id) is False
+
+
+def test_has_any_entries_true_once_a_single_entry_exists(db_session):
+    provider = FakeEmbeddingProvider()
+    biz = _business(db_session, "Clinic A")
+
+    index_entry(db_session, biz.id, "Hours", "We open at 9am.", provider=provider)
+
+    assert has_any_entries(db_session, biz.id) is True
+
+
+def test_has_any_entries_is_tenant_scoped(db_session):
+    provider = FakeEmbeddingProvider()
+    biz_a = _business(db_session, "Clinic A")
+    biz_b = _business(db_session, "Clinic B")
+
+    index_entry(db_session, biz_a.id, "Hours", "We open at 9am.", provider=provider)
+
+    assert has_any_entries(db_session, biz_a.id) is True
+    assert has_any_entries(db_session, biz_b.id) is False
 
 
 def test_index_entry_creates_chunk_rows_with_embeddings(db_session):
