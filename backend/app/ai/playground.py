@@ -14,17 +14,34 @@ waiting, so the Assisted-Mode approval gate does not apply here.
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.llm import LLMResponse
+from app.ai.llm import LLMError, LLMResponse
 from app.ai.orchestrator import generate_reply
 from app.ai.tools import response_to_message_fields
 from app.models import Conversation, Customer, KbEntry, Message
 
+logger = logging.getLogger(__name__)
+
 PLAYGROUND_PHONE = "__playground__"
+
+# Customer-visible fallback when the LLM provider itself fails (e.g. Groq's
+# tool_use_failed 400 on a malformed function call — app/api/dashboard.py's
+# regenerate endpoint hits the same LLMError and already treats it as a
+# normal, expected failure mode rather than a crash: see its `except
+# LLMError` there). Demo Chat has no Pending queue to fall back to (there's
+# no human reviewer on a demo conversation), so unlike that endpoint this
+# can't just return an HTTP error — the chat UI has nothing to render for a
+# failed request except an error banner. Resolving it into an ordinary
+# assistant turn instead means the conversation stays usable and the turn is
+# preserved in history, same as any other reply.
+LLM_UNAVAILABLE_TEXT = (
+    "I'm having trouble completing that right now — please try again in a moment."
+)
 
 
 def get_or_create_playground_conversation(db: Session, business_id: uuid.UUID) -> Conversation:
@@ -88,7 +105,14 @@ def playground_reply(
     db.add(inbound)
     db.flush()
 
-    response, retrieved = generate_reply(db, conversation, user_text)
+    try:
+        response, retrieved = generate_reply(db, conversation, user_text)
+    except LLMError:
+        logger.exception(
+            "Demo Chat LLM call failed for business %s; returning fallback reply", business_id
+        )
+        response = LLMResponse(text=LLM_UNAVAILABLE_TEXT, model="unavailable")
+        retrieved = []
     message_type, body, extra_ai_meta = response_to_message_fields(response)
 
     outbound = Message(

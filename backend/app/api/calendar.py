@@ -48,7 +48,17 @@ _DAY_KEYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 def map_calendar_error(exc: CalendarError) -> HTTPException:
     """Shared CalendarError -> HTTPException mapping (also used by app/api/appointments.py)."""
     if isinstance(exc, CalendarNotConfiguredError):
-        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+        # CalendarNotConfiguredError's own message names the missing env var
+        # (e.g. "GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/... are not set") —
+        # exactly what a developer needs, and exactly what a business owner
+        # must never see. Logged here (once, at the point the client-facing
+        # detail is decided) so the real detail isn't lost, then replaced
+        # with a plain-language message for the response.
+        logger.warning("Calendar not configured: %s", exc)
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Calendar integration hasn't been configured yet.",
+        )
     if isinstance(exc, (CalendarNotConnectedError, CalendarAuthError, CalendarConflictError)):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     if isinstance(exc, CalendarNotFoundError):

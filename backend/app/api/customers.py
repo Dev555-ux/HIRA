@@ -23,6 +23,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.ai.playground import PLAYGROUND_PHONE
 from app.auth.dependencies import Principal, get_current_principal
 from app.db.session import get_db
 from app.db.tenant import get_scoped, tenant_query
@@ -149,7 +150,9 @@ def list_customers(
     limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
-    stmt = tenant_query(Customer, principal.business_id)
+    stmt = tenant_query(Customer, principal.business_id).where(
+        Customer.wa_phone != PLAYGROUND_PHONE
+    )
     if search:
         like = f"%{search.strip()}%"
         stmt = stmt.where(or_(Customer.display_name.ilike(like), Customer.wa_phone.ilike(like)))

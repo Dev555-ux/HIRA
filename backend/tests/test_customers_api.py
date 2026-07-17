@@ -93,6 +93,25 @@ def test_list_customers_is_tenant_scoped(db_session):
     app.dependency_overrides.clear()
 
 
+def test_list_customers_excludes_demo_chat_customer(db_session):
+    # Regression: Demo Chat's synthetic customer (wa_phone="__playground__",
+    # app/ai/playground.py) must never appear in the real Customers list —
+    # it previously did, since this query had no wa_phone exclusion.
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    _customer(db_session, biz.id, wa_phone="+10000001")
+    _customer(db_session, biz.id, wa_phone="__playground__", display_name="Demo Chat")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/customers", headers=_auth())
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["wa_phone"] == "+10000001"
+    app.dependency_overrides.clear()
+
+
 def test_list_customers_search_matches_name_or_phone(db_session):
     biz, _ = _seed_business(db_session, "A", "user_a")
     _customer(db_session, biz.id, wa_phone="+10000001", display_name="Jordan Lee")

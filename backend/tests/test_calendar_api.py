@@ -229,6 +229,16 @@ def test_oauth_connect_returns_503_when_not_configured(db_session, monkeypatch):
     resp = client.get("/api/v1/calendar/oauth/connect", headers=_auth())
 
     assert resp.status_code == 503
+    # Regression: this used to echo CalendarNotConfiguredError's own message
+    # verbatim ("GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/... are not set")
+    # straight to the customer-facing toast. The detail must stay generic —
+    # no env var names, no implementation details.
+    detail = resp.json()["detail"]
+    assert "GOOGLE_CLIENT_ID" not in detail
+    assert "GOOGLE_CLIENT_SECRET" not in detail
+    assert "GOOGLE_OAUTH_REDIRECT_URI" not in detail
+    assert "CALENDAR_ENCRYPTION_KEY" not in detail
+    assert detail == "Calendar integration hasn't been configured yet."
     app.dependency_overrides.clear()
 
 
