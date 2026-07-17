@@ -103,6 +103,30 @@ def test_create_appointment_books_via_appointment_service(db_session, monkeypatc
     app.dependency_overrides.clear()
 
 
+def test_create_appointment_rejects_oversized_summary(db_session, monkeypatch):
+    # Regression: summary had no max_length — Sprint 52B, Task 2.
+    from app.api.appointments import MAX_SUMMARY_LENGTH
+
+    biz, _, customer = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    _mock_service(monkeypatch)
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/appointments",
+        json={
+            "customer_id": str(customer.id),
+            "starts_at": NOW.isoformat(),
+            "ends_at": (NOW + timedelta(hours=1)).isoformat(),
+            "summary": "x" * (MAX_SUMMARY_LENGTH + 1),
+        },
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
 def test_create_appointment_durably_commits_independent_of_caller(db_session, monkeypatch):
     """Section A4: book_appointment's default commit=True must remain the
     sole thing that persists a REST-created appointment, exactly as before

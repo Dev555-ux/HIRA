@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.ai.playground import PLAYGROUND_PHONE
 from app.auth.dependencies import Principal, get_current_principal
 from app.db.session import get_db
 from app.db.tenant import get_scoped
@@ -112,6 +113,7 @@ def list_conversations(
         select(Conversation, Customer)
         .join(Customer, Customer.id == Conversation.customer_id)
         .where(Conversation.business_id == principal.business_id)
+        .where(Customer.wa_phone != PLAYGROUND_PHONE)
     )
 
     if search:

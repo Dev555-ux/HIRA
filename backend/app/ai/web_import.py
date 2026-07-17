@@ -12,12 +12,15 @@ as app/services/messaging.py.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import socket
 from collections.abc import Callable
 from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 _NOISE_TAGS = ("script", "style", "nav", "footer", "header", "aside", "noscript", "form", "iframe")
 _AD_HINTS = ("ad", "ads", "advert", "banner", "sponsor", "promo")
@@ -52,7 +55,14 @@ def fetch_page(
             )
             response.raise_for_status()
         except httpx.HTTPError as exc:
-            raise WebImportError(f"Could not fetch {url}: {exc}") from exc
+            # exc can be a raw connection/DNS/timeout error (or, via
+            # raise_for_status(), an HTTPStatusError) — logged here rather
+            # than embedded in the message, which becomes a 422 `detail` a
+            # business owner sees directly (Sprint 52B, Task 5).
+            logger.warning("Failed to fetch %s: %s", url, exc)
+            raise WebImportError(
+                f"Could not fetch {url}. Please check the URL and try again."
+            ) from exc
     finally:
         if owns_client:
             client.close()
@@ -84,7 +94,10 @@ def _resolve_host(hostname: str) -> list[str]:
     try:
         infos = socket.getaddrinfo(hostname, None)
     except socket.gaierror as exc:
-        raise WebImportError(f"Could not resolve host {hostname}: {exc}") from exc
+        # exc is a raw OS-level resolver error (e.g. "[Errno 8] nodename nor
+        # servname provided") — same reasoning as fetch_page's HTTPError above.
+        logger.warning("Failed to resolve host %s: %s", hostname, exc)
+        raise WebImportError(f"Could not resolve host {hostname}.") from exc
     return [sockaddr[0] for _, _, _, _, sockaddr in infos]
 
 

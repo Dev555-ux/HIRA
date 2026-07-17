@@ -90,6 +90,26 @@ def test_playground_rejects_blank_message(db_session, monkeypatch):
     app.dependency_overrides.clear()
 
 
+def test_playground_rejects_oversized_message(db_session, monkeypatch):
+    # Regression: message had no max_length — a pathological submission would
+    # be sent straight to the LLM at full cost (Sprint 52B, Task 2).
+    from app.api.onboarding import MAX_PLAYGROUND_MESSAGE_LENGTH
+
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    _mock_providers(monkeypatch)
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/onboarding/playground/message",
+        headers=_auth(),
+        json={"message": "x" * (MAX_PLAYGROUND_MESSAGE_LENGTH + 1)},
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
 def test_playground_is_scoped_to_calling_business(db_session, monkeypatch):
     biz_a, _ = _seed_business(db_session, "A", "user_a")
     index_entry(

@@ -229,6 +229,16 @@ def test_oauth_connect_returns_503_when_not_configured(db_session, monkeypatch):
     resp = client.get("/api/v1/calendar/oauth/connect", headers=_auth())
 
     assert resp.status_code == 503
+    # Regression: this used to echo CalendarNotConfiguredError's own message
+    # verbatim ("GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/... are not set")
+    # straight to the customer-facing toast. The detail must stay generic —
+    # no env var names, no implementation details.
+    detail = resp.json()["detail"]
+    assert "GOOGLE_CLIENT_ID" not in detail
+    assert "GOOGLE_CLIENT_SECRET" not in detail
+    assert "GOOGLE_OAUTH_REDIRECT_URI" not in detail
+    assert "CALENDAR_ENCRYPTION_KEY" not in detail
+    assert detail == "Calendar integration hasn't been configured yet."
     app.dependency_overrides.clear()
 
 
@@ -319,6 +329,12 @@ def test_oauth_callback_redirects_with_error_when_exchange_fails(db_session, mon
     location = urlparse(resp.headers["location"])
     assert parse_qs(location.query)["calendar"] == ["error"]
     assert get_stored_credential(db_session, biz.id) is None
+    # Regression: this used to put str(exc) straight into the redirect URL's
+    # `message` param — a raw underlying oauthlib/google-auth exception could
+    # end up shown in the browser (Sprint 52B, Task 5).
+    assert parse_qs(location.query)["message"] == [
+        "Couldn't connect Google Calendar. Please try again."
+    ]
     app.dependency_overrides.clear()
 
 

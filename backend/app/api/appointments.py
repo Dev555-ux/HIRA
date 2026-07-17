@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -34,13 +34,17 @@ router = APIRouter(prefix="/api/v1/appointments", tags=["appointments"])
 # business.
 DEFAULT_APPOINTMENT_LIMIT = 200
 MAX_APPOINTMENT_LIMIT = 200
+# summary isn't persisted locally (Appointment has no such column — it's
+# forwarded straight to the Google Calendar event title), so this is a
+# sensible calendar-event-title-sized bound rather than a DB-column match.
+MAX_SUMMARY_LENGTH = 255
 
 
 class CreateAppointmentRequest(BaseModel):
     customer_id: uuid.UUID
     starts_at: datetime
     ends_at: datetime
-    summary: str
+    summary: str = Field(max_length=MAX_SUMMARY_LENGTH)
     conversation_id: uuid.UUID | None = None
 
 

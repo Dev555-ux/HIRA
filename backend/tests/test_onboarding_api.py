@@ -135,6 +135,23 @@ def test_create_business_rejects_invalid_timezone(db_session):
     assert resp.status_code == 422
 
 
+def test_create_business_rejects_oversized_name(db_session):
+    # Regression: name had no max_length, and Business.name's own DB column
+    # is String(255) — an oversized value used to fail at commit with a raw
+    # DB error instead of a clean 422 (Sprint 52B, Task 2).
+    from app.api.onboarding import MAX_NAME_LENGTH
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_oversized"})
+
+    resp = client.post(
+        "/api/v1/onboarding/business",
+        json={**VALID_PAYLOAD, "name": "x" * (MAX_NAME_LENGTH + 1)},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+
+
 def test_create_business_is_idempotent_for_same_clerk_user(db_session):
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_twice"})
 

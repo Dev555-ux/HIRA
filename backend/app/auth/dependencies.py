@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.clerk import verify_clerk_token
 from app.core.config import settings
+from app.core.monitoring import set_business_context
 from app.db.session import get_db
 from app.models import User
 
@@ -89,6 +90,7 @@ def get_verified_clerk_user_id(
 
 
 def get_current_principal(
+    request: Request,
     clerk_user_id: str = Depends(get_verified_clerk_user_id),
     db: Session = Depends(get_db),
 ) -> Principal:
@@ -96,6 +98,14 @@ def get_current_principal(
     if user is None:
         logger.info("No User row for clerk_user_id=%s", clerk_user_id)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown user")
+
+    # Every protected route depends on this function, making it the one place
+    # that can know business_id early enough for app.core.request_logging's
+    # per-request log line to include it — that middleware sees only
+    # `request.state`, not route dependencies. Also tags Sentry (a no-op if
+    # SENTRY_DSN isn't set — see app/core/monitoring.py).
+    request.state.business_id = str(user.business_id)
+    set_business_context(str(user.business_id))
 
     return Principal(
         user_id=user.id,

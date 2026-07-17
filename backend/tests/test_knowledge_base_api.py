@@ -72,6 +72,25 @@ def test_create_rejects_blank_fields(db_session):
     app.dependency_overrides.clear()
 
 
+def test_create_rejects_oversized_content(db_session):
+    # Regression: content had no max_length — a pathological submission would
+    # embed/chunk an unbounded amount of text per request (Sprint 52B, Task 2).
+    from app.api.knowledge_base import MAX_KB_CONTENT_LENGTH
+
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.post(
+        "/api/v1/kb",
+        headers=_auth(),
+        json={"title": "Hours", "content": "x" * (MAX_KB_CONTENT_LENGTH + 1)},
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
 def test_list_is_tenant_scoped(db_session):
     biz_a, _ = _seed_business(db_session, "A", "user_a")
     biz_b, _ = _seed_business(db_session, "B", "user_b")

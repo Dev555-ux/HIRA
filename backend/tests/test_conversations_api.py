@@ -107,6 +107,30 @@ def test_list_is_tenant_scoped(db_session):
     app.dependency_overrides.clear()
 
 
+def test_list_excludes_demo_chat_conversation(db_session):
+    # Regression: Demo Chat's synthetic customer (wa_phone="__playground__",
+    # app/ai/playground.py) must never appear beside real customers in the
+    # Inbox — it previously did, since this query only filtered by
+    # business_id.
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    real_customer = _customer(db_session, biz.id, wa_phone="+10000001")
+    demo_customer = _customer(
+        db_session, biz.id, wa_phone="__playground__", display_name="Demo Chat"
+    )
+    _conversation(db_session, biz.id, real_customer.id)
+    _conversation(db_session, biz.id, demo_customer.id)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth())
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["customer"]["wa_phone"] == "+10000001"
+    app.dependency_overrides.clear()
+
+
 def test_get_conversation_requires_authentication(db_session):
     biz, _ = _seed_business(db_session, "A", "user_a")
     cust = _customer(db_session, biz.id, wa_phone="+10000001")

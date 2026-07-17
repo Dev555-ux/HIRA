@@ -8,6 +8,7 @@ this skeleton in later Sprint 1 tasks.
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -22,6 +23,9 @@ from app.api.leads import router as leads_router
 from app.api.onboarding import router as onboarding_router
 from app.api.settings import router as settings_router
 from app.core.config import settings
+from app.core.monitoring import capture_exception, init_sentry
+from app.core.rate_limit import init_rate_limiting
+from app.core.request_logging import RequestLoggingMiddleware
 from app.webhooks.whatsapp import router as whatsapp_router
 
 logger = logging.getLogger(__name__)
@@ -59,6 +63,7 @@ def _configure_app_logging() -> None:
 
 
 _configure_app_logging()
+init_sentry()
 
 app = FastAPI(title="HIRA Backend", version="0.1.0")
 
@@ -75,9 +80,38 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     previously surfaced as a bare 500 with zero application-level log entry
     (Starlette's default handler doesn't log anything; only uvicorn's raw
     stderr traceback, unstructured and with no request context).
+
+    Response body is deliberately generic (Sprint 52B, Task 5) — a stack
+    trace or exception name/message here would be shown directly to the
+    customer; the real detail stays server-side, in this log line and in
+    Sentry (capture_exception — a no-op unless SENTRY_DSN is set).
     """
     logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    capture_exception(exc)
+    return JSONResponse(
+        status_code=500, content={"detail": "Something went wrong. Please try again."}
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's default handler for this exception returns `detail` as a
+    *list* of Pydantic error dicts (type/loc/msg/...) — every manually raised
+    HTTPException elsewhere in this app returns `detail` as a plain string,
+    and the frontend's error rendering (frontend/src/lib/api.ts's ApiError)
+    assumes exactly that (Sprint 52B, Task 5/2 regression: adding a
+    `max_length` to a field made its 422 render as the literal text
+    "[object Object]" in the UI — a list of objects coerced to a string).
+
+    Same "field: message" join style app/core/config.py's own
+    _load_settings() already uses for its own Pydantic errors, minus the
+    "body"/"query" location prefix, which isn't meaningful to a customer.
+    """
+    detail = "; ".join(
+        f"{'.'.join(str(p) for p in err['loc'][1:]) or 'value'}: {err['msg']}"
+        for err in exc.errors()
+    )
+    return JSONResponse(status_code=422, content={"detail": detail})
 
 
 # Fixed localhost dev ports, the production Vercel domain, plus
@@ -104,6 +138,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Added after CORSMiddleware so it's the outermost middleware (Starlette
+# wraps in reverse add order) — the per-request log line then covers the
+# full round trip, CORS handling included (Sprint 52B, Task 4).
+app.add_middleware(RequestLoggingMiddleware)
+init_rate_limiting(app)
 app.include_router(whatsapp_router)
 app.include_router(dashboard_router)
 app.include_router(knowledge_base_router)

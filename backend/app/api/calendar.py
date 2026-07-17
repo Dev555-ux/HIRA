@@ -48,12 +48,38 @@ _DAY_KEYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 def map_calendar_error(exc: CalendarError) -> HTTPException:
     """Shared CalendarError -> HTTPException mapping (also used by app/api/appointments.py)."""
     if isinstance(exc, CalendarNotConfiguredError):
-        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
-    if isinstance(exc, (CalendarNotConnectedError, CalendarAuthError, CalendarConflictError)):
+        # CalendarNotConfiguredError's own message names the missing env var
+        # (e.g. "GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/... are not set") —
+        # exactly what a developer needs, and exactly what a business owner
+        # must never see. Logged here (once, at the point the client-facing
+        # detail is decided) so the real detail isn't lost, then replaced
+        # with a plain-language message for the response.
+        logger.warning("Calendar not configured: %s", exc)
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Calendar integration hasn't been configured yet.",
+        )
+    if isinstance(exc, (CalendarNotConnectedError, CalendarConflictError)):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    if isinstance(exc, CalendarAuthError):
+        # Unlike the two above, this one's message isn't always hand-authored
+        # — app/calendar/oauth.py's token-exchange failure wraps whatever the
+        # underlying oauthlib/google-auth exception says (Sprint 52B, Task 5).
+        logger.warning("Calendar auth failed: %s", exc)
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Couldn't complete the Google Calendar connection. Please try again.",
+        )
     if isinstance(exc, CalendarNotFoundError):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    # Any other CalendarError (e.g. CalendarProviderUnavailableError, which
+    # also wraps a raw underlying provider exception) — same reasoning as
+    # above, generic message only.
+    logger.warning("Unhandled calendar error: %s", exc)
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Something went wrong with the calendar. Please try again.",
+    )
 
 
 class WorkingHoursDay(BaseModel):
@@ -183,8 +209,11 @@ def oauth_callback(
         refresh_token = oauth.exchange_code_for_refresh_token(code)
         calendar_credentials.store_credentials(db, business_id, refresh_token)
     except CalendarError as exc:
+        # exc's own message can wrap a raw underlying oauthlib/google-auth
+        # exception (app/calendar/oauth.py) — logged here, but never put in
+        # the redirect URL a customer's browser follows (Sprint 52B, Task 5).
         logger.warning("Calendar OAuth exchange failed for business %s: %s", business_id, exc)
-        return _redirect_to_frontend("error", str(exc))
+        return _redirect_to_frontend("error", "Couldn't connect Google Calendar. Please try again.")
 
     return _redirect_to_frontend("connected")
 

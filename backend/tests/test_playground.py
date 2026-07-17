@@ -1,14 +1,32 @@
 """Tests for the AI Playground: reuses generate_reply(), never duplicates it."""
 
 from app.ai.knowledge_base import index_entry
+from app.ai.llm.base import ChatMessage, LLMError, LLMProvider, LLMResponse, ToolSchema
 from app.ai.llm.mock import MockProvider
 from app.ai.playground import (
+    LLM_UNAVAILABLE_TEXT,
     PLAYGROUND_PHONE,
     get_or_create_playground_conversation,
     playground_reply,
 )
 from app.models import Business, Conversation, Customer, Message
 from tests.test_knowledge_base import FakeEmbeddingProvider
+
+
+class FailingProvider(LLMProvider):
+    """Simulates Groq's real tool_use_failed 400 (a malformed function call) —
+    the exact live crash Demo Chat previously let propagate as an unhandled
+    500 instead of a chat reply."""
+
+    def generate(
+        self,
+        *,
+        system: str,
+        messages: list[ChatMessage],
+        max_tokens: int | None = None,
+        tools: list[ToolSchema] | None = None,
+    ) -> LLMResponse:
+        raise LLMError("Groq rejected the request: tool_use_failed")
 
 
 def _business(db, name="Clinic A"):
@@ -109,6 +127,35 @@ def test_playground_does_not_touch_real_customer_conversations(db_session, monke
     playground_reply(db_session, biz.id, "test message")
 
     assert db_session.query(Message).filter_by(conversation_id=real_conversation.id).count() == 0
+
+
+def test_playground_reply_falls_back_gracefully_on_llm_error(db_session, monkeypatch):
+    biz = _business(db_session)
+    monkeypatch.setattr("app.ai.orchestrator.get_llm_provider", lambda name=None: FailingProvider())
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+
+    response, retrieved, body = playground_reply(
+        db_session, biz.id, "do you have slots free this friday?"
+    )
+
+    assert body == LLM_UNAVAILABLE_TEXT
+    assert response.text == LLM_UNAVAILABLE_TEXT
+    assert retrieved == []
+
+    conversation = get_or_create_playground_conversation(db_session, biz.id)
+    messages = (
+        db_session.query(Message)
+        .filter_by(conversation_id=conversation.id)
+        .order_by(Message.created_at)
+        .all()
+    )
+    # The turn is still persisted (inbound + a resolved outbound fallback) —
+    # not silently dropped, and not left as a half-written transaction.
+    assert [m.direction for m in messages] == ["inbound", "outbound"]
+    assert messages[1].body == LLM_UNAVAILABLE_TEXT
+    assert messages[1].status == "sent"
 
 
 def test_playground_shows_a_preview_instead_of_a_blank_reply_for_a_proposed_tool_call(

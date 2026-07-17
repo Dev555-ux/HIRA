@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import logging
 
-from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.ai.playground import playground_reply
 from app.auth.dependencies import Principal, get_current_principal, get_verified_clerk_user_id
+from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.core.timezones import validate_timezone
 from app.db.session import get_db
 from app.models import Business
@@ -34,18 +36,32 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
 
+# Sprint 52B: matches each field's own Business/User column length (see
+# app/models.py) — without these, an oversized value fails at commit with a
+# raw DB error instead of a clean 422.
+MAX_NAME_LENGTH = 255
+MAX_EMAIL_LENGTH = 320
+MAX_INDUSTRY_LENGTH = 100
+MAX_COUNTRY_LENGTH = 100
+MAX_TIMEZONE_LENGTH = 64
+# Demo Chat has no document upload — this is a chat message, not a document
+# (that's what Business Knowledge/website-import are for) — bounds the cost
+# of a single Groq/Claude call, matching UpdateDraftRequest's existing
+# MAX_DRAFT_LENGTH convention (app/api/dashboard.py) for a "message body".
+MAX_PLAYGROUND_MESSAGE_LENGTH = 4096
+
 
 class ProvisionBusinessRequest(BaseModel):
-    name: str
-    owner_email: str
-    industry: str | None = None
-    contact_email: str | None = None
-    country: str | None = None
-    timezone: str | None = None
+    name: str = Field(max_length=MAX_NAME_LENGTH)
+    owner_email: str = Field(max_length=MAX_EMAIL_LENGTH)
+    industry: str | None = Field(default=None, max_length=MAX_INDUSTRY_LENGTH)
+    contact_email: str | None = Field(default=None, max_length=MAX_EMAIL_LENGTH)
+    country: str | None = Field(default=None, max_length=MAX_COUNTRY_LENGTH)
+    timezone: str | None = Field(default=None, max_length=MAX_TIMEZONE_LENGTH)
 
 
 class PlaygroundMessageRequest(BaseModel):
-    message: str
+    message: str = Field(max_length=MAX_PLAYGROUND_MESSAGE_LENGTH)
 
 
 def _looks_like_email(value: str) -> bool:
@@ -88,7 +104,9 @@ def onboarding_status(
 
 
 @router.post("/business", status_code=status.HTTP_201_CREATED)
+@limiter.limit(lambda: settings.rate_limit_business_creation)
 def create_business(
+    request: Request,
     payload: ProvisionBusinessRequest,
     clerk_user_id: str = Depends(get_verified_clerk_user_id),
     db: Session = Depends(get_db),
@@ -121,7 +139,9 @@ def create_business(
 
 
 @router.post("/playground/message")
+@limiter.limit(lambda: settings.rate_limit_demo_chat)
 def playground_message(
+    request: Request,
     payload: PlaygroundMessageRequest,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
