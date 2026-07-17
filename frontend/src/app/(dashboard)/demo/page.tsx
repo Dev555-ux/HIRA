@@ -5,11 +5,13 @@ import { Bot, Copy, RotateCcw, Send, Sparkles, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MarkdownLite } from "@/components/markdown-lite";
 import { PageHeader } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { useKbEntries } from "@/hooks/use-knowledge-base";
 import { usePlaygroundHistory, useSendPlaygroundMessage } from "@/hooks/use-playground";
 import { ApiError } from "@/lib/api";
 import type { Message } from "@/lib/types";
@@ -25,6 +27,19 @@ const SUGGESTED_PROMPTS = [
   "Explain my uploaded business knowledge.",
   "Show today's business overview.",
 ];
+
+// Sprint 56 — Demo Mode's own conversation starters. Kept separate from
+// SUGGESTED_PROMPTS above (which is for businesses that already have
+// Business Knowledge and must stay exactly as it was) since these are
+// deliberately capability-focused rather than data-dependent — nothing here
+// assumes the business has taught HIRA anything yet.
+const DEMO_MODE_STARTERS = [
+  { emoji: "💬", label: "What can you do?" },
+  { emoji: "📅", label: "Can you schedule meetings?" },
+  { emoji: "👥", label: "Can you create CRM leads?" },
+  { emoji: "🧠", label: "How do I learn about my business?" },
+  { emoji: "📄", label: "Explain Business Knowledge" },
+] as const;
 
 interface PendingTurn {
   text: string;
@@ -109,6 +124,43 @@ function ChatBubble({
   );
 }
 
+function DemoWelcome({ onStarterClick }: { onStarterClick: (prompt: string) => void }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 py-8 text-center">
+      <Card className="max-w-md animate-fade-in-up text-left">
+        <CardContent className="flex flex-col items-center gap-3 p-6 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-2xl" aria-hidden="true">
+            👋
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">Welcome to HIRA</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              I&apos;m your AI Business Employee. I haven&apos;t learned about your business yet,
+              but I&apos;d love to show you what I can do.
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Chat with me right now, or upload Business Knowledge whenever you&apos;re ready.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap justify-center gap-2">
+        {DEMO_MODE_STARTERS.map((starter) => (
+          <button
+            key={starter.label}
+            type="button"
+            onClick={() => onStarterClick(starter.label)}
+            className="rounded-full border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span aria-hidden="true">{starter.emoji}</span> {starter.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function UpgradeCard() {
   return (
     <Card className="mt-6">
@@ -129,6 +181,14 @@ function UpgradeCard() {
 
 export default function DemoChatPage() {
   const { data: history, isLoading: historyLoading } = usePlaygroundHistory();
+  // Sprint 56: Demo Mode is detected purely on the frontend by reusing the
+  // existing Business Knowledge list (already fetched on the Knowledge Base
+  // page) — no backend change, no new endpoint. "No Business Knowledge
+  // uploaded yet" is exactly the condition app/ai/orchestrator.py's Demo
+  // Mode (Sprint 55) branches on, so this mirrors that same fact rather than
+  // guessing at it independently.
+  const { data: kbEntries, isLoading: kbLoading } = useKbEntries();
+  const isDemoMode = !kbLoading && (kbEntries?.length ?? 0) === 0;
   const sendMessage = useSendPlaygroundMessage();
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<PendingTurn | null>(null);
@@ -178,6 +238,16 @@ export default function DemoChatPage() {
       <PageHeader
         title="Demo Chat"
         description="Chat with HIRA right now — the exact same AI that answers your customers on WhatsApp, with no setup required."
+        action={
+          isDemoMode ? (
+            <Badge
+              variant="secondary"
+              title="This business hasn't uploaded Business Knowledge yet."
+            >
+              🧪 Demo Mode
+            </Badge>
+          ) : undefined
+        }
       />
 
       <Card className="flex h-[calc(100dvh-13rem)] min-h-[28rem] flex-col overflow-hidden">
@@ -189,7 +259,16 @@ export default function DemoChatPage() {
             </div>
           )}
 
-          {isEmpty && (
+          {/* Sprint 56: gated on !kbLoading so neither variant flashes
+              before we actually know whether this business has Business
+              Knowledge — isDemoMode is only ever meaningful once that
+              resolves. Everything under the `false` branch below is the
+              pre-Sprint-56 empty state, untouched (requirement 6: no
+              behavioural or visual change for a business that already has
+              Business Knowledge). */}
+          {isEmpty && !kbLoading && (isDemoMode ? (
+            <DemoWelcome onStarterClick={(prompt) => void submitMessage(prompt)} />
+          ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-6 py-8 text-center">
               <div className="flex size-12 items-center justify-center rounded-full bg-muted">
                 <Sparkles className="size-6 text-muted-foreground" />
@@ -213,7 +292,7 @@ export default function DemoChatPage() {
                 ))}
               </div>
             </div>
-          )}
+          ))}
 
           {!historyLoading &&
             messages.map((message) => (
