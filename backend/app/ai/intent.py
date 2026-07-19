@@ -61,7 +61,7 @@ _ACTION_VERB_RE = re.compile(
 # "Can/could I <verb>" — a first-person request to do something, distinct
 # from _CAPABILITY_MODAL_RE's "can YOU" (asking about HIRA's own ability).
 _FIRST_PERSON_ACTION_RE = re.compile(
-    rf"\b(can|could)\s+(i|we)\b.*\b(book|schedule|cancel|reschedule|get)\b"
+    r"\b(can|could)\s+(i|we)\b.*\b(book|schedule|cancel|reschedule|get)\b"
 )
 _TIME_MARKER_RE = re.compile(
     r"\b(today|tomorrow|tonight|next\s+\w+|this\s+\w+|"
