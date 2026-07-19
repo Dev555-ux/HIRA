@@ -1,4 +1,5 @@
 import { SignIn } from "@clerk/nextjs";
+import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { authEnabled } from "@/lib/config";
 
 export default function SignInPage() {
@@ -14,8 +15,11 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <AuthPageShell
+      heading="Welcome back"
+      subheading="Sign in to your HIRA dashboard."
+    >
       <SignIn />
-    </div>
+    </AuthPageShell>
   );
 }

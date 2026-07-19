@@ -4,12 +4,31 @@ import { describe, expect, it } from "vitest";
 import { MarketingPage } from "./marketing-page";
 
 describe("MarketingPage", () => {
-  it("renders exactly one h1 explaining what HIRA is", () => {
+  it("renders exactly one h1 leading with the customer's problem", () => {
     render(<MarketingPage />);
 
     const headings = screen.getAllByRole("heading", { level: 1 });
     expect(headings).toHaveLength(1);
-    expect(headings[0]).toHaveTextContent(/employee/i);
+    expect(headings[0]).toHaveTextContent(/never miss another customer message/i);
+  });
+
+  it("shows a Founder Beta badge", () => {
+    render(<MarketingPage />);
+
+    expect(screen.getByText(/founder beta/i)).toBeInTheDocument();
+  });
+
+  it("proves the product with a WhatsApp-style conversation below the hero", () => {
+    render(<MarketingPage />);
+
+    expect(screen.getByText(/booked for 4:00pm tomorrow/i)).toBeInTheDocument();
+  });
+
+  it("shows a lightweight trust checklist of things HIRA does today", () => {
+    render(<MarketingPage />);
+
+    expect(screen.getByText("Replies automatically")).toBeInTheDocument();
+    expect(screen.getByText("Escalates to humans")).toBeInTheDocument();
   });
 
   it("links every primary CTA to sign-up", () => {
@@ -50,7 +69,7 @@ describe("MarketingPage", () => {
     expect(h2s.some((t) => /front desk/i.test(t ?? ""))).toBe(true); // Features
     expect(h2s.some((t) => /four steps/i.test(t ?? ""))).toBe(true); // How it works
     expect(h2s.some((t) => /frequently asked/i.test(t ?? ""))).toBe(true); // FAQ
-    expect(h2s.some((t) => /hire your first ai employee/i.test(t ?? ""))).toBe(true); // Final CTA
+    expect(h2s.some((t) => /never miss another message again/i.test(t ?? ""))).toBe(true); // Final CTA
   });
 
   it("never claims HIRA is an 'AI receptionist' anywhere on the page", () => {
