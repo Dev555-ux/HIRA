@@ -195,7 +195,7 @@ describe("SettingsPage", () => {
       ).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Send a test message" })).toHaveAttribute(
         "href",
-        "/playground",
+        "/demo",
       );
     });
 

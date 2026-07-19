@@ -72,9 +72,9 @@ describe("InboxPage", () => {
   it("shows the empty state when there are no conversations", async () => {
     renderWithProviders(<InboxPage />);
     expect(await screen.findByText("No conversations yet")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Try the Playground" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Try Demo Chat" })).toHaveAttribute(
       "href",
-      "/playground",
+      "/demo",
     );
   });
 

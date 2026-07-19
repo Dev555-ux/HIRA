@@ -15,7 +15,7 @@ export default function robots(): MetadataRoute.Robots {
           "/inbox",
           "/pending",
           "/knowledge-base",
-          "/playground",
+          "/demo",
           "/customers",
           "/leads",
           "/appointments",

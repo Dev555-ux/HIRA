@@ -1,15 +1,20 @@
-"""AI Playground — a synchronous test-drive of the AI receptionist.
+"""Demo Chat (formerly "Playground") — a second transport onto the exact same
+AI pipeline WhatsApp uses.
 
 Reuses the production reply pipeline exactly: `orchestrator.generate_reply()`
 is called unmodified, so retrieval, prompt building, and the Groq/Claude LLM
 call are never duplicated here. See ONBOARDING_ARCHITECTURE.md §4.4.
 
 One synthetic Customer/Conversation per business (`wa_phone="__playground__"`)
-gives each playground turn real conversation history for free — the same
+gives each turn real conversation history for free — the same
 `_load_history()` the WhatsApp pipeline already uses, not a parallel one.
-Turns are persisted as ordinary `Message` rows so that history works, but the
-outbound message is marked `sent` immediately: there is no real customer
-waiting, so the Assisted-Mode approval gate does not apply here.
+Turns are persisted as ordinary `Message` rows so that history works, and a
+proposed tool call (a booking, a lead) executes for real via the exact same
+`execute_tool_call()`/`confirmation_message_for()` Autonomous Mode's
+`_auto_send` already uses (app/ai/processing.py) — there is no real customer
+or human reviewer on the other end of a demo conversation, so the
+Assisted-Mode approval gate would only ever be a dead end here, same
+reasoning `_auto_send` already applies to Autonomous Mode.
 """
 
 from __future__ import annotations
@@ -21,8 +26,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.llm import LLMError, LLMResponse
+from app.ai.llm.base import ToolCall
 from app.ai.orchestrator import generate_reply
-from app.ai.tools import response_to_message_fields
+from app.ai.tools import confirmation_message_for, execute_tool_call, response_to_message_fields
 from app.models import Conversation, Customer, KbEntry, Message
 
 logger = logging.getLogger(__name__)
@@ -57,7 +63,7 @@ def get_or_create_playground_conversation(db: Session, business_id: uuid.UUID) -
     ).first()
     if customer is None:
         customer = Customer(
-            business_id=business_id, wa_phone=PLAYGROUND_PHONE, display_name="Playground"
+            business_id=business_id, wa_phone=PLAYGROUND_PHONE, display_name="Demo Chat"
         )
         db.add(customer)
         db.flush()
@@ -78,19 +84,19 @@ def get_or_create_playground_conversation(db: Session, business_id: uuid.UUID) -
 
 def playground_reply(
     db: Session, business_id: uuid.UUID, user_text: str
-) -> tuple[LLMResponse, list[KbEntry], str]:
-    """Run one playground turn through the unmodified production reply pipeline.
+) -> tuple[LLMResponse, list[KbEntry], str, dict | None]:
+    """Run one Demo Chat turn through the unmodified production reply pipeline.
 
-    Returns (response, retrieved_entries, body) — unlike the architecture
-    doc's sketch, the retrieved entries are surfaced (not discarded) so the
-    Playground UI can show which Knowledge Base entries grounded the answer.
-    `body` is the human-readable text actually stored/shown: if the model
-    proposed a calendar action (DEC-032) `response.text` is empty, so this
-    uses the same `response_to_message_fields()` preview `app/ai/processing.py`
-    uses — without it, a proposed booking would show as a blank reply here,
-    a real gap found while live-testing this sprint. The playground never
-    executes a proposed action (no Assisted-Mode approval gate here at all,
-    but there's also no real customer/calendar write to make sense of).
+    Returns (response, retrieved_entries, body, tool_outcome). `retrieved_entries`
+    is surfaced (not discarded) so the UI can show which Business Knowledge
+    entries grounded the answer. `body` is the final, human-readable text
+    actually stored/shown — if the model proposed a tool call, this is its
+    *resolved* confirmation or failure text (see below), never the internal
+    dashboard-editable preview `app/api/dashboard.py`'s Pending queue shows.
+    `tool_outcome` is `{"name": str, "success": bool}` when a tool call was
+    involved, else `None` — lets the UI show a small "✓ Lead logged" style
+    note distinct from the chat bubble, without the frontend needing to know
+    anything about tool internals.
     """
     conversation = get_or_create_playground_conversation(db, business_id)
 
@@ -114,6 +120,36 @@ def playground_reply(
         response = LLMResponse(text=LLM_UNAVAILABLE_TEXT, model="unavailable")
         retrieved = []
     message_type, body, extra_ai_meta = response_to_message_fields(response)
+    ai_meta = {"model": response.model, "retrieved_count": len(retrieved), **extra_ai_meta}
+
+    tool_outcome: dict | None = None
+    if message_type == "tool_call":
+        # Demo Chat executes proposed actions immediately rather than holding
+        # them in the Pending Approvals queue — there is no real customer or
+        # human reviewer waiting on a demo conversation, so "pending approval"
+        # here would just be a permanent dead end. Reuses the exact same
+        # execute_tool_call()/confirmation_message_for() Autonomous Mode's
+        # _auto_send already calls (app/ai/processing.py) — no new execution
+        # path, no bypass of the tool layer.
+        tool_call = ToolCall(
+            id="demo", name=extra_ai_meta["tool_name"], arguments=extra_ai_meta["tool_arguments"]
+        )
+        result = execute_tool_call(
+            db,
+            business_id,
+            tool_call,
+            customer_id=conversation.customer_id,
+            conversation_id=conversation.id,
+        )
+        ai_meta["tool_result"] = result.message
+        tool_outcome = {"name": tool_call.name, "success": result.success}
+        # Either way, the customer-visible text is a resolved outcome, never
+        # the Pending queue's internal "Book: ..." editable preview (Section
+        # A1's same fix, applied here) — success gets the deterministic
+        # confirmation text; failure gets the tool's own honest reason (e.g.
+        # "This business has not connected a Google Calendar").
+        message_type = "text"
+        body = confirmation_message_for(tool_call, result) if result.success else result.message
 
     outbound = Message(
         conversation_id=conversation.id,
@@ -122,9 +158,9 @@ def playground_reply(
         body=body,
         type=message_type,
         status="sent",
-        ai_meta={"model": response.model, "retrieved_count": len(retrieved), **extra_ai_meta},
+        ai_meta=ai_meta,
     )
     db.add(outbound)
     db.commit()
 
-    return response, retrieved, body
+    return response, retrieved, body, tool_outcome

@@ -343,18 +343,33 @@ export interface ImportWebsiteResult {
   entries: { id: string; title: string; content: string }[];
 }
 
-// AI Playground (/api/v1/onboarding/playground/message) — a synchronous
-// test-drive of the same generate_reply() pipeline the WhatsApp webhook uses.
+// Demo Chat (/api/v1/onboarding/playground/*, formerly "Playground") — a
+// second transport onto the exact same generate_reply() pipeline the
+// WhatsApp webhook uses; see backend/app/ai/playground.py.
 export interface PlaygroundKbEntry {
   id: string;
   title: string;
   content: string;
 }
 
+// Present only when the reply involved a proposed tool call (a booking, a
+// lead) — Demo Chat executes it immediately (no human reviewer on a demo
+// conversation), so this reports what actually happened.
+export interface PlaygroundToolOutcome {
+  name: string;
+  success: boolean;
+}
+
 export interface PlaygroundResponse {
   reply: string;
   model: string;
   retrieved: PlaygroundKbEntry[];
+  tool: PlaygroundToolOutcome | null;
+}
+
+export interface PlaygroundHistory {
+  conversation_id: string;
+  messages: Message[];
 }
 
 export interface AnalyticsSummary {

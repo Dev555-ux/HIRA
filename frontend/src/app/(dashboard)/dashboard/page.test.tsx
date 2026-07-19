@@ -316,9 +316,9 @@ describe("DashboardPage", () => {
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("Waiting for your first customer")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Try the Playground" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Try Demo Chat" })).toHaveAttribute(
       "href",
-      "/playground",
+      "/demo",
     );
   });
 

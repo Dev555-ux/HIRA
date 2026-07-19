@@ -142,6 +142,6 @@ describe("OnboardingChecklist", () => {
 
     const links = await screen.findAllByRole("link", { name: /get started/i });
     const hrefs = links.map((link) => link.getAttribute("href"));
-    expect(hrefs).toEqual(expect.arrayContaining(["/knowledge-base", "/playground"]));
+    expect(hrefs).toEqual(expect.arrayContaining(["/knowledge-base", "/demo"]));
   });
 });

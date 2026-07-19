@@ -11,7 +11,10 @@ that doesn't already have an owning module:
 - Lead: `app/services/leads.py::get_lead_for_customer` (DEC-031's service layer).
 - Appointments: `app/calendar/service.py::get_upcoming_appointments` (a local
   read of already-booked rows — no CalendarProvider/credentials needed).
-- Knowledge base: `app/ai/knowledge_base.py::retrieve_context` (unchanged).
+- Knowledge base: `app/ai/knowledge_base.py::retrieve_context` (unchanged),
+  plus `has_any_entries` (Sprint 55) — a business-level "has this business
+  uploaded anything at all" fact, distinct from retrieve_context's per-query
+  result, that app/ai/orchestrator.py branches on for Demo Mode.
 - Conversation summary: `app/ai/memory.py::get_conversation_summary` (new
   this sprint — the one piece with nowhere to live before DEC-034).
 """
@@ -25,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.embeddings import EmbeddingProvider
-from app.ai.knowledge_base import retrieve_context
+from app.ai.knowledge_base import has_any_entries, retrieve_context
 from app.ai.llm.base import LLMProvider
 from app.ai.memory import HISTORY_LIMIT, get_conversation_summary
 from app.calendar.service import get_upcoming_appointments
@@ -43,6 +46,7 @@ class ConversationContext:
     lead: Lead | None
     upcoming_appointments: list[Appointment]
     retrieved_kb: list[KbEntry]
+    has_knowledge: bool
     summary: str | None
     history: list[Message]
 
@@ -83,6 +87,7 @@ def build_context(
     retrieved_kb = retrieve_context(
         db, conversation.business_id, user_text, provider=embedding, k=k
     )
+    has_knowledge = has_any_entries(db, conversation.business_id)
     summary = get_conversation_summary(db, conversation, llm=llm)
     history = load_history(db, conversation.id)
 
@@ -92,6 +97,7 @@ def build_context(
         lead=lead,
         upcoming_appointments=upcoming_appointments,
         retrieved_kb=retrieved_kb,
+        has_knowledge=has_knowledge,
         summary=summary,
         history=history,
     )

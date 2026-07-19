@@ -68,14 +68,14 @@ describe("DashboardHero", () => {
     expect(container.querySelector(".animate-spin")).toBeInTheDocument();
   });
 
-  it("links Test AI to the Playground", async () => {
+  it("links Test AI to Demo Chat", async () => {
     const user = userEvent.setup();
     render(
       <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} />,
     );
 
     const link = screen.getByRole("link", { name: /test ai/i });
-    expect(link).toHaveAttribute("href", "/playground");
+    expect(link).toHaveAttribute("href", "/demo");
     await user.tab();
   });
 });

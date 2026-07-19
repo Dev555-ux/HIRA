@@ -66,7 +66,7 @@ export function DashboardHero({
           Refresh
         </Button>
         <Button asChild size="sm" variant="outline">
-          <Link href="/playground">
+          <Link href="/demo">
             <MessageSquareText />
             Test AI
           </Link>

@@ -16,6 +16,17 @@ vi.mock("@/lib/api", () => ({
   api: { createBusiness: vi.fn(), getOnboardingStatus: vi.fn() },
 }));
 
+const CREATED_BUSINESS = {
+  id: "biz-1",
+  name: "Acme Dental Clinic",
+  industry: "Dental Clinic",
+  contact_email: "hello@acme.com",
+  country: null,
+  timezone: "UTC",
+  onboarding_status: "created" as const,
+  whatsapp_connection_status: "not_connected" as const,
+};
+
 import { api } from "@/lib/api";
 
 const mockAuth: AuthContextValue = {
@@ -41,6 +52,11 @@ function renderWithProviders(ui: React.ReactElement, auth: AuthContextValue = mo
 describe("OnboardingPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Harmless default for tests that never submit — the component now
+    // calls useOnboardingStatus() on mount too (to get a `refetch` it can
+    // use after a successful submit), so this must always resolve to
+    // something valid even when a given test doesn't care about its value.
+    vi.mocked(api.getOnboardingStatus).mockResolvedValue({ has_business: false, business: null });
   });
 
   it("shows validation errors when required fields are missing", async () => {
@@ -55,17 +71,14 @@ describe("OnboardingPage", () => {
     expect(api.createBusiness).not.toHaveBeenCalled();
   });
 
-  it("submits the business and redirects to the dashboard", async () => {
+  it("submits the business, confirms provisioning, and redirects to the dashboard", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.createBusiness).mockResolvedValue({
-      id: "biz-1",
-      name: "Acme Dental Clinic",
-      industry: "Dental Clinic",
-      contact_email: "hello@acme.com",
-      country: null,
-      timezone: "UTC",
-      onboarding_status: "created",
-      whatsapp_connection_status: "not_connected",
+    vi.mocked(api.createBusiness).mockResolvedValue(CREATED_BUSINESS);
+    // FTUE-1: navigation now waits on this confirming has_business: true —
+    // not just on createBusiness's own response.
+    vi.mocked(api.getOnboardingStatus).mockResolvedValue({
+      has_business: true,
+      business: CREATED_BUSINESS,
     });
 
     renderWithProviders(<OnboardingPage />);
@@ -85,8 +98,30 @@ describe("OnboardingPage", () => {
         timezone: undefined,
       }),
     );
+    await waitFor(() => expect(api.getOnboardingStatus).toHaveBeenCalled());
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
     expect(screen.getByText("You're all set!")).toBeInTheDocument();
+  });
+
+  it("does not navigate to the dashboard if provisioning can't be confirmed after creating the business", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.createBusiness).mockResolvedValue(CREATED_BUSINESS);
+    // The POST itself succeeded, but a re-check still reports no business —
+    // this must not be trusted as "done."
+    vi.mocked(api.getOnboardingStatus).mockResolvedValue({ has_business: false, business: null });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await user.type(screen.getByPlaceholderText("Acme Dental Clinic"), "Acme Dental Clinic");
+    await user.selectOptions(screen.getByRole("combobox"), "Dental Clinic");
+    await user.type(screen.getByPlaceholderText("hello@acmedental.com"), "hello@acme.com");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(
+      await screen.findByText("We couldn't confirm your account is ready yet — please try again."),
+    ).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByText("You're all set!")).not.toBeInTheDocument();
   });
 
   it("blocks submission and explains when the account has no email", () => {

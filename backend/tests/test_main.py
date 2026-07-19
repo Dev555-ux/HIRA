@@ -35,6 +35,46 @@ def test_an_unrecognized_origin_is_not_allowed():
     assert "access-control-allow-origin" not in response.headers
 
 
+def test_a_hira_vercel_preview_deployment_is_allowed():
+    """A11: the allow_origin_regex is narrowed to hira-*.vercel.app, not any
+    *.vercel.app — this project's own preview deployments must still work."""
+    client = TestClient(app)
+
+    response = client.get(
+        "/health", headers={"Origin": "https://hira-git-feature-x-someteam.vercel.app"}
+    )
+
+    assert (
+        response.headers.get("access-control-allow-origin")
+        == "https://hira-git-feature-x-someteam.vercel.app"
+    )
+
+
+def test_an_unrelated_vercel_deployment_is_no_longer_allowed():
+    """A11: before the fix, *any* site on vercel.app (a shared, multi-tenant
+    host anyone can deploy to) matched the old regex — this is exactly what
+    the security audit flagged and this test guards against regressing."""
+    client = TestClient(app)
+
+    response = client.get(
+        "/health", headers={"Origin": "https://some-other-projects-site.vercel.app"}
+    )
+
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_cors_no_longer_advertises_credentialed_requests():
+    """A11: the frontend authenticates via an explicit Authorization header,
+    never cookies (`credentials: "include"` is never set in
+    frontend/src/lib/api.ts) — allow_credentials was doing nothing but
+    widening the policy, so it's been removed."""
+    client = TestClient(app)
+
+    response = client.get("/health", headers={"Origin": settings.frontend_url})
+
+    assert "access-control-allow-credentials" not in response.headers
+
+
 def test_unhandled_exception_returns_generic_500_and_is_logged(db_session, caplog):
     """A genuinely unhandled exception (not an HTTPException any route
     raises on purpose) must not leak internal detail to the client, and must

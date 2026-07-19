@@ -130,6 +130,17 @@ class Settings(BaseSettings):
         handshake becomes guessable. Fails fast at startup, the same
         actionable-error pattern _load_settings already uses for a missing
         DATABASE_URL, rather than deploying silently insecure.
+
+        A2 (Sprint S1 security audit): same reasoning applies to
+        `allow_mock_auth` — it only takes effect when `CLERK_JWKS_URL` is
+        also unset (`app/auth/dependencies.py::get_token_verifier`), but
+        nothing previously stopped `ALLOW_MOCK_AUTH=true` surviving into a
+        production deploy (e.g. copied from a staging `.env`) alongside a
+        forgotten `CLERK_JWKS_URL` — that single missed variable would let
+        anyone who reads this open-source repo authenticate as
+        `dev-mock-user` with the literal token `dev-mock-token`. Checked here
+        rather than as a separate validator so both "insecure with
+        ENVIRONMENT=production" checks fail together in one pass.
         """
         if self.environment != "production":
             return self
@@ -144,6 +155,12 @@ class Settings(BaseSettings):
                 f"{names} still set to its insecure default with ENVIRONMENT=production. "
                 "Set real values in the Railway service's Variables tab — see "
                 "backend/.env.example and documentation/WHATSAPP_INTEGRATION.md."
+            )
+        if self.allow_mock_auth:
+            raise ValueError(
+                "ALLOW_MOCK_AUTH is true with ENVIRONMENT=production. Mock auth must never be "
+                "enabled in production — unset ALLOW_MOCK_AUTH (or set it to false) in the "
+                "Railway service's Variables tab."
             )
         return self
 

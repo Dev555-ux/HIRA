@@ -186,7 +186,7 @@ export default function SettingsPage() {
                   WhatsApp right now, and HIRA replies from that same number automatically.
                 </p>
                 <Button asChild size="sm" variant="outline">
-                  <Link href="/playground">Send a test message</Link>
+                  <Link href="/demo">Send a test message</Link>
                 </Button>
               </>
             ) : (

@@ -165,7 +165,7 @@ function ConversationList({
             action={
               !hasQuery && (
                 <Button asChild size="sm" variant="outline">
-                  <Link href="/playground">Try the Playground</Link>
+                  <Link href="/demo">Try Demo Chat</Link>
                 </Button>
               )
             }

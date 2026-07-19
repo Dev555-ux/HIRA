@@ -1,17 +1,20 @@
 """Onboarding API (/api/v1/onboarding) — Milestone A (business provisioning)
-plus the AI Playground (ONBOARDING_ARCHITECTURE.md §4.4).
+plus Demo Chat (ONBOARDING_ARCHITECTURE.md §4.4; formerly "Playground").
 
 Routes:
 - `GET /status` — does the calling Clerk identity already have a business?
   Used by the frontend right after login to decide dashboard vs. /onboarding.
 - `POST /business` — create the Business + owner User for a first-time signup.
-- `POST /playground/message` — synchronous AI test-drive (see app/ai/playground.py).
+- `POST /playground/message` — one Demo Chat turn (see app/ai/playground.py).
+- `GET /playground/history` — the same conversation's persisted messages, so
+  the frontend can restore the transcript after a page refresh instead of
+  losing it to local-only state.
 
 The provisioning routes sit behind `get_verified_clerk_user_id`, not
 `get_current_principal`: a brand-new signup has a valid Clerk session but (by
 definition) no `User` row yet, so the stricter dashboard dependency — which
 401s on an unknown user — would wrongly reject exactly the request this flow
-needs to allow. The playground route requires an existing business, so it uses
+needs to allow. The Demo Chat routes require an existing business, so they use
 `get_current_principal` like every other dashboard route.
 """
 
@@ -21,15 +24,16 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.playground import playground_reply
+from app.ai.playground import get_or_create_playground_conversation, playground_reply
 from app.auth.dependencies import Principal, get_current_principal, get_verified_clerk_user_id
 from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.core.timezones import validate_timezone
 from app.db.session import get_db
-from app.models import Business
+from app.models import Business, Message
 from app.services.provisioning import get_business_for_clerk_user, provision_business
 
 logger = logging.getLogger(__name__)
@@ -138,6 +142,21 @@ def create_business(
     return {"data": _serialize_business(business)}
 
 
+def _serialize_playground_message(message: Message) -> dict:
+    # Same shape as app/api/conversations.py's _serialize_message — kept as
+    # its own copy rather than importing that module's private helper across
+    # unrelated routers, but intentionally identical so the frontend's one
+    # Message type already covers both.
+    return {
+        "id": str(message.id),
+        "direction": message.direction,
+        "body": message.body,
+        "type": message.type,
+        "status": message.status,
+        "created_at": message.created_at.isoformat(),
+    }
+
+
 @router.post("/playground/message")
 @limiter.limit(lambda: settings.rate_limit_demo_chat)
 def playground_message(
@@ -150,7 +169,7 @@ def playground_message(
     if not message:
         raise HTTPException(status_code=422, detail="Message is required")
 
-    response, retrieved, body = playground_reply(db, principal.business_id, message)
+    response, retrieved, body, tool_outcome = playground_reply(db, principal.business_id, message)
     return {
         "data": {
             "reply": body,
@@ -159,5 +178,32 @@ def playground_message(
                 {"id": str(entry.id), "title": entry.title, "content": entry.content}
                 for entry in retrieved
             ],
+            "tool": tool_outcome,
+        }
+    }
+
+
+@router.get("/playground/history")
+def playground_history(
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The Demo Chat conversation's persisted messages, oldest first — lets
+    the frontend restore the transcript after a refresh instead of the local-
+    only React state it previously relied on. Reuses the exact same
+    get-or-create + tenant-implicit lookup `playground_reply` already uses;
+    no new data-access path."""
+    conversation = get_or_create_playground_conversation(db, principal.business_id)
+    db.commit()  # durably persist a first-ever synthetic Customer/Conversation
+
+    messages = db.scalars(
+        select(Message)
+        .where(Message.conversation_id == conversation.id)
+        .order_by(Message.created_at)
+    ).all()
+    return {
+        "data": {
+            "conversation_id": str(conversation.id),
+            "messages": [_serialize_playground_message(m) for m in messages],
         }
     }

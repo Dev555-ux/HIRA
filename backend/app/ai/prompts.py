@@ -20,6 +20,21 @@ app/ai/context.py::ConversationContext (assembled by the new Context
 Builder) instead of separate retrieved/business params, and injects
 customer/lead/upcoming-appointment context plus the conversation summary
 from app/ai/memory.py.
+
+Demo Mode (Sprint 55): a second, separate system prompt — build_demo_system_
+prompt() — used instead of build_system_prompt() only when
+context.has_knowledge is False (app/ai/orchestrator.py branches on it).
+Before this, a business with zero Business Knowledge got the *same* prompt
+above, which tells the model to ground answers only in the (empty) knowledge
+base — the model had nothing to work with and either apologized like
+something was broken, or, with tool schemas still on offer and nothing to
+schedule, reached for check_availability speculatively even on a bare "Hi"
+(app/ai/tools.py's response_to_message_fields already has a fallback for
+exactly that misfire). Demo Mode is a fundamentally different prompt for a
+fundamentally different situation — introduce HIRA and its capabilities,
+never invent business specifics — not a patch on the grounded prompt, and
+orchestrator.py omits tool schemas entirely for it so there's nothing left
+to misfire toward.
 """
 
 from __future__ import annotations
@@ -144,6 +159,61 @@ def build_system_prompt(
         parts.append(f"\nConversation so far (summary of earlier messages):\n{context.summary}")
     if availability_note:
         parts.append(f"\nAvailability check result:\n{availability_note}")
+    return "\n".join(parts)
+
+
+DEMO_SYSTEM_PROMPT_VERSION = "demo-v1"
+
+_DEMO_SYSTEM_PROMPT = """\
+You are HIRA, an AI Business Employee, chatting with the business owner who's \
+trying you out — not a customer.
+
+This workspace hasn't uploaded any Business Knowledge yet, so you don't \
+actually know this business's services, pricing, hours, location, or \
+policies. Never invent or guess any of it, and never state or imply a \
+specific fact about this business you weren't given. If asked something \
+business-specific, say plainly and warmly that you haven't learned this \
+business yet, and that uploading Business Knowledge is what teaches you — \
+never phrase this like an error, a limitation, or an apology.
+
+You already know your own capabilities, and should explain them \
+confidently and conversationally when asked, in your own words:
+- Once Business Knowledge is uploaded, you'll answer customer questions \
+grounded in it — never by guessing.
+- You can check calendar availability and propose bookings, reschedules, \
+and cancellations (a human reviews proposed actions before they go out).
+- You can log and progress leads in the CRM as buying interest comes up.
+- You remember the conversation so far, so you won't ask the same thing twice.
+
+Be warm, brief, and genuinely conversational — this is a chat, not a form \
+or a support ticket. A greeting deserves a greeting back, not a disclaimer. \
+Never open a reply with something like "let me check on that" — you have \
+nothing to check yet, so say so plainly instead.
+"""
+
+_DEMO_FIRST_TURN_HINT = """\
+
+This is the first message in this conversation. After your answer, close \
+with 2-4 short suggestions (your own words, as a short bulleted list) for \
+what they could try next — e.g. asking what you can do, whether you can \
+schedule meetings, how to teach you, or whether you can create CRM leads. \
+Only do this on this first reply; don't repeat suggestions in later turns.
+"""
+
+
+def build_demo_system_prompt(context: ConversationContext) -> str:
+    """Demo Mode's system prompt (Sprint 55) — used instead of
+    build_system_prompt() whenever context.has_knowledge is False
+    (app/ai/orchestrator.py branches on it before calling either). See the
+    module docstring for why this is a separate prompt rather than a patch
+    on the grounded one.
+    """
+    parts = [_DEMO_SYSTEM_PROMPT]
+    if context.business and context.business.name:
+        parts.append(f'\nThis business is called "{context.business.name}".')
+    is_first_turn = not any(m.direction == "outbound" for m in context.history)
+    if is_first_turn:
+        parts.append(_DEMO_FIRST_TURN_HINT)
     return "\n".join(parts)
 
 

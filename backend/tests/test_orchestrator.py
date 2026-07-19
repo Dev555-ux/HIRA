@@ -45,6 +45,33 @@ def _make_customer(db, business_id):
     return customer.id
 
 
+def _setup_business_without_kb(db):
+    """Sprint 55: the counterpart to _setup_business_with_kb — a brand-new
+    business that hasn't uploaded any Business Knowledge yet, which is
+    exactly the state Demo Mode exists for."""
+    biz = Business(name="Clinic B")
+    db.add(biz)
+    db.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=_make_customer(db, biz.id))
+    db.add(conversation)
+    db.flush()
+    return biz, conversation
+
+
+class _SpyProvider(LLMProvider):
+    """Records the `tools` argument of every call, so a test can assert
+    Demo Mode never offers the model calendar/CRM tools (Sprint 55) — there's
+    nothing real yet for it to check availability or create leads against."""
+
+    def __init__(self, fixed_reply="Hello! I'm HIRA."):
+        self._fixed_reply = fixed_reply
+        self.calls: list[dict] = []
+
+    def generate(self, *, system, messages, max_tokens=None, tools=None):
+        self.calls.append({"system": system, "messages": messages, "tools": tools})
+        return LLMResponse(text=self._fixed_reply, model="mock-1")
+
+
 def test_generate_reply_injects_knowledge_and_returns_response(db_session):
     _, conversation = _setup_business_with_kb(db_session)
 
@@ -59,6 +86,41 @@ def test_generate_reply_injects_knowledge_and_returns_response(db_session):
     assert response.text == "We're open 9am-5pm on weekdays."
     assert len(retrieved) >= 1
     assert any("9am" in e.content for e in retrieved)
+
+
+def test_generate_reply_uses_demo_prompt_and_no_tools_without_business_knowledge(db_session):
+    # Sprint 55: the actual feature — a business with zero Business
+    # Knowledge gets the Demo Mode prompt and no tool schemas at all, so
+    # there's nothing left for the model to misfire toward (e.g. proposing
+    # check_availability on a bare "Hi" — the exact bug this sprint fixes).
+    _, conversation = _setup_business_without_kb(db_session)
+    spy = _SpyProvider()
+
+    response, retrieved = generate_reply(db_session, conversation, "Hi", llm=spy)
+
+    assert response.text == "Hello! I'm HIRA."
+    assert retrieved == []
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["tools"] is None
+    assert "Answer ONLY using the information" not in spy.calls[0]["system"]
+
+
+def test_generate_reply_uses_normal_prompt_and_tools_once_knowledge_exists(db_session):
+    # Sprint 55, requirement 8: existing behaviour must be untouched the
+    # moment Business Knowledge exists — same prompt, same tool schemas as
+    # before this sprint.
+    _, conversation = _setup_business_with_kb(db_session)
+    spy = _SpyProvider(fixed_reply="We're open 9am-5pm on weekdays.")
+
+    response, retrieved = generate_reply(
+        db_session, conversation, "what are your hours?", llm=spy, embedding=FakeEmbeddingProvider()
+    )
+
+    assert response.text == "We're open 9am-5pm on weekdays."
+    assert len(retrieved) >= 1
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["tools"] is not None
+    assert "Answer ONLY using the information" in spy.calls[0]["system"]
 
 
 class _SequencedProvider(LLMProvider):

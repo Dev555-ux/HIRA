@@ -25,7 +25,7 @@ export function EmptyState({
         <Icon className="size-6 text-muted-foreground" />
       </div>
       {/* h2, not h3: this renders directly under each page's own h1 with no
-          guaranteed h2 in between (e.g. Playground, Customers, Leads,
+          guaranteed h2 in between (e.g. Demo Chat, Customers, Leads,
           Analytics have no section headings) — h3 here would skip a level
           for exactly those pages. Pages that do have their own h2 sections
           (Dashboard, Settings) just end up with a sibling h2, which is a

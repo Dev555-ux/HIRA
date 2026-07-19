@@ -89,7 +89,7 @@ export function OnboardingChecklist({ business }: { business: Business }) {
       status: "available",
       trailing: (
         <Button asChild size="sm" variant="outline">
-          <Link href="/playground">Get started</Link>
+          <Link href="/demo">Get started</Link>
         </Button>
       ),
     },
