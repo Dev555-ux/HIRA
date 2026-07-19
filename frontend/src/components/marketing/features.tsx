@@ -12,37 +12,37 @@ const FEATURES = [
     icon: BookOpen,
     title: "Knowledge base",
     description:
-      "Import your website or write FAQs directly. HIRA retrieves the relevant answer for every question instead of improvising.",
+      "Every answer comes from what you've actually told HIRA — imported from your website or written as FAQs — never a generic guess.",
   },
   {
     icon: CalendarClock,
     title: "Appointment booking",
     description:
-      "Checks real availability and books, reschedules, or cancels appointments in your connected Google Calendar.",
+      "No back-and-forth to find a time that works. HIRA checks real availability and books, reschedules, or cancels in your connected Google Calendar.",
   },
   {
     icon: CheckCheck,
     title: "Assisted or Autonomous",
     description:
-      "Review and approve every AI reply and booking before it goes out, or switch a business to fully autonomous once you trust it.",
+      "You stay in control for as long as you want — review every reply and booking, or switch to fully autonomous once you trust it.",
   },
   {
     icon: ShieldAlert,
     title: "Escalation to a human",
     description:
-      "Uncertain or sensitive conversations are flagged and handed to a person instead of the AI guessing.",
+      "Customers never get stuck with a guess. Uncertain or sensitive conversations are flagged and handed to a person on your team.",
   },
   {
     icon: Target,
     title: "Lead pipeline",
     description:
-      "Every conversation that looks like a lead is tracked through a pipeline — new, contacted, qualified, won — automatically or added by hand.",
+      "No lead falls through the cracks. Every conversation that looks like one is tracked automatically — new, contacted, qualified, won.",
   },
   {
     icon: Inbox,
     title: "Unified inbox",
     description:
-      "Every customer conversation, appointment, and lead lives in one dashboard — nothing tracked in a separate spreadsheet.",
+      "One place for the whole customer relationship — every conversation, appointment, and lead, with nothing lost in a separate spreadsheet.",
   },
 ];
 

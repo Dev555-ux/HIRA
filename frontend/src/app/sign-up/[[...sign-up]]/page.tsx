@@ -1,4 +1,5 @@
 import { SignUp } from "@clerk/nextjs";
+import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { authEnabled } from "@/lib/config";
 
 export default function SignUpPage() {
@@ -14,8 +15,11 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <AuthPageShell
+      heading="Hire your first AI employee"
+      subheading="Create your HIRA account — takes about two minutes."
+    >
       <SignUp />
-    </div>
+    </AuthPageShell>
   );
 }
