@@ -126,6 +126,22 @@ def test_availability_note_still_appended_when_given():
     assert "(Available slots: none)" in prompt
 
 
+def test_no_clarification_section_when_none_given():
+    prompt = build_system_prompt(_context())
+
+    assert "Action planning" not in prompt
+
+
+def test_clarification_hint_appended_when_given():
+    # Sprint 58: the hint is folded into the prompt as guidance, never as
+    # literal customer-facing text — the model phrases the actual question.
+    prompt = build_system_prompt(_context(), clarification_hint="what date this should be on")
+
+    assert "Action planning" in prompt
+    assert "what date this should be on" in prompt
+    assert "No booking/reschedule/cancellation/lead tool is available" in prompt
+
+
 def test_demo_prompt_does_not_include_kb_grounding_language():
     # Sprint 55: Demo Mode is a genuinely separate prompt, not a variant of
     # the grounded one — it must never tell the model to answer "ONLY using
