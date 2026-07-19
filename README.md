@@ -101,6 +101,7 @@ The codebase lives in two places; a handful of top-level folders are day-one sca
 | [`roadmap/`](roadmap/README.md) | Feature/vertical sequencing notes. Currently one sprint plan (`SPRINT_1.md`); see [Roadmap](#roadmap) below for where forward planning actually lives now. |
 | [`.claude/`](.claude/CLAUDE.md) | The project's operating manual and running project memory — engineering standards (`CLAUDE.md`), the append-only decision log (`DECISIONS.md`), session-by-session build history (`PROGRESS.md`), and the active backlog (`TODOS.md`). |
 | [`learning/`](learning/README.md) | A handful of founder notes on concepts learned while building (git/CI, databases/ORM/migrations). |
+| [`beta/`](beta/README.md) | Everything needed to run the first external beta and turn tester usage into evidence-based decisions: success metrics, tester checklist, feedback form, bug/feature-request templates, tracking board, prioritization framework, founder playbook. |
 | `ARCHITECTURE.md`, `IMPLEMENTATION_PLAN.md`, `MILESTONES.md` | Living docs describing the system as built, the path to production, and MVP milestone tracking, respectively. |
 | `ai/`, `business/`, `database/`, `deployment/`, `infrastructure/`, `portfolio/`, `progress/`, `prompts/`, `testing/` | Placeholder scaffolding created at project start. Each contains only a `README.md` describing its intended future purpose — no code or content lives here today. |
 
