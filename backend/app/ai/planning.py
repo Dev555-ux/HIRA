@@ -125,7 +125,9 @@ _ACTION_PROFILES: tuple[ActionProfile, ...] = (
     ActionProfile(
         name="crm_lead",
         trigger_keywords=("lead",),
-        required=(RequiredField("customer_name", _CUSTOMER_NAME_RE, "ask for the customer's name"),),
+        required=(
+            RequiredField("customer_name", _CUSTOMER_NAME_RE, "ask for the customer's name"),
+        ),
         optional_fields=("phone", "email", "notes"),
     ),
 )

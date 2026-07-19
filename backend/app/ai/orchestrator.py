@@ -170,9 +170,7 @@ def generate_reply(
             db, conversation.business_id, response.tool_calls[0]
         )
         system_with_availability = build_system_prompt(context, availability_note=availability_note)
-        response = llm.generate(
-            system=system_with_availability, messages=messages, tools=tools
-        )
+        response = llm.generate(system=system_with_availability, messages=messages, tools=tools)
         # Deliberately not looped further: if the model calls check_availability
         # again here, that's returned as-is for the caller, same as any other
         # tool call — no risk of runaway recursion.

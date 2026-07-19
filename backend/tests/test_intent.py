@@ -3,9 +3,19 @@ classification logic, no LLM/DB/network involved."""
 
 import pytest
 
-from app.ai.intent import ConversationCategory, classify_conversation, tools_for_action, tools_for_message
+from app.ai.intent import (
+    ConversationCategory,
+    classify_conversation,
+    tools_for_action,
+    tools_for_message,
+)
 from app.ai.lead_tools import CREATE_LEAD, SET_LEAD_FOLLOW_UP, UPDATE_LEAD_STAGE
-from app.ai.tools import BOOK_APPOINTMENT, CANCEL_APPOINTMENT, CHECK_AVAILABILITY, RESCHEDULE_APPOINTMENT
+from app.ai.tools import (
+    BOOK_APPOINTMENT,
+    CANCEL_APPOINTMENT,
+    CHECK_AVAILABILITY,
+    RESCHEDULE_APPOINTMENT,
+)
 
 
 @pytest.mark.parametrize(
@@ -47,12 +57,22 @@ def test_classifies_knowledge(text):
 
 @pytest.mark.parametrize(
     "text",
-    ["Book a meeting tomorrow.", "Schedule next Tuesday.", "Cancel my appointment.", "Can I book tuesday morning?"],
+    [
+        "Book a meeting tomorrow.",
+        "Schedule next Tuesday.",
+        "Cancel my appointment.",
+        "Can I book tuesday morning?",
+    ],
 )
 def test_classifies_calendar_action(text):
     assert classify_conversation(text) == ConversationCategory.ACTION
     names = {schema.name for schema in tools_for_action(text)}
-    assert names == {BOOK_APPOINTMENT, CHECK_AVAILABILITY, RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT}
+    assert names == {
+        BOOK_APPOINTMENT,
+        CHECK_AVAILABILITY,
+        RESCHEDULE_APPOINTMENT,
+        CANCEL_APPOINTMENT,
+    }
 
 
 @pytest.mark.parametrize("text", ["Create a lead for John.", "Add John as a lead."])
@@ -96,7 +116,13 @@ def test_tools_for_message_never_falls_back_to_all_tools():
     # tool." This asserts that structurally can't happen anymore: every
     # non-Action category yields [], and an Action with no recognised
     # category also yields [] — never the full TOOL_SCHEMAS list.
-    for text in ["asdkjasdkj", "Hi", "What can you do?", "What are your hours?", "Send an invoice."]:
+    for text in [
+        "asdkjasdkj",
+        "Hi",
+        "What can you do?",
+        "What are your hours?",
+        "Send an invoice.",
+    ]:
         _, tools = tools_for_message(text)
         assert tools == []
 
@@ -105,5 +131,8 @@ def test_tools_for_message_returns_category_and_tools_together():
     category, tools = tools_for_message("Book a meeting tomorrow")
     assert category == ConversationCategory.ACTION
     assert {schema.name for schema in tools} == {
-        BOOK_APPOINTMENT, CHECK_AVAILABILITY, RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT
+        BOOK_APPOINTMENT,
+        CHECK_AVAILABILITY,
+        RESCHEDULE_APPOINTMENT,
+        CANCEL_APPOINTMENT,
     }

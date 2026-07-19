@@ -76,9 +76,24 @@ _GREETING_RE = re.compile(r"^(hi|hello|hey|yo|good morning|good afternoon|good e
 _SMALL_TALK_RE = re.compile(r"\b(how are you|tell me about yourself|thank(s| you))\b")
 
 _KNOWLEDGE_KEYWORDS = (
-    "hour", "hours", "open", "close", "price", "pricing", "cost", "fee",
-    "refund", "policy", "policies", "service", "services", "product",
-    "products", "location", "address", "offer",
+    "hour",
+    "hours",
+    "open",
+    "close",
+    "price",
+    "pricing",
+    "cost",
+    "fee",
+    "refund",
+    "policy",
+    "policies",
+    "service",
+    "services",
+    "product",
+    "products",
+    "location",
+    "address",
+    "offer",
 )
 _KNOWLEDGE_QUESTION_RE = re.compile(r"^(what|where|when|how much|do you have)\b")
 
@@ -139,9 +154,18 @@ _ACTION_CATEGORIES: tuple[_ActionCategory, ...] = (
     _ActionCategory(
         name="calendar",
         keywords=(
-            "meeting", "meetings", "appointment", "appointments", "book",
-            "booking", "schedule", "reschedule", "cancel", "availability",
-            "slot", "calendar",
+            "meeting",
+            "meetings",
+            "appointment",
+            "appointments",
+            "book",
+            "booking",
+            "schedule",
+            "reschedule",
+            "cancel",
+            "availability",
+            "slot",
+            "calendar",
         ),
         tool_schemas=CALENDAR_TOOL_SCHEMAS,
     ),
