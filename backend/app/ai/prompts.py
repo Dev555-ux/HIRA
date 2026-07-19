@@ -21,6 +21,21 @@ Builder) instead of separate retrieved/business params, and injects
 customer/lead/upcoming-appointment context plus the conversation summary
 from app/ai/memory.py.
 
+v5 (Sprint 58): added an optional clarification_hint param. When
+app/ai/planning.py::plan_action() finds an Action-classified message
+missing a required field, app/ai/orchestrator.py withholds the tool
+schemas for that turn and passes the missing field's hint here instead —
+the model asks the follow-up question in its own words; this module never
+hardcodes the question text itself.
+
+v6 (Sprint 59): clarification_hint's wrapper text is now generic ("Before
+proceeding, {hint}") rather than assuming the hint always describes
+*missing* information — app/ai/governance.py can also withhold tools for a
+fully-specified action that policy says must be confirmed first (e.g.
+cancelling an appointment), and reuses this exact same param/wrapper rather
+than a second one, since the model-facing shape ("don't act yet, ask
+first") is identical either way.
+
 Demo Mode (Sprint 55): a second, separate system prompt — build_demo_system_
 prompt() — used instead of build_system_prompt() only when
 context.has_knowledge is False (app/ai/orchestrator.py branches on it).
@@ -46,7 +61,7 @@ from app.ai.llm.base import ChatMessage
 from app.core.timezones import safe_zoneinfo
 from app.models import Business, KbEntry, Lead, Message
 
-SYSTEM_PROMPT_VERSION = "v4"
+SYSTEM_PROMPT_VERSION = "v6"
 
 _BASE_SYSTEM_PROMPT = """\
 You are HIRA, a professional AI receptionist replying to a customer on WhatsApp \
@@ -147,6 +162,7 @@ def build_system_prompt(
     context: ConversationContext,
     *,
     availability_note: str | None = None,
+    clarification_hint: str | None = None,
 ) -> str:
     parts = [_BASE_SYSTEM_PROMPT, f"\nKnowledge base:\n{_format_knowledge(context.retrieved_kb)}"]
     scheduling_context = _format_scheduling_context(context.business)
@@ -159,6 +175,12 @@ def build_system_prompt(
         parts.append(f"\nConversation so far (summary of earlier messages):\n{context.summary}")
     if availability_note:
         parts.append(f"\nAvailability check result:\n{availability_note}")
+    if clarification_hint:
+        parts.append(
+            f"\nAction planning:\nBefore proceeding, {clarification_hint}. No booking/reschedule/"
+            "cancellation/lead tool is available for this reply — respond only in natural "
+            "language, and don't propose or imply that any action has already been taken."
+        )
     return "\n".join(parts)
 
 

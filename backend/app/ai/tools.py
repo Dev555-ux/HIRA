@@ -113,6 +113,10 @@ _CALENDAR_TOOL_SCHEMAS = [
 
 TOOL_SCHEMAS = [*_CALENDAR_TOOL_SCHEMAS, *LEAD_TOOL_SCHEMAS]
 
+# Sprint 57: exposed (was module-private) so app/ai/intent.py's tool-category
+# registry can select this group directly instead of redefining it.
+CALENDAR_TOOL_SCHEMAS = _CALENDAR_TOOL_SCHEMAS
+
 
 def preview_tool_call(tool_call: ToolCall) -> str:
     """Human-readable, editable preview shown in the Pending queue before approval."""
