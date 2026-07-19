@@ -135,7 +135,9 @@ def playground_reply(
             id="demo", name=extra_ai_meta["tool_name"], arguments=extra_ai_meta["tool_arguments"]
         )
         result = execute_tool_call(
-            db, business_id, tool_call,
+            db,
+            business_id,
+            tool_call,
             customer_id=conversation.customer_id,
             conversation_id=conversation.id,
         )

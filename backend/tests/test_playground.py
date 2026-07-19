@@ -69,7 +69,9 @@ def test_playground_reply_reuses_kb_retrieval_and_persists_turn(db_session, monk
     )
     _mock_llm_and_embeddings(monkeypatch, fixed_reply="We're open 9-5!")
 
-    response, retrieved, body, tool_outcome = playground_reply(db_session, biz.id, "what are your hours?")
+    response, retrieved, body, tool_outcome = playground_reply(
+        db_session, biz.id, "what are your hours?"
+    )
     assert tool_outcome is None
 
     assert response.text == "We're open 9-5!"
