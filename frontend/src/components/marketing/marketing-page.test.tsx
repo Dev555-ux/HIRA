@@ -21,9 +21,13 @@ describe("MarketingPage", () => {
   it("proves the product with a signature conversation demo below the hero", () => {
     render(<MarketingPage />);
 
-    // The scripted demo's opening line is seeded into initial state (no
-    // timer needed), so it's present on first render without fake timers.
-    expect(screen.getByText(/looking for a luxury suv/i)).toBeInTheDocument();
+    // The demo now opens on a deliberately silent, message-free stage (see
+    // signature-demo.test.tsx) — its own test file covers the scripted
+    // conversation itself; here we only confirm the accessible entry point
+    // for the demo exists on the page, without needing fake timers.
+    expect(
+      screen.getByRole("group", { name: /customer asks about suvs/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows a lightweight trust checklist of things HIRA does today", () => {
