@@ -1,6 +1,13 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SignatureDemo } from "./signature-demo";
+
+function setDocumentHidden(hidden: boolean) {
+  Object.defineProperty(document, "hidden", { value: hidden, configurable: true });
+  act(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+}
 
 function mockReducedMotion(matches: boolean) {
   window.matchMedia = ((query: string) => ({
@@ -84,6 +91,59 @@ describe("SignatureDemo", () => {
 
     expect(screen.getByText(/looking for a luxury suv/i)).toBeInTheDocument();
     expect(screen.queryByText(/booked!/i)).toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it("pauses on hover and resumes when the mouse leaves", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+    const group = screen.getByRole("group");
+
+    fireEvent.mouseEnter(group);
+    advance(HOLDS_MS[0]);
+    advance(HOLDS_MS[1]);
+    expect(screen.queryByText(/would you like to compare them/i)).toBeNull();
+
+    fireEvent.mouseLeave(group);
+    advance(HOLDS_MS[0]);
+    advance(HOLDS_MS[1]);
+    expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it("pauses on keyboard focus and resumes on blur", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+    const group = screen.getByRole("group");
+
+    fireEvent.focus(group);
+    advance(HOLDS_MS[0]);
+    advance(HOLDS_MS[1]);
+    expect(screen.queryByText(/would you like to compare them/i)).toBeNull();
+
+    fireEvent.blur(group);
+    advance(HOLDS_MS[0]);
+    advance(HOLDS_MS[1]);
+    expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it("pauses while the browser tab is hidden and resumes when it's visible again", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+
+    setDocumentHidden(true);
+    advance(HOLDS_MS[0]);
+    advance(HOLDS_MS[1]);
+    expect(screen.queryByText(/would you like to compare them/i)).toBeNull();
+
+    setDocumentHidden(false);
+    advance(HOLDS_MS[0]);
+    advance(HOLDS_MS[1]);
+    expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
 
     vi.useRealTimers();
   });
