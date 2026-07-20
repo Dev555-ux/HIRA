@@ -22,15 +22,31 @@ function mockReducedMotion(matches: boolean) {
   })) as typeof window.matchMedia;
 }
 
+// Mirrors BEATS' hold values in signature-demo.tsx exactly, in order:
+// intro, c1, typing, h1, c2, typing, h2, c3, typing, system, booking, c4,
+// typing, h3, resolve, end.
+const HOLDS_MS = [
+  1600, 900, 900, 2600, 1500, 800, 2400, 1500, 800, 1100, 2600, 1500, 800, 2600, 1400, 3500,
+];
+
+// Each beat's setTimeout is only (re-)registered once React has flushed the
+// effect from the *previous* one, so a single advanceTimersByTime call —
+// however large — only ever fires the one timer already pending; the chain
+// needs one act()-wrapped advance per hop, not one big jump.
+function advance(ms: number) {
+  act(() => vi.advanceTimersByTime(ms));
+}
+
 describe("SignatureDemo", () => {
   beforeEach(() => {
     mockReducedMotion(false);
   });
 
-  it("shows the opening line immediately, with no timer needed", () => {
+  it("opens on a silent, message-free stage — the reveal is the point, not an accident of state", () => {
     render(<SignatureDemo />);
 
-    expect(screen.getByText(/looking for a luxury suv/i)).toBeInTheDocument();
+    expect(screen.queryByText(/looking for a luxury suv/i)).toBeNull();
+    expect(screen.getByRole("group")).toBeInTheDocument();
   });
 
   it("exposes one accessible label instead of letting screen readers read every animated bubble", () => {
@@ -43,45 +59,38 @@ describe("SignatureDemo", () => {
     expect(group.querySelector('[aria-hidden="true"] [tabindex]')).toBeNull();
   });
 
-  // Each beat's setTimeout is only (re-)registered once React has flushed
-  // the effect from the *previous* one, so a single advanceTimersByTime
-  // call — however large — only ever fires the one timer already pending;
-  // the chain needs one act()-wrapped advance per hop, not one big jump.
-  const HOLDS_MS = [900, 900, 2800, 1600, 800, 2600, 1600, 800, 1200, 2800, 1600, 800, 2800, 3500];
-
-  function advance(ms: number) {
-    act(() => vi.advanceTimersByTime(ms));
-  }
-
-  it("advances through the script over time: typing, then HIRA's reply, then the booking", () => {
+  it("advances through the script over time: intro, first message, typing, HIRA's reply, the booking", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
 
-    advance(HOLDS_MS[0]); // -> typing
+    advance(HOLDS_MS[0]); // intro -> first customer message
+    expect(screen.getByText(/looking for a luxury suv/i)).toBeInTheDocument();
+
+    advance(HOLDS_MS[1]); // -> typing
     expect(document.querySelector(".animate-typing-dot")).not.toBeNull();
 
-    advance(HOLDS_MS[1]); // -> HIRA's SUV list
+    advance(HOLDS_MS[2]); // -> HIRA's SUV list
     expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
 
-    advance(HOLDS_MS[2]); // -> "Can I finance the BMW X7?"
+    advance(HOLDS_MS[3]); // -> "Can I finance the BMW X7?"
     expect(screen.getByText(/can i finance the bmw x7/i)).toBeInTheDocument();
 
-    advance(HOLDS_MS[3]); // -> typing
-    advance(HOLDS_MS[4]); // -> HIRA's financing answer
+    advance(HOLDS_MS[4]); // -> typing
+    advance(HOLDS_MS[5]); // -> HIRA's financing answer
     expect(screen.getByText(/up to 84 months/i)).toBeInTheDocument();
 
-    advance(HOLDS_MS[5]); // -> "Book me for a test drive tomorrow."
-    advance(HOLDS_MS[6]); // -> typing
-    advance(HOLDS_MS[7]); // -> "Checking calendar…"
+    advance(HOLDS_MS[6]); // -> "Book me for a test drive tomorrow."
+    advance(HOLDS_MS[7]); // -> typing
+    advance(HOLDS_MS[8]); // -> "Checking calendar…"
     expect(screen.getByText(/checking calendar/i)).toBeInTheDocument();
 
-    advance(HOLDS_MS[8]); // -> booking confirmation
+    advance(HOLDS_MS[9]); // -> booking confirmation
     expect(screen.getByText(/booked!/i)).toBeInTheDocument();
 
     vi.useRealTimers();
   });
 
-  it("loops back to the opening line after the closing card", () => {
+  it("resolves and loops back to a silent stage after the closing card", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
 
@@ -89,8 +98,9 @@ describe("SignatureDemo", () => {
       advance(ms);
     }
 
-    expect(screen.getByText(/looking for a luxury suv/i)).toBeInTheDocument();
+    expect(screen.queryByText(/looking for a luxury suv/i)).toBeNull();
     expect(screen.queryByText(/booked!/i)).toBeNull();
+    expect(screen.getByRole("group")).toBeInTheDocument();
 
     vi.useRealTimers();
   });
@@ -103,11 +113,13 @@ describe("SignatureDemo", () => {
     fireEvent.mouseEnter(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
+    advance(HOLDS_MS[2]);
     expect(screen.queryByText(/would you like to compare them/i)).toBeNull();
 
     fireEvent.mouseLeave(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
+    advance(HOLDS_MS[2]);
     expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
 
     vi.useRealTimers();
@@ -121,11 +133,13 @@ describe("SignatureDemo", () => {
     fireEvent.focus(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
+    advance(HOLDS_MS[2]);
     expect(screen.queryByText(/would you like to compare them/i)).toBeNull();
 
     fireEvent.blur(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
+    advance(HOLDS_MS[2]);
     expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
 
     vi.useRealTimers();
@@ -138,17 +152,19 @@ describe("SignatureDemo", () => {
     setDocumentHidden(true);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
+    advance(HOLDS_MS[2]);
     expect(screen.queryByText(/would you like to compare them/i)).toBeNull();
 
     setDocumentHidden(false);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
+    advance(HOLDS_MS[2]);
     expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
 
     vi.useRealTimers();
   });
 
-  it("renders a fully static, complete conversation for prefers-reduced-motion — no timers, no looping", () => {
+  it("renders a fully static, complete conversation for prefers-reduced-motion — no timers, no looping, no intro/resolve theatrics", () => {
     mockReducedMotion(true);
     render(<SignatureDemo />);
 

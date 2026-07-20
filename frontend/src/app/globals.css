@@ -309,16 +309,54 @@
   }
 }
 @utility animate-message-in {
-  animation: message-in 350ms ease-out;
+  /* A deliberate deceleration (expo-out) rather than plain ease-out — the
+     small extra care that separates "a div faded in" from "a message
+     settled into place." */
+  animation: message-in 480ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 @utility animate-bubble-in {
-  animation: bubble-in 400ms ease-out;
+  animation: bubble-in 480ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 @utility animate-typing-dot {
   animation: typing-dot 1.2s ease-in-out infinite;
 }
 @utility animate-system-pulse {
   animation: system-pulse 1.6s ease-in-out infinite;
+}
+
+/* Cinematic staging (Sprint 65.2) — the demo's darkened "stage": a slow
+   ambient glow that's alive even in the silent, message-free opening beat,
+   and a single soft pulse standing in for "a message is about to arrive"
+   instead of literal clock/signage text. Both loop continuously but are
+   genuinely quiet (long cycles, small opacity range) — this is ambient
+   lighting, not another thing competing for attention. */
+@keyframes stage-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.04);
+  }
+}
+@keyframes intro-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.15);
+  }
+}
+@utility animate-stage-breathe {
+  animation: stage-breathe 5s ease-in-out infinite;
+}
+@utility animate-intro-pulse {
+  animation: intro-pulse 1.8s ease-in-out infinite;
 }
 
 /* Global reduced-motion guard (Sprint 46). Every animation/transition in this

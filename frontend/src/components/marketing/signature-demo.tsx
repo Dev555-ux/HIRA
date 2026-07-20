@@ -2,23 +2,32 @@
 
 import { Bot, CheckCheck, CheckCircle2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 
-// A scripted, looping conversation — not a video, not a Lottie file, just
-// React state + CSS animation (see globals.css's message-in/bubble-in/
-// typing-dot/system-pulse keyframes). Grounded in the real Velocity Luxe
-// Motors demo knowledge (beta/DEMO_BUSINESS_KNOWLEDGE_VELOCITY_LUXE_MOTORS.md
-// §2/§5): the dealership's actual SUV lineup (BMW X7, Mercedes-Benz G-Class,
-// Audi Q8 — not the X5/GLE/Q7 trims, which aren't in its real inventory) and
-// its real financing terms (12–84 month tenures, §5).
+// The story this demo tells, beat by beat: a quiet, empty stage (nobody's
+// at the business right now) — a single soft pulse (a message has just
+// arrived) — a competent, unhurried resolution (question, financing,
+// booking, human handoff) — a settled close. The silence at the start and
+// the settle at the end are the point: the promise on this page is "never
+// miss a message," and this restages that as something that happens, not
+// just something that's claimed.
+//
+// Grounded in the real Velocity Luxe Motors demo knowledge
+// (beta/DEMO_BUSINESS_KNOWLEDGE_VELOCITY_LUXE_MOTORS.md §2/§5): the
+// dealership's actual SUV lineup (BMW X7, Mercedes-Benz G-Class, Audi Q8)
+// and its real financing terms (12–84 month tenures).
 type Beat =
+  | { kind: "intro"; hold: number }
   | { kind: "customer"; id: string; text: string; time: string; hold: number }
   | { kind: "hira"; id: string; text: string; time: string; hold: number }
   | { kind: "typing"; hold: number }
   | { kind: "system"; text: string; hold: number }
   | { kind: "booking"; id: string; day: string; clockTime: string; hold: number }
+  | { kind: "resolve"; hold: number }
   | { kind: "end"; hold: number };
 
 const BEATS: Beat[] = [
+  { kind: "intro", hold: 1600 },
   { kind: "customer", id: "c1", text: "Hi, I'm looking for a luxury SUV.", time: "9:41 AM", hold: 900 },
   { kind: "typing", hold: 900 },
   {
@@ -26,30 +35,31 @@ const BEATS: Beat[] = [
     id: "h1",
     text: "We currently have:\n• BMW X7\n• Mercedes-Benz G-Class\n• Audi Q8\n\nWould you like to compare them?",
     time: "9:41 AM",
-    hold: 2800,
+    hold: 2600,
   },
-  { kind: "customer", id: "c2", text: "Can I finance the BMW X7?", time: "9:42 AM", hold: 1600 },
+  { kind: "customer", id: "c2", text: "Can I finance the BMW X7?", time: "9:42 AM", hold: 1500 },
   { kind: "typing", hold: 800 },
   {
     kind: "hira",
     id: "h2",
     text: "Yes. Financing is available for up to 84 months.\nWould you like an estimate?",
     time: "9:42 AM",
-    hold: 2600,
+    hold: 2400,
   },
-  { kind: "customer", id: "c3", text: "Book me for a test drive tomorrow.", time: "9:43 AM", hold: 1600 },
+  { kind: "customer", id: "c3", text: "Book me for a test drive tomorrow.", time: "9:43 AM", hold: 1500 },
   { kind: "typing", hold: 800 },
-  { kind: "system", text: "Checking calendar…", hold: 1200 },
-  { kind: "booking", id: "b1", day: "Tomorrow", clockTime: "4:00 PM", hold: 2800 },
-  { kind: "customer", id: "c4", text: "I'd like to speak with someone.", time: "9:44 AM", hold: 1600 },
+  { kind: "system", text: "Checking calendar…", hold: 1100 },
+  { kind: "booking", id: "b1", day: "Tomorrow", clockTime: "4:00 PM", hold: 2600 },
+  { kind: "customer", id: "c4", text: "I'd like to speak with someone.", time: "9:44 AM", hold: 1500 },
   { kind: "typing", hold: 800 },
   {
     kind: "hira",
     id: "h3",
     text: "Absolutely. I've notified one of our sales specialists.\nSomeone will contact you shortly.",
     time: "9:44 AM",
-    hold: 2800,
+    hold: 2600,
   },
+  { kind: "resolve", hold: 1400 },
   { kind: "end", hold: 3500 },
 ];
 
@@ -59,6 +69,7 @@ type RenderedMessage =
   | { kind: "booking"; id: string; day: string; clockTime: string };
 
 type Ephemeral = { kind: "typing" } | { kind: "system"; text: string } | null;
+type Phase = "intro" | "conversation" | "resolving" | "end";
 
 function toRendered(beat: Beat): RenderedMessage | null {
   if (beat.kind === "customer" || beat.kind === "hira" || beat.kind === "booking") {
@@ -67,19 +78,52 @@ function toRendered(beat: Beat): RenderedMessage | null {
   return null;
 }
 
+function phaseForBeat(beat: Beat): Phase {
+  if (beat.kind === "intro") return "intro";
+  if (beat.kind === "resolve") return "resolving";
+  if (beat.kind === "end") return "end";
+  return "conversation";
+}
+
 const STATIC_MESSAGES: RenderedMessage[] = BEATS.map(toRendered).filter(
   (m): m is RenderedMessage => m !== null,
 );
 
-function PhoneFrame({ children }: { children: React.ReactNode }) {
+// Ambient light behind the panel — always alive, even in the silent
+// opening beat — and its own separate warmth shift once the story
+// resolves. Deliberately a halo around the panel, not inside it: the
+// message thread itself always stays perfectly legible.
+function AmbientGlow({ phase }: { phase: Phase }) {
   return (
-    <div className="relative mx-auto w-full max-w-[300px]">
-      <div className="relative rounded-[2.5rem] border-[6px] border-foreground/10 bg-card p-2 shadow-2xl">
-        <div className="absolute left-1/2 top-3 z-10 h-5 w-24 -translate-x-1/2 rounded-full bg-foreground/10" />
-        <div className="relative h-[440px] overflow-hidden rounded-[2rem] bg-background">
-          {children}
-        </div>
+    <div
+      aria-hidden="true"
+      className={cn(
+        "animate-stage-breathe pointer-events-none absolute -inset-10 rounded-[3rem] blur-3xl transition-colors duration-1000",
+        phase === "resolving" || phase === "end" ? "bg-success/25" : "bg-white/10",
+      )}
+    />
+  );
+}
+
+// Deliberately not a phone mockup — no notch, no bezel, no home indicator.
+// A softly bordered, backlit panel instead: it belongs to HIRA's own card
+// language (rounded-2xl border bg-card, used everywhere else on this
+// page), not to a device manufacturer's marketing photography.
+function ConversationPanel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative w-[min(320px,88vw)]">
+      <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-card shadow-[0_30px_80px_-25px_rgba(0,0,0,0.7)]">
+        <div className="h-px w-full bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+        <div className="relative h-[440px] overflow-hidden">{children}</div>
       </div>
+    </div>
+  );
+}
+
+function IntroPulse() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <span className="animate-intro-pulse size-2 rounded-full bg-foreground/30" aria-hidden="true" />
     </div>
   );
 }
@@ -171,12 +215,9 @@ function useReducedMotion() {
 function DemoWidget() {
   const reducedMotion = useReducedMotion();
   const [beatIndex, setBeatIndex] = useState(0);
-  const [messages, setMessages] = useState<RenderedMessage[]>(() => {
-    const first = toRendered(BEATS[0]);
-    return first ? [first] : [];
-  });
+  const [phase, setPhase] = useState<Phase>("intro");
+  const [messages, setMessages] = useState<RenderedMessage[]>([]);
   const [ephemeral, setEphemeral] = useState<Ephemeral>(null);
-  const [showEnd, setShowEnd] = useState(false);
   const [paused, setPaused] = useState(false);
   const [tabHidden, setTabHidden] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -195,15 +236,15 @@ function DemoWidget() {
     const timer = setTimeout(() => {
       const nextIndex = beatIndex + 1;
       if (nextIndex >= BEATS.length) {
-        setShowEnd(false);
+        setPhase("intro");
         setEphemeral(null);
-        const first = toRendered(BEATS[0]);
-        setMessages(first ? [first] : []);
+        setMessages([]);
         setBeatIndex(0);
         return;
       }
       const beat = BEATS[nextIndex];
       const rendered = toRendered(beat);
+      setPhase(phaseForBeat(beat));
       if (rendered) {
         setMessages((prev) => [...prev, rendered]);
         setEphemeral(null);
@@ -211,8 +252,7 @@ function DemoWidget() {
         setEphemeral({ kind: "typing" });
       } else if (beat.kind === "system") {
         setEphemeral({ kind: "system", text: beat.text });
-      } else if (beat.kind === "end") {
-        setShowEnd(true);
+      } else {
         setEphemeral(null);
       }
       setBeatIndex(nextIndex);
@@ -232,14 +272,14 @@ function DemoWidget() {
 
   if (reducedMotion) {
     return (
-      <div role="img" aria-label={summary} className="w-fit">
-        <PhoneFrame>
+      <div role="img" aria-label={summary} className="relative w-fit">
+        <ConversationPanel>
           <div aria-hidden="true" className="flex h-full flex-col gap-2 overflow-y-auto p-3">
             {STATIC_MESSAGES.map((m) => (
               <MessageBubble key={m.id} message={m} />
             ))}
           </div>
-        </PhoneFrame>
+        </ConversationPanel>
       </div>
     );
   }
@@ -249,39 +289,55 @@ function DemoWidget() {
       role="group"
       aria-label={`${summary} Animation pauses while hovered or focused.`}
       tabIndex={0}
-      className="w-fit rounded-[2.5rem] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      className="relative w-fit rounded-[2rem] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
     >
       <div aria-hidden="true">
-        <PhoneFrame>
-          <div ref={scrollRef} className="flex h-full flex-col gap-2 overflow-y-auto p-3 scroll-smooth">
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
-            ))}
-            {ephemeral?.kind === "typing" && <TypingBubble />}
-            {ephemeral?.kind === "system" && <SystemNotice text={ephemeral.text} />}
-          </div>
-          {showEnd && <EndCard />}
-        </PhoneFrame>
+        <AmbientGlow phase={phase} />
+        <ConversationPanel>
+          {phase === "intro" ? (
+            <IntroPulse />
+          ) : (
+            <div
+              className={cn(
+                "flex h-full flex-col gap-2 overflow-y-auto p-3 scroll-smooth transition-all duration-700 ease-out",
+                phase === "resolving" && "scale-[0.97] opacity-30",
+              )}
+              ref={scrollRef}
+            >
+              {messages.map((m) => (
+                <MessageBubble key={m.id} message={m} />
+              ))}
+              {ephemeral?.kind === "typing" && <TypingBubble />}
+              {ephemeral?.kind === "system" && <SystemNotice text={ephemeral.text} />}
+            </div>
+          )}
+          {phase === "end" && <EndCard />}
+        </ConversationPanel>
       </div>
     </div>
   );
 }
 
-// Section-level wrapper — same slot Product Proof occupied (immediately
-// below Hero), same "SEE IT IN ACTION" eyebrow treatment, so this is a
-// drop-in replacement rather than a new page section.
+// Section-level wrapper: the demo's own darkened stage, deliberately
+// distinct from the page's normal background in either theme — a spotlit
+// moment, not another flat card section. The panel inside still uses the
+// page's own bg-card/bg-primary tokens, so it reads as a bright, lit
+// screen in a dark room rather than adopting a whole separate palette.
 export function SignatureDemo() {
   return (
-    <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-24">
-      <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-        See it in action
-      </h2>
-      <div className="mt-6">
-        <DemoWidget />
+    <section className="relative overflow-hidden bg-[#050506] py-20 sm:py-28">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_35%,rgba(255,255,255,0.05),transparent_70%)]" />
+      <div className="relative mx-auto max-w-6xl px-4 sm:px-6">
+        <h2 className="text-center text-xs font-medium uppercase tracking-[0.2em] text-white/40">
+          See it in action
+        </h2>
+        <div className="mt-10 flex justify-center">
+          <DemoWidget />
+        </div>
       </div>
     </section>
   );
