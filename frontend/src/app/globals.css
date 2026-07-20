@@ -259,6 +259,68 @@
   animation: fade-in-up 200ms ease-out;
 }
 
+/* Signature demo (Sprint 65) — a scripted, looping chat animation on the
+   marketing page. message-in/bubble-in are mount-triggered like fade-in-up
+   above (each new bubble is a newly-mounted element, so this fires exactly
+   once per message, never on a re-render). typing-dot and system-pulse are
+   the two *looping* animations in the whole marketing page — both already
+   collapse under the reduced-motion guard below, and the component itself
+   never starts its script at all when reduced motion is requested, so
+   these never actually run for that audience. */
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+@keyframes system-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@utility animate-message-in {
+  animation: message-in 350ms ease-out;
+}
+@utility animate-bubble-in {
+  animation: bubble-in 400ms ease-out;
+}
+@utility animate-typing-dot {
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+@utility animate-system-pulse {
+  animation: system-pulse 1.6s ease-in-out infinite;
+}
+
 /* Global reduced-motion guard (Sprint 46). Every animation/transition in this
    file — old and new — collapses to effectively instant for anyone who has
    asked the OS for reduced motion, per this sprint's explicit accessibility

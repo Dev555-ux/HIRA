@@ -5,13 +5,13 @@ import { FinalCta } from "@/components/marketing/final-cta";
 import { Hero } from "@/components/marketing/hero";
 import { HowItWorks } from "@/components/marketing/how-it-works";
 import { Problem } from "@/components/marketing/problem";
-import { ProductProof } from "@/components/marketing/product-proof";
+import { SignatureDemo } from "@/components/marketing/signature-demo";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { Solution } from "@/components/marketing/solution";
 import { Trust } from "@/components/marketing/trust";
 
-// Hero states the problem and ProductProof proves the fix immediately after
+// Hero states the problem and SignatureDemo proves the fix immediately after
 // — a visitor sees the promise and its evidence within the first two
 // sections, before Problem makes the deeper case for anyone not yet sold.
 export function MarketingPage() {
@@ -26,7 +26,7 @@ export function MarketingPage() {
       <SiteHeader />
       <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
         <Hero />
-        <ProductProof />
+        <SignatureDemo />
         <Trust />
         <Problem />
         <Solution />
