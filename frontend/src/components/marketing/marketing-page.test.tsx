@@ -18,12 +18,15 @@ describe("MarketingPage", () => {
     expect(screen.getByText(/founder beta/i)).toBeInTheDocument();
   });
 
-  it("proves the product with a signature conversation demo below the hero", () => {
+  it("proves the product with the Mission Control signature demo below the hero", () => {
     render(<MarketingPage />);
 
-    // The scripted demo's opening line is seeded into initial state (no
-    // timer needed), so it's present on first render without fake timers.
-    expect(screen.getByText(/looking for a luxury suv/i)).toBeInTheDocument();
+    // The demo opens idle by design (see signature-demo.test.tsx for the
+    // full script) — here we only confirm the accessible entry point for
+    // the demo exists on the page, without needing fake timers.
+    expect(
+      screen.getByRole("group", { name: /six business systems/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows a lightweight trust checklist of things HIRA does today", () => {

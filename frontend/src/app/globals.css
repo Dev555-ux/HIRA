@@ -259,66 +259,27 @@
   animation: fade-in-up 200ms ease-out;
 }
 
-/* Signature demo (Sprint 65) — a scripted, looping chat animation on the
-   marketing page. message-in/bubble-in are mount-triggered like fade-in-up
-   above (each new bubble is a newly-mounted element, so this fires exactly
-   once per message, never on a re-render). typing-dot and system-pulse are
-   the two *looping* animations in the whole marketing page — both already
-   collapse under the reduced-motion guard below, and the component itself
-   never starts its script at all when reduced motion is requested, so
-   these never actually run for that audience. */
-@keyframes message-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
+/* Signature demo (Sprint 65 — rebuilt Sprint 65.2 as "Mission Control").
+   The one signature moment is signature-settle: when every business system
+   has finished its own independent work, they all transition to a shared
+   resting state in the same instant (driven by one boolean flip, so this
+   is genuinely simultaneous, not staggered) — a single, brief, shared
+   brightness breath across the whole row is the brand's signature
+   behavior, not a decorative loop. Collapses under the reduced-motion
+   guard below like everything else here. */
+@keyframes signature-settle {
+  0% {
+    filter: brightness(1);
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  40% {
+    filter: brightness(1.15);
   }
-}
-@keyframes bubble-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96) translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-@keyframes typing-dot {
-  0%,
-  60%,
   100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-2px);
+    filter: brightness(1);
   }
 }
-@keyframes system-pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-@utility animate-message-in {
-  animation: message-in 350ms ease-out;
-}
-@utility animate-bubble-in {
-  animation: bubble-in 400ms ease-out;
-}
-@utility animate-typing-dot {
-  animation: typing-dot 1.2s ease-in-out infinite;
-}
-@utility animate-system-pulse {
-  animation: system-pulse 1.6s ease-in-out infinite;
+@utility animate-signature-settle {
+  animation: signature-settle 700ms ease-out;
 }
 
 /* Global reduced-motion guard (Sprint 46). Every animation/transition in this

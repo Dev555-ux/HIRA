@@ -22,75 +22,111 @@ function mockReducedMotion(matches: boolean) {
   })) as typeof window.matchMedia;
 }
 
+function indicatorFor(label: string) {
+  const labelEl = screen.getByText(label);
+  return labelEl.parentElement?.querySelector("span");
+}
+
+// Mirrors BEATS' hold values in signature-demo.tsx exactly, in order.
+const HOLDS_MS = [1500, 500, 300, 600, 200, 500, 100, 300, 100, 300, 200, 100, 800, 400, 1200, 2200, 3200, 600];
+
+function advance(ms: number) {
+  act(() => vi.advanceTimersByTime(ms));
+}
+
 describe("SignatureDemo", () => {
   beforeEach(() => {
     mockReducedMotion(false);
   });
 
-  it("shows the opening line immediately, with no timer needed", () => {
+  it("opens idle: no message, no reply, no closing line, nothing moving", () => {
     render(<SignatureDemo />);
 
-    expect(screen.getByText(/looking for a luxury suv/i)).toBeInTheDocument();
+    expect(screen.queryByText(/do you have anything in a bmw x7/i)).toBeNull();
+    expect(screen.queryByText(/booked for tomorrow/i)).toBeNull();
+    expect(screen.queryByText(/this is hira/i)).toBeNull();
+    expect(indicatorFor("Knowledge")).toHaveClass("border-border/50");
   });
 
-  it("exposes one accessible label instead of letting screen readers read every animated bubble", () => {
+  it("exposes one accessible label instead of narrating six systems to screen readers", () => {
     render(<SignatureDemo />);
 
     const group = screen.getByRole("group");
-    expect(group).toHaveAccessibleName(/customer asks about suvs/i);
+    expect(group).toHaveAccessibleName(/six business systems/i);
     // The animated content itself must never be independently reachable —
     // an aria-hidden focusable descendant is an accessibility violation.
     expect(group.querySelector('[aria-hidden="true"] [tabindex]')).toBeNull();
   });
 
-  // Each beat's setTimeout is only (re-)registered once React has flushed
-  // the effect from the *previous* one, so a single advanceTimersByTime
-  // call — however large — only ever fires the one timer already pending;
-  // the chain needs one act()-wrapped advance per hop, not one big jump.
-  const HOLDS_MS = [900, 900, 2800, 1600, 800, 2600, 1600, 800, 1200, 2800, 1600, 800, 2800, 3500];
-
-  function advance(ms: number) {
-    act(() => vi.advanceTimersByTime(ms));
-  }
-
-  it("advances through the script over time: typing, then HIRA's reply, then the booking", () => {
+  it("lets systems overlap — CRM starts while Knowledge is still active, not a rigid queue", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
 
-    advance(HOLDS_MS[0]); // -> typing
-    expect(document.querySelector(".animate-typing-dot")).not.toBeNull();
+    advance(HOLDS_MS[0]); // message appears
+    advance(HOLDS_MS[1]); // brief pause
+    advance(HOLDS_MS[2]); // Knowledge -> active
+    expect(indicatorFor("Knowledge")).toHaveClass("border-primary");
 
-    advance(HOLDS_MS[1]); // -> HIRA's SUV list
-    expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
-
-    advance(HOLDS_MS[2]); // -> "Can I finance the BMW X7?"
-    expect(screen.getByText(/can i finance the bmw x7/i)).toBeInTheDocument();
-
-    advance(HOLDS_MS[3]); // -> typing
-    advance(HOLDS_MS[4]); // -> HIRA's financing answer
-    expect(screen.getByText(/up to 84 months/i)).toBeInTheDocument();
-
-    advance(HOLDS_MS[5]); // -> "Book me for a test drive tomorrow."
-    advance(HOLDS_MS[6]); // -> typing
-    advance(HOLDS_MS[7]); // -> "Checking calendar…"
-    expect(screen.getByText(/checking calendar/i)).toBeInTheDocument();
-
-    advance(HOLDS_MS[8]); // -> booking confirmation
-    expect(screen.getByText(/booked!/i)).toBeInTheDocument();
+    advance(HOLDS_MS[3]); // CRM -> active, while Knowledge is still active (not done until beat 7)
+    expect(indicatorFor("Knowledge")).toHaveClass("border-primary");
+    expect(indicatorFor("CRM")).toHaveClass("border-primary");
 
     vi.useRealTimers();
   });
 
-  it("loops back to the opening line after the closing card", () => {
+  it("advances every system through active -> done at its own pace", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
 
-    for (const ms of HOLDS_MS) {
-      advance(ms);
+    for (const ms of HOLDS_MS.slice(0, 7)) advance(ms); // through "Knowledge -> done"
+    expect(screen.getByText("Verified")).toHaveClass("opacity-100");
+
+    for (const ms of HOLDS_MS.slice(7, 10)) advance(ms); // through "CRM -> done"
+    expect(screen.getByText("Updated")).toHaveClass("opacity-100");
+
+    for (const ms of HOLDS_MS.slice(10, 13)) advance(ms); // through "Finance -> done"
+    expect(screen.getByText("Calculated")).toHaveClass("opacity-100");
+
+    vi.useRealTimers();
+  });
+
+  it("settles every system in the same instant once all six have finished", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+
+    for (const ms of HOLDS_MS.slice(0, 14)) advance(ms); // through the "calendar done + team done" beat
+
+    // Not yet settled: done systems still show their own success color.
+    expect(screen.getByText("Booked")).toHaveClass("opacity-100");
+
+    advance(HOLDS_MS[14]); // the settle beat itself
+    // Every system's indicator shares the exact same resting classes now.
+    for (const label of ["Knowledge", "CRM", "Inventory", "Finance", "Calendar", "Human Team"]) {
+      expect(indicatorFor(label)).toHaveClass("border-foreground/40");
     }
 
-    expect(screen.getByText(/looking for a luxury suv/i)).toBeInTheDocument();
-    expect(screen.queryByText(/booked!/i)).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("shows the reply last and smallest, then the closing line, then resets", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+
+    for (const ms of HOLDS_MS.slice(0, 14)) advance(ms); // through the settle beat (index 14)
+    expect(screen.queryByText(/booked for tomorrow/i)).toBeNull();
+
+    advance(HOLDS_MS[14]); // -> reply beat (index 15)
+    expect(screen.getByText(/booked for tomorrow/i)).toBeInTheDocument();
+
+    advance(HOLDS_MS[15]); // -> closing beat (index 16)
+    expect(screen.getByText(/this is hira/i)).toBeInTheDocument();
+    expect(screen.getByText(/one message\. six business systems\. zero manual work\./i)).toBeInTheDocument();
+
+    advance(HOLDS_MS[16]); // -> index 17, closing still holding
+    advance(HOLDS_MS[17]); // -> wraps past the end, resets
+    expect(screen.queryByText(/this is hira/i)).toBeNull();
+    expect(screen.queryByText(/do you have anything in a bmw x7/i)).toBeNull();
+    expect(indicatorFor("Knowledge")).toHaveClass("border-border/50");
 
     vi.useRealTimers();
   });
@@ -103,12 +139,12 @@ describe("SignatureDemo", () => {
     fireEvent.mouseEnter(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
-    expect(screen.queryByText(/would you like to compare them/i)).toBeNull();
+    expect(screen.queryByText(/do you have anything in a bmw x7/i)).toBeNull();
 
     fireEvent.mouseLeave(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
-    expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
+    expect(screen.getByText(/do you have anything in a bmw x7/i)).toBeInTheDocument();
 
     vi.useRealTimers();
   });
@@ -121,12 +157,12 @@ describe("SignatureDemo", () => {
     fireEvent.focus(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
-    expect(screen.queryByText(/would you like to compare them/i)).toBeNull();
+    expect(screen.queryByText(/do you have anything in a bmw x7/i)).toBeNull();
 
     fireEvent.blur(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
-    expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
+    expect(screen.getByText(/do you have anything in a bmw x7/i)).toBeInTheDocument();
 
     vi.useRealTimers();
   });
@@ -138,24 +174,24 @@ describe("SignatureDemo", () => {
     setDocumentHidden(true);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
-    expect(screen.queryByText(/would you like to compare them/i)).toBeNull();
+    expect(screen.queryByText(/do you have anything in a bmw x7/i)).toBeNull();
 
     setDocumentHidden(false);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
-    expect(screen.getByText(/would you like to compare them/i)).toBeInTheDocument();
+    expect(screen.getByText(/do you have anything in a bmw x7/i)).toBeInTheDocument();
 
     vi.useRealTimers();
   });
 
-  it("renders a fully static, complete conversation for prefers-reduced-motion — no timers, no looping", () => {
+  it("renders a fully resolved, static composition for prefers-reduced-motion — no timers, no looping", () => {
     mockReducedMotion(true);
     render(<SignatureDemo />);
 
-    expect(screen.getByRole("img", { name: /customer asks about suvs/i })).toBeInTheDocument();
-    expect(screen.getByText(/looking for a luxury suv/i)).toBeInTheDocument();
-    expect(screen.getByText(/booked!/i)).toBeInTheDocument();
-    expect(screen.getByText(/sales specialist/i)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /six business systems/i })).toBeInTheDocument();
+    expect(screen.getByText(/do you have anything in a bmw x7/i)).toBeInTheDocument();
+    expect(screen.getByText(/booked for tomorrow/i)).toBeInTheDocument();
+    expect(screen.getByText("Notified")).toHaveClass("opacity-100");
   });
 
   afterEach(() => {
