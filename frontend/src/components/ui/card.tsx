@@ -1,16 +1,14 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+// Exported so non-div elements that can't use <Card> directly (e.g. an <li>
+// inside a semantic <ol>, or a <details> that needs native disclosure
+// behavior) can still match its exact visual spec via `cn(cardClassName, ...)`
+// instead of re-declaring the class string by hand and drifting from it.
+export const cardClassName = "rounded-xl border bg-card text-card-foreground shadow-sm";
+
 function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border bg-card text-card-foreground shadow-sm",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <div className={cn(cardClassName, className)} {...props} />;
 }
 
 function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

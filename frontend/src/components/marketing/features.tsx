@@ -6,6 +6,8 @@ import {
   ShieldAlert,
   Target,
 } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { SectionHeader } from "@/components/marketing/section-header";
 
 const FEATURES = [
   {
@@ -50,16 +52,14 @@ export function Features() {
   return (
     <section id="features" className="scroll-mt-16 border-t py-16 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-semibold tracking-tight">Everything the front desk does, minus the wait</h2>
-        </div>
+        <SectionHeader title="Everything the front desk does, minus the wait" className="mx-auto max-w-2xl" />
         <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((feature) => (
-            <div key={feature.title} className="rounded-xl border bg-card p-6">
+            <Card key={feature.title} className="p-6">
               <feature.icon className="size-5 text-muted-foreground" aria-hidden="true" />
               <h3 className="mt-4 text-base font-semibold">{feature.title}</h3>
               <p className="mt-2 text-sm text-muted-foreground">{feature.description}</p>
-            </div>
+            </Card>
           ))}
         </div>
       </div>

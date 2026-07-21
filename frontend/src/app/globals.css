@@ -91,6 +91,26 @@
   }
 }
 
+/* Sprint 68 — documented motion-timing scale (Sprint 67 audit: three
+   durations were in use with no written scale, so every new animated
+   section risked inventing a fourth). Every animation below should draw
+   from one of these three tiers rather than picking a new number:
+
+     micro-interaction   ~150–200ms   — overlay/popover/toast/sheet show-hide,
+                                        fade-in/fade-in-up entrances
+     signature moment    ~700ms       — a one-time, meaningful state change
+                                        (e.g. Mission Control's synchronized
+                                        settle) — reserved for moments that
+                                        should read as "something important
+                                        just finished," not routine UI motion
+     ambient / looping   ~1.5–2s      — a continuous, low-attention effect
+                                        (e.g. Mission Control's travelling
+                                        cable pulse) — always paired with
+                                        the reduced-motion guard below
+
+   This is documentation only — no existing duration below was changed to
+   produce this list; it describes durations already in use. */
+
 /* Motion primitives for overlay surfaces (Dialog/DropdownMenu/Toast) — driven
    by Radix's data-state attribute where available, so mount/unmount timing
    is handled by Radix's own Presence (it holds the node mounted until a CSS

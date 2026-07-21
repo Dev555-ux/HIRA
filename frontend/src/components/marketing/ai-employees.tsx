@@ -1,5 +1,6 @@
 import { MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 const FUTURE_ROLES = ["Sales follow-up", "Support", "Scheduling"];
 
@@ -11,7 +12,7 @@ export function AiEmployees() {
     <section className="border-t py-10 sm:py-12">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <h2 className="sr-only">AI employees, not just automations</h2>
-        <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-2xl border bg-card p-6 text-center sm:flex-row sm:gap-6 sm:text-left">
+        <Card className="mx-auto flex max-w-3xl flex-col items-center gap-4 p-6 text-center sm:flex-row sm:gap-6 sm:text-left">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <MessageSquare className="size-5" aria-hidden="true" />
           </div>
@@ -33,7 +34,7 @@ export function AiEmployees() {
               ))}
             </div>
           </div>
-        </div>
+        </Card>
       </div>
     </section>
   );

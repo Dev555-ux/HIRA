@@ -1,3 +1,7 @@
+import { cardClassName } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { SectionHeader } from "@/components/marketing/section-header";
+
 const FAQS = [
   {
     question: "Is HIRA a chatbot?",
@@ -40,10 +44,14 @@ export function Faq() {
   return (
     <section id="faq" className="scroll-mt-16 py-16 sm:py-24">
       <div className="mx-auto max-w-3xl px-4 sm:px-6">
-        <h2 className="text-center text-3xl font-semibold tracking-tight">Frequently asked questions</h2>
+        <SectionHeader title="Frequently asked questions" />
         <div className="mt-10 space-y-3">
           {FAQS.map((faq) => (
-            <details key={faq.question} className="group rounded-xl border bg-card px-6 py-4">
+            // Stays a <details> for native keyboard/disclosure semantics rather
+            // than the div-based <Card>; px-6 py-4 (not the standard p-6) is
+            // intentional — a shorter closed-row height reads better when
+            // several FAQ rows are stacked and mostly collapsed.
+            <details key={faq.question} className={cn(cardClassName, "group px-6 py-4")}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold marker:content-none">
                 {faq.question}
                 <span
