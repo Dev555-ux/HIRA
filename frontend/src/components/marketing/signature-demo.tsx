@@ -15,23 +15,36 @@ import { cn } from "@/lib/utils";
 type SystemId = "knowledge" | "crm" | "inventory" | "finance" | "calendar" | "team";
 type SystemStatus = "idle" | "active" | "done";
 
-// Fixed-pixel stage, not percentages: at extreme anchor points (12%, 94%) a
-// fluid-width container leaves less physical clearance than a pill or label
-// actually needs — verified via real Playwright screenshots at 390px and
-// 834px widths that the trigger pill and the Knowledge label clipped past
-// the viewport edge. A fixed canvas wrapped in overflow-x-auto guarantees
-// full clearance at every anchor regardless of viewport width, scrolling
-// horizontally on narrow screens instead of clipping.
+// Two coordinate sets per system, not one reflowed at every width: below
+// tablet width (based on real Playwright screenshots, verified at 390px) six
+// nodes in a single row need more physical space than a phone has, so they
+// arrange into two compact rows instead of scrolling horizontally. Desktop
+// and tablet keep the original wide single-row canvas.
 const CANVAS_WIDTH = 1000;
+const CANVAS_COMPACT_WIDTH = 340;
 const CANVAS_HEIGHT = 420;
+const NODE_Y = 280;
 
-const SYSTEMS: { id: SystemId; label: string; doneLabel: string; x: number }[] = [
-  { id: "knowledge", label: "Knowledge", doneLabel: "Verified", x: 70 },
-  { id: "crm", label: "CRM", doneLabel: "Updated", x: 242 },
-  { id: "inventory", label: "Inventory", doneLabel: "Confirmed", x: 414 },
-  { id: "finance", label: "Finance", doneLabel: "Calculated", x: 586 },
-  { id: "calendar", label: "Calendar", doneLabel: "Booked", x: 758 },
-  { id: "team", label: "Human Team", doneLabel: "Notified", x: 930 },
+const TRIGGER_POS_WIDE = { x: 160, y: 90 };
+const REPLY_POS_WIDE = { x: 840, y: 90 };
+const TRIGGER_POS_COMPACT = { x: 170, y: 32 };
+const REPLY_POS_COMPACT = { x: 170, y: 84 };
+
+const SYSTEMS: {
+  id: SystemId;
+  label: string;
+  workingText: string;
+  doneText: string;
+  xWide: number;
+  xCompact: number;
+  yCompact: number;
+}[] = [
+  { id: "knowledge", label: "Knowledge", workingText: "Searching…", doneText: "Verified", xWide: 70, xCompact: 60, yCompact: 190 },
+  { id: "crm", label: "CRM", workingText: "Finding customer…", doneText: "Customer found", xWide: 242, xCompact: 170, yCompact: 190 },
+  { id: "inventory", label: "Inventory", workingText: "Checking stock…", doneText: "BMW X7 available", xWide: 414, xCompact: 280, yCompact: 190 },
+  { id: "finance", label: "Finance", workingText: "Preparing quote…", doneText: "Quote ready", xWide: 586, xCompact: 60, yCompact: 330 },
+  { id: "calendar", label: "Calendar", workingText: "Checking availability…", doneText: "Tuesday · 2 PM", xWide: 758, xCompact: 170, yCompact: 330 },
+  { id: "team", label: "Human Team", workingText: "Preparing handoff…", doneText: "Sales notified", xWide: 930, xCompact: 280, yCompact: 330 },
 ];
 
 const IDLE_STATUS: Record<SystemId, SystemStatus> = {
@@ -52,9 +65,18 @@ const DONE_STATUS: Record<SystemId, SystemStatus> = {
   team: "done",
 };
 
-const TRIGGER_POS = { x: 160, y: 90 };
-const REPLY_POS = { x: 840, y: 90 };
-const NODE_Y = 280;
+function triggerPos(compact: boolean) {
+  return compact ? TRIGGER_POS_COMPACT : TRIGGER_POS_WIDE;
+}
+function replyPos(compact: boolean) {
+  return compact ? REPLY_POS_COMPACT : REPLY_POS_WIDE;
+}
+function canvasWidth(compact: boolean) {
+  return compact ? CANVAS_COMPACT_WIDTH : CANVAS_WIDTH;
+}
+function nodePos(sys: (typeof SYSTEMS)[number], compact: boolean) {
+  return compact ? { x: sys.xCompact, y: sys.yCompact } : { x: sys.xWide, y: NODE_Y };
+}
 
 type Beat = {
   hold: number;
@@ -68,7 +90,9 @@ type Beat = {
 // Every hold below is how long the CURRENT beat stays before the next one
 // fires — timings are staggered deliberately so several systems are
 // active at once (see the overlap between knowledge/crm/inventory/finance,
-// and again between calendar/team), never a rigid one-at-a-time queue.
+// and again between calendar/team), never a rigid one-at-a-time queue. The
+// 700ms settled hold is the emotional payoff: everything goes quiet before
+// the reply arrives, not immediately after.
 const BEATS: Beat[] = [
   { hold: 1500 }, // Scene 1 — idle, quiet, nothing moves
   { hold: 500, message: true }, // Scene 2 — the message arrives, small, off-center
@@ -84,7 +108,7 @@ const BEATS: Beat[] = [
   { hold: 100, systems: { team: "active" } },
   { hold: 800, systems: { finance: "done" } },
   { hold: 400, systems: { calendar: "done", team: "done" } },
-  { hold: 1200, settled: true }, // Scene 5 — the signature moment: everything settles together
+  { hold: 700, settled: true }, // Scene 5 — the signature moment: everything settles together, then a quiet pause
   { hold: 2200, reply: true }, // Scene 6 — the reply, last and smallest
   { hold: 3200, closing: true }, // Scene 7 — "One message. Six business systems. Zero manual work."
   { hold: 600 }, // hold before the loop resets
@@ -102,28 +126,70 @@ function useReducedMotion() {
   return reduced;
 }
 
-function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
+// Below tablet width (verified via Playwright at 390px) a single row of six
+// nodes only fit via horizontal scrolling, which works but isn't a great
+// experience — so phones get a compact two-row arrangement instead. Checked
+// only in an effect, like useReducedMotion, so the server-rendered markup
+// never depends on viewport width and hydration can't mismatch.
+function useIsCompact() {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    setCompact(query.matches);
+    const onChange = (e: MediaQueryListEvent) => setCompact(e.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return compact;
+}
+
+function Cables({ status, compact }: { status: Record<SystemId, SystemStatus>; compact: boolean }) {
+  const trigger = triggerPos(compact);
   return (
     <svg
-      viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
+      viewBox={`0 0 ${canvasWidth(compact)} ${CANVAS_HEIGHT}`}
       className="absolute inset-0 h-full w-full"
       aria-hidden="true"
     >
       {SYSTEMS.map((sys) => {
-        if (status[sys.id] === "idle") return null;
+        const state = status[sys.id];
+        if (state === "idle") return null;
+        const { x, y } = nodePos(sys, compact);
+
+        if (state === "active") {
+          // Two lines sharing one path, not one dashed line: a dim, fully
+          // continuous base (the connection itself, always visible) plus a
+          // bright dash riding on top of it (the pulse — work moving through
+          // that connection). A single sparse dasharray would make the
+          // connection itself flicker in and out; this keeps it solid.
+          return (
+            <g key={sys.id}>
+              <line x1={trigger.x} y1={trigger.y} x2={x} y2={y} vectorEffect="non-scaling-stroke" strokeWidth={1} className="stroke-primary/25" />
+              <line
+                x1={trigger.x}
+                y1={trigger.y}
+                x2={x}
+                y2={y}
+                pathLength={100}
+                vectorEffect="non-scaling-stroke"
+                strokeWidth={1}
+                strokeDasharray="6 94"
+                className="stroke-primary animate-signature-pulse"
+              />
+            </g>
+          );
+        }
+
         return (
           <line
             key={sys.id}
-            x1={TRIGGER_POS.x}
-            y1={TRIGGER_POS.y}
-            x2={sys.x}
-            y2={NODE_Y}
+            x1={trigger.x}
+            y1={trigger.y}
+            x2={x}
+            y2={y}
             vectorEffect="non-scaling-stroke"
             strokeWidth={1}
-            className={cn(
-              "transition-colors duration-700",
-              status[sys.id] === "active" ? "stroke-primary" : "stroke-border",
-            )}
+            className="stroke-border transition-colors duration-700"
           />
         );
       })}
@@ -131,11 +197,34 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
   );
 }
 
-function SystemNode({ sys, status, settled }: { sys: (typeof SYSTEMS)[number]; status: SystemStatus; settled: boolean }) {
+function SystemNode({
+  sys,
+  status,
+  settled,
+  statusTextVisible,
+  compact,
+}: {
+  sys: (typeof SYSTEMS)[number];
+  status: SystemStatus;
+  settled: boolean;
+  statusTextVisible: boolean;
+  compact: boolean;
+}) {
+  const { x, y } = nodePos(sys, compact);
+  // One line of evidence, never more: the working verb while a system is
+  // active, then its own completion ("→ Verified") once done. In the live
+  // animation this line fades away once the whole business settles together
+  // (statusTextVisible=false), so the interface goes quiet before the reply.
+  // The reduced-motion static frame is the one exception — it's the only
+  // frame that user ever sees, so it keeps every line visible regardless of
+  // settled, otherwise the evidence of what happened would never be shown.
+  const statusText = status === "active" ? sys.workingText : status === "done" ? `→ ${sys.doneText}` : "";
+  const showStatus = status !== "idle" && statusTextVisible;
+
   return (
     <div
       className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
-      style={{ left: sys.x, top: NODE_Y }}
+      style={{ left: x, top: y }}
     >
       <span
         className={cn(
@@ -156,12 +245,13 @@ function SystemNode({ sys, status, settled }: { sys: (typeof SYSTEMS)[number]; s
       </span>
       <span
         className={cn(
-          "text-[10px] transition-opacity duration-500",
-          status === "done" ? "opacity-100" : "opacity-0",
-          settled ? "text-muted-foreground" : "text-success",
+          "block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] transition-opacity duration-500",
+          compact ? "max-w-[100px]" : "max-w-[150px]",
+          showStatus ? "opacity-100" : "opacity-0",
+          status === "done" ? "text-success" : "text-muted-foreground/70",
         )}
       >
-        {sys.doneLabel}
+        {statusText}
       </span>
     </div>
   );
@@ -192,6 +282,7 @@ function ClosingLine() {
 
 function DemoWidget() {
   const reducedMotion = useReducedMotion();
+  const compact = useIsCompact();
   const [beatIndex, setBeatIndex] = useState(0);
   const [messageVisible, setMessageVisible] = useState(false);
   const [status, setStatus] = useState<Record<SystemId, SystemStatus>>(IDLE_STATUS);
@@ -234,20 +325,31 @@ function DemoWidget() {
   const summary =
     "Demo: a WhatsApp message triggers six business systems — Knowledge, CRM, Inventory, Finance, Calendar, and Human Team — each working independently before settling together in one synchronized moment and producing a reply. One message, six systems, zero manual work.";
 
+  const trigger = triggerPos(compact);
+  const reply = replyPos(compact);
+  const width = canvasWidth(compact);
+
   if (reducedMotion) {
     return (
       <div role="img" aria-label={summary} className="w-full overflow-x-auto">
         <div
           aria-hidden="true"
           className="relative mx-auto"
-          style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+          style={{ width, height: CANVAS_HEIGHT }}
         >
-          <Cables status={DONE_STATUS} />
+          <Cables status={DONE_STATUS} compact={compact} />
           {SYSTEMS.map((sys) => (
-            <SystemNode key={sys.id} sys={sys} status="done" settled />
+            <SystemNode
+              key={sys.id}
+              sys={sys}
+              status="done"
+              settled
+              statusTextVisible
+              compact={compact}
+            />
           ))}
-          <Pill x={TRIGGER_POS.x} y={TRIGGER_POS.y} text="Do you have anything in a BMW X7?" />
-          <Pill x={REPLY_POS.x} y={REPLY_POS.y} text="Booked for tomorrow, 4:00 PM." />
+          <Pill x={trigger.x} y={trigger.y} text="Do you have anything in a BMW X7?" />
+          <Pill x={reply.x} y={reply.y} text="Booked for tomorrow, 4:00 PM." />
         </div>
       </div>
     );
@@ -268,19 +370,26 @@ function DemoWidget() {
         <div
           aria-hidden="true"
           className="relative mx-auto"
-          style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+          style={{ width, height: CANVAS_HEIGHT }}
         >
-          <Cables status={status} />
+          <Cables status={status} compact={compact} />
           <div key={settled ? "settled" : "working"} className={cn(settled && "animate-signature-settle")}>
             {SYSTEMS.map((sys) => (
-              <SystemNode key={sys.id} sys={sys} status={status[sys.id]} settled={settled} />
+              <SystemNode
+                key={sys.id}
+                sys={sys}
+                status={status[sys.id]}
+                settled={settled}
+                statusTextVisible={!settled}
+                compact={compact}
+              />
             ))}
           </div>
           {messageVisible && !closingVisible && (
-            <Pill x={TRIGGER_POS.x} y={TRIGGER_POS.y} text="Do you have anything in a BMW X7?" />
+            <Pill x={trigger.x} y={trigger.y} text="Do you have anything in a BMW X7?" />
           )}
           {replyVisible && !closingVisible && (
-            <Pill x={REPLY_POS.x} y={REPLY_POS.y} text="Booked for tomorrow, 4:00 PM." />
+            <Pill x={reply.x} y={reply.y} text="Booked for tomorrow, 4:00 PM." />
           )}
           {closingVisible && <ClosingLine />}
         </div>

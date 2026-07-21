@@ -28,7 +28,7 @@ function indicatorFor(label: string) {
 }
 
 // Mirrors BEATS' hold values in signature-demo.tsx exactly, in order.
-const HOLDS_MS = [1500, 500, 300, 600, 200, 500, 100, 300, 100, 300, 200, 100, 800, 400, 1200, 2200, 3200, 600];
+const HOLDS_MS = [1500, 500, 300, 600, 200, 500, 100, 300, 100, 300, 200, 100, 800, 400, 700, 2200, 3200, 600];
 
 function advance(ms: number) {
   act(() => vi.advanceTimersByTime(ms));
@@ -66,10 +66,34 @@ describe("SignatureDemo", () => {
     advance(HOLDS_MS[1]); // brief pause
     advance(HOLDS_MS[2]); // Knowledge -> active
     expect(indicatorFor("Knowledge")).toHaveClass("border-primary");
+    // Evidence of work, not just a colored dot: the working verb shows while active.
+    expect(screen.getByText("Searching…")).toHaveClass("opacity-100");
 
     advance(HOLDS_MS[3]); // CRM -> active, while Knowledge is still active (not done until beat 7)
     expect(indicatorFor("Knowledge")).toHaveClass("border-primary");
     expect(indicatorFor("CRM")).toHaveClass("border-primary");
+
+    vi.useRealTimers();
+  });
+
+  it("shows a travelling pulse on an active cable and removes it once that system finishes", () => {
+    vi.useFakeTimers();
+    const { container } = render(<SignatureDemo />);
+
+    // Knowledge's line ends at x2=70 (its wide-layout position) — look it up
+    // directly rather than "any pulsing line", since other systems overlap
+    // and stay active after Knowledge finishes. The pulse is a separate
+    // overlay line sharing the same endpoint, so filter on its class too.
+    const knowledgePulse = () =>
+      Array.from(container.querySelectorAll("svg line.animate-signature-pulse")).find(
+        (line) => line.getAttribute("x2") === "70",
+      );
+
+    for (const ms of HOLDS_MS.slice(0, 3)) advance(ms); // Knowledge -> active
+    expect(knowledgePulse()).toHaveAttribute("stroke-dasharray", "6 94");
+
+    for (const ms of HOLDS_MS.slice(3, 7)) advance(ms); // Knowledge -> done
+    expect(knowledgePulse()).toBeUndefined();
 
     vi.useRealTimers();
   });
@@ -79,13 +103,13 @@ describe("SignatureDemo", () => {
     render(<SignatureDemo />);
 
     for (const ms of HOLDS_MS.slice(0, 7)) advance(ms); // through "Knowledge -> done"
-    expect(screen.getByText("Verified")).toHaveClass("opacity-100");
+    expect(screen.getByText("→ Verified")).toHaveClass("opacity-100");
 
     for (const ms of HOLDS_MS.slice(7, 10)) advance(ms); // through "CRM -> done"
-    expect(screen.getByText("Updated")).toHaveClass("opacity-100");
+    expect(screen.getByText("→ Customer found")).toHaveClass("opacity-100");
 
     for (const ms of HOLDS_MS.slice(10, 13)) advance(ms); // through "Finance -> done"
-    expect(screen.getByText("Calculated")).toHaveClass("opacity-100");
+    expect(screen.getByText("→ Quote ready")).toHaveClass("opacity-100");
 
     vi.useRealTimers();
   });
@@ -94,16 +118,19 @@ describe("SignatureDemo", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
 
-    for (const ms of HOLDS_MS.slice(0, 14)) advance(ms); // through the "calendar done + team done" beat
+    for (const ms of HOLDS_MS.slice(0, 13)) advance(ms); // through the "calendar done + team done" beat
 
     // Not yet settled: done systems still show their own success color.
-    expect(screen.getByText("Booked")).toHaveClass("opacity-100");
+    expect(screen.getByText("→ Tuesday · 2 PM")).toHaveClass("opacity-100");
 
-    advance(HOLDS_MS[14]); // the settle beat itself
+    advance(HOLDS_MS[13]); // the settle beat itself
     // Every system's indicator shares the exact same resting classes now.
     for (const label of ["Knowledge", "CRM", "Inventory", "Finance", "Calendar", "Human Team"]) {
       expect(indicatorFor(label)).toHaveClass("border-foreground/40");
     }
+    // The calm moment silences the evidence too — status text fades away
+    // with the accent colors, not just the indicator dots.
+    expect(screen.getByText("→ Tuesday · 2 PM")).toHaveClass("opacity-0");
 
     vi.useRealTimers();
   });
@@ -191,7 +218,7 @@ describe("SignatureDemo", () => {
     expect(screen.getByRole("img", { name: /six business systems/i })).toBeInTheDocument();
     expect(screen.getByText(/do you have anything in a bmw x7/i)).toBeInTheDocument();
     expect(screen.getByText(/booked for tomorrow/i)).toBeInTheDocument();
-    expect(screen.getByText("Notified")).toHaveClass("opacity-100");
+    expect(screen.getByText("→ Sales notified")).toHaveClass("opacity-100");
   });
 
   afterEach(() => {

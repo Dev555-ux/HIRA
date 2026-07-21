@@ -282,6 +282,23 @@
   animation: signature-settle 700ms ease-out;
 }
 
+/* The travelling pulse on an active cable — work moving through the
+   business, not a decorative flourish. pathLength={100} on each <line>
+   normalizes stroke-dasharray/dashoffset to a 0–100 scale regardless of the
+   line's actual pixel length, so one keyframe works for every cable without
+   per-line duration math. White only (stroke-primary), no glow/blur. */
+@keyframes signature-pulse {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+@utility animate-signature-pulse {
+  animation: signature-pulse 1.8s linear infinite;
+}
+
 /* Global reduced-motion guard (Sprint 46). Every animation/transition in this
    file — old and new — collapses to effectively instant for anyone who has
    asked the OS for reduced motion, per this sprint's explicit accessibility
