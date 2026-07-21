@@ -1,160 +1,118 @@
 "use client";
 
-import { Bot, CheckCheck, CheckCircle2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 
-// A scripted, looping conversation — not a video, not a Lottie file, just
-// React state + CSS animation (see globals.css's message-in/bubble-in/
-// typing-dot/system-pulse keyframes). Grounded in the real Velocity Luxe
-// Motors demo knowledge (beta/DEMO_BUSINESS_KNOWLEDGE_VELOCITY_LUXE_MOTORS.md
-// §2/§5): the dealership's actual SUV lineup (BMW X7, Mercedes-Benz G-Class,
-// Audi Q8 — not the X5/GLE/Q7 trims, which aren't in its real inventory) and
-// its real financing terms (12–84 month tenures, §5).
-type Beat =
-  | { kind: "customer"; id: string; text: string; time: string; hold: number }
-  | { kind: "hira"; id: string; text: string; time: string; hold: number }
-  | { kind: "typing"; hold: number }
-  | { kind: "system"; text: string; hold: number }
-  | { kind: "booking"; id: string; day: string; clockTime: string; hold: number }
-  | { kind: "end"; hold: number };
+// HIRA's signature behavior, not a chat demo: one message reaches six real
+// business systems, each begins and finishes its own work at its own pace
+// (deliberately overlapping — colleagues working at once, not a queue), and
+// then — the one moment this whole component exists to produce — every
+// system settles into the same resting state in the exact same instant.
+// That synchronized settle is driven by a single boolean flip, so it is
+// genuinely simultaneous, not staggered to look that way. The customer's
+// reply is the smallest, last thing on screen — a consequence, not the
+// product.
+type SystemId = "knowledge" | "crm" | "inventory" | "finance" | "calendar" | "team";
+type SystemStatus = "idle" | "active" | "done";
 
-const BEATS: Beat[] = [
-  { kind: "customer", id: "c1", text: "Hi, I'm looking for a luxury SUV.", time: "9:41 AM", hold: 900 },
-  { kind: "typing", hold: 900 },
-  {
-    kind: "hira",
-    id: "h1",
-    text: "We currently have:\n• BMW X7\n• Mercedes-Benz G-Class\n• Audi Q8\n\nWould you like to compare them?",
-    time: "9:41 AM",
-    hold: 2800,
-  },
-  { kind: "customer", id: "c2", text: "Can I finance the BMW X7?", time: "9:42 AM", hold: 1600 },
-  { kind: "typing", hold: 800 },
-  {
-    kind: "hira",
-    id: "h2",
-    text: "Yes. Financing is available for up to 84 months.\nWould you like an estimate?",
-    time: "9:42 AM",
-    hold: 2600,
-  },
-  { kind: "customer", id: "c3", text: "Book me for a test drive tomorrow.", time: "9:43 AM", hold: 1600 },
-  { kind: "typing", hold: 800 },
-  { kind: "system", text: "Checking calendar…", hold: 1200 },
-  { kind: "booking", id: "b1", day: "Tomorrow", clockTime: "4:00 PM", hold: 2800 },
-  { kind: "customer", id: "c4", text: "I'd like to speak with someone.", time: "9:44 AM", hold: 1600 },
-  { kind: "typing", hold: 800 },
-  {
-    kind: "hira",
-    id: "h3",
-    text: "Absolutely. I've notified one of our sales specialists.\nSomeone will contact you shortly.",
-    time: "9:44 AM",
-    hold: 2800,
-  },
-  { kind: "end", hold: 3500 },
+// Two coordinate sets per system, not one reflowed at every width: below
+// tablet width (based on real Playwright screenshots, verified at 390px) six
+// nodes in a single row need more physical space than a phone has, so they
+// arrange into two compact rows instead of scrolling horizontally. Desktop
+// and tablet keep the original wide single-row canvas.
+const CANVAS_WIDTH = 1000;
+const CANVAS_COMPACT_WIDTH = 340;
+const CANVAS_HEIGHT = 420;
+const NODE_Y = 280;
+
+const TRIGGER_POS_WIDE = { x: 160, y: 90 };
+const REPLY_POS_WIDE = { x: 840, y: 90 };
+const TRIGGER_POS_COMPACT = { x: 170, y: 32 };
+const REPLY_POS_COMPACT = { x: 170, y: 84 };
+
+const SYSTEMS: {
+  id: SystemId;
+  label: string;
+  workingText: string;
+  doneText: string;
+  xWide: number;
+  xCompact: number;
+  yCompact: number;
+}[] = [
+  { id: "knowledge", label: "Knowledge", workingText: "Searching…", doneText: "Verified", xWide: 70, xCompact: 60, yCompact: 190 },
+  { id: "crm", label: "CRM", workingText: "Finding customer…", doneText: "Customer found", xWide: 242, xCompact: 170, yCompact: 190 },
+  { id: "inventory", label: "Inventory", workingText: "Checking stock…", doneText: "BMW X7 available", xWide: 414, xCompact: 280, yCompact: 190 },
+  { id: "finance", label: "Finance", workingText: "Preparing quote…", doneText: "Quote ready", xWide: 586, xCompact: 60, yCompact: 330 },
+  { id: "calendar", label: "Calendar", workingText: "Checking availability…", doneText: "Tuesday · 2 PM", xWide: 758, xCompact: 170, yCompact: 330 },
+  { id: "team", label: "Human Team", workingText: "Preparing handoff…", doneText: "Sales notified", xWide: 930, xCompact: 280, yCompact: 330 },
 ];
 
-type RenderedMessage =
-  | { kind: "customer"; id: string; text: string; time: string }
-  | { kind: "hira"; id: string; text: string; time: string }
-  | { kind: "booking"; id: string; day: string; clockTime: string };
+const IDLE_STATUS: Record<SystemId, SystemStatus> = {
+  knowledge: "idle",
+  crm: "idle",
+  inventory: "idle",
+  finance: "idle",
+  calendar: "idle",
+  team: "idle",
+};
 
-type Ephemeral = { kind: "typing" } | { kind: "system"; text: string } | null;
+const DONE_STATUS: Record<SystemId, SystemStatus> = {
+  knowledge: "done",
+  crm: "done",
+  inventory: "done",
+  finance: "done",
+  calendar: "done",
+  team: "done",
+};
 
-function toRendered(beat: Beat): RenderedMessage | null {
-  if (beat.kind === "customer" || beat.kind === "hira" || beat.kind === "booking") {
-    return beat;
-  }
-  return null;
+function triggerPos(compact: boolean) {
+  return compact ? TRIGGER_POS_COMPACT : TRIGGER_POS_WIDE;
+}
+function replyPos(compact: boolean) {
+  return compact ? REPLY_POS_COMPACT : REPLY_POS_WIDE;
+}
+function canvasWidth(compact: boolean) {
+  return compact ? CANVAS_COMPACT_WIDTH : CANVAS_WIDTH;
+}
+function nodePos(sys: (typeof SYSTEMS)[number], compact: boolean) {
+  return compact ? { x: sys.xCompact, y: sys.yCompact } : { x: sys.xWide, y: NODE_Y };
 }
 
-const STATIC_MESSAGES: RenderedMessage[] = BEATS.map(toRendered).filter(
-  (m): m is RenderedMessage => m !== null,
-);
+type Beat = {
+  hold: number;
+  message?: boolean;
+  systems?: Partial<Record<SystemId, SystemStatus>>;
+  settled?: boolean;
+  reply?: boolean;
+  closing?: boolean;
+};
 
-function PhoneFrame({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="relative mx-auto w-full max-w-[300px]">
-      <div className="relative rounded-[2.5rem] border-[6px] border-foreground/10 bg-card p-2 shadow-2xl">
-        <div className="absolute left-1/2 top-3 z-10 h-5 w-24 -translate-x-1/2 rounded-full bg-foreground/10" />
-        <div className="relative h-[440px] overflow-hidden rounded-[2rem] bg-background">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MessageBubble({ message }: { message: RenderedMessage }) {
-  if (message.kind === "customer") {
-    return (
-      <div className="animate-message-in max-w-[80%] rounded-2xl rounded-bl-sm bg-secondary px-3 py-2 text-[13px] leading-snug">
-        <p className="whitespace-pre-line">{message.text}</p>
-        <p className="mt-1 text-[10px] text-muted-foreground">{message.time}</p>
-      </div>
-    );
-  }
-
-  if (message.kind === "hira") {
-    return (
-      <div className="animate-message-in ml-auto max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-snug text-primary-foreground">
-        <p className="whitespace-pre-line">{message.text}</p>
-        <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-primary-foreground/70">
-          {message.time}
-          <CheckCheck className="size-3 shrink-0" aria-hidden="true" />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="animate-bubble-in ml-auto flex max-w-[80%] items-center gap-2 rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-[13px] text-primary-foreground">
-      <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
-      <span>
-        Booked! <span className="font-semibold">{message.day}, {message.clockTime}</span>
-      </span>
-    </div>
-  );
-}
-
-function TypingBubble() {
-  return (
-    <div className="animate-message-in ml-auto flex w-fit items-center gap-1 rounded-2xl rounded-br-sm bg-primary px-3 py-2.5">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="animate-typing-dot size-1.5 rounded-full bg-primary-foreground"
-          style={{ animationDelay: `${i * 0.15}s` }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function SystemNotice({ text }: { text: string }) {
-  return (
-    <div className="animate-fade-in flex justify-center">
-      <span className="animate-system-pulse rounded-full bg-secondary/70 px-3 py-1 text-[11px] text-muted-foreground">
-        {text}
-      </span>
-    </div>
-  );
-}
-
-function EndCard() {
-  return (
-    <div className="animate-fade-in absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background px-6 text-center">
-      <span className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-        <Bot className="size-5" aria-hidden="true" />
-      </span>
-      <p className="text-base font-semibold tracking-tight">
-        Never miss another customer message.
-      </p>
-      <span className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground">
-        Get started
-      </span>
-    </div>
-  );
-}
+// Every hold below is how long the CURRENT beat stays before the next one
+// fires — timings are staggered deliberately so several systems are
+// active at once (see the overlap between knowledge/crm/inventory/finance,
+// and again between calendar/team), never a rigid one-at-a-time queue. The
+// 700ms settled hold is the emotional payoff: everything goes quiet before
+// the reply arrives, not immediately after.
+const BEATS: Beat[] = [
+  { hold: 1500 }, // Scene 1 — idle, quiet, nothing moves
+  { hold: 500, message: true }, // Scene 2 — the message arrives, small, off-center
+  { hold: 300 }, // a breath before the business reacts
+  { hold: 600, systems: { knowledge: "active" } },
+  { hold: 200, systems: { crm: "active" } },
+  { hold: 500, systems: { inventory: "active" } },
+  { hold: 100, systems: { finance: "active" } },
+  { hold: 300, systems: { knowledge: "done" } },
+  { hold: 100, systems: { calendar: "active" } },
+  { hold: 300, systems: { crm: "done" } },
+  { hold: 200, systems: { inventory: "done" } },
+  { hold: 100, systems: { team: "active" } },
+  { hold: 800, systems: { finance: "done" } },
+  { hold: 400, systems: { calendar: "done", team: "done" } },
+  { hold: 700, settled: true }, // Scene 5 — the signature moment: everything settles together, then a quiet pause
+  { hold: 2200, reply: true }, // Scene 6 — the reply, last and smallest
+  { hold: 3200, closing: true }, // Scene 7 — "One message. Six business systems. Zero manual work."
+  { hold: 600 }, // hold before the loop resets
+];
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -168,18 +126,171 @@ function useReducedMotion() {
   return reduced;
 }
 
+// Below tablet width (verified via Playwright at 390px) a single row of six
+// nodes only fit via horizontal scrolling, which works but isn't a great
+// experience — so phones get a compact two-row arrangement instead. Checked
+// only in an effect, like useReducedMotion, so the server-rendered markup
+// never depends on viewport width and hydration can't mismatch.
+function useIsCompact() {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    setCompact(query.matches);
+    const onChange = (e: MediaQueryListEvent) => setCompact(e.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return compact;
+}
+
+function Cables({ status, compact }: { status: Record<SystemId, SystemStatus>; compact: boolean }) {
+  const trigger = triggerPos(compact);
+  return (
+    <svg
+      viewBox={`0 0 ${canvasWidth(compact)} ${CANVAS_HEIGHT}`}
+      className="absolute inset-0 h-full w-full"
+      aria-hidden="true"
+    >
+      {SYSTEMS.map((sys) => {
+        const state = status[sys.id];
+        if (state === "idle") return null;
+        const { x, y } = nodePos(sys, compact);
+
+        if (state === "active") {
+          // Two lines sharing one path, not one dashed line: a dim, fully
+          // continuous base (the connection itself, always visible) plus a
+          // bright dash riding on top of it (the pulse — work moving through
+          // that connection). A single sparse dasharray would make the
+          // connection itself flicker in and out; this keeps it solid.
+          return (
+            <g key={sys.id}>
+              <line x1={trigger.x} y1={trigger.y} x2={x} y2={y} vectorEffect="non-scaling-stroke" strokeWidth={1} className="stroke-primary/25" />
+              <line
+                x1={trigger.x}
+                y1={trigger.y}
+                x2={x}
+                y2={y}
+                pathLength={100}
+                vectorEffect="non-scaling-stroke"
+                strokeWidth={1}
+                strokeDasharray="6 94"
+                className="stroke-primary animate-signature-pulse"
+              />
+            </g>
+          );
+        }
+
+        return (
+          <line
+            key={sys.id}
+            x1={trigger.x}
+            y1={trigger.y}
+            x2={x}
+            y2={y}
+            vectorEffect="non-scaling-stroke"
+            strokeWidth={1}
+            className="stroke-border transition-colors duration-700"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+function SystemNode({
+  sys,
+  status,
+  settled,
+  statusTextVisible,
+  compact,
+}: {
+  sys: (typeof SYSTEMS)[number];
+  status: SystemStatus;
+  settled: boolean;
+  statusTextVisible: boolean;
+  compact: boolean;
+}) {
+  const { x, y } = nodePos(sys, compact);
+  // One line of evidence, never more: the working verb while a system is
+  // active, then its own completion ("→ Verified") once done. In the live
+  // animation this line fades away once the whole business settles together
+  // (statusTextVisible=false), so the interface goes quiet before the reply.
+  // The reduced-motion static frame is the one exception — it's the only
+  // frame that user ever sees, so it keeps every line visible regardless of
+  // settled, otherwise the evidence of what happened would never be shown.
+  const statusText = status === "active" ? sys.workingText : status === "done" ? `→ ${sys.doneText}` : "";
+  const showStatus = status !== "idle" && statusTextVisible;
+
+  return (
+    <div
+      className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
+      style={{ left: x, top: y }}
+    >
+      <span
+        className={cn(
+          "size-3.5 rounded-full border transition-all duration-500",
+          status === "idle" && "border-border/50",
+          status === "active" && "scale-125 border-primary bg-primary/25",
+          status === "done" && !settled && "border-success bg-success/15",
+          status === "done" && settled && "border-foreground/40 bg-foreground/10",
+        )}
+      />
+      <span
+        className={cn(
+          "text-[11px] uppercase tracking-wide transition-colors duration-500",
+          status === "idle" ? "text-muted-foreground/35" : "text-muted-foreground",
+        )}
+      >
+        {sys.label}
+      </span>
+      <span
+        className={cn(
+          "block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] transition-opacity duration-500",
+          compact ? "max-w-[100px]" : "max-w-[150px]",
+          showStatus ? "opacity-100" : "opacity-0",
+          status === "done" ? "text-success" : "text-muted-foreground/70",
+        )}
+      >
+        {statusText}
+      </span>
+    </div>
+  );
+}
+
+function Pill({ x, y, text }: { x: number; y: number; text: string }) {
+  return (
+    <div
+      className="animate-fade-in absolute -translate-x-1/2 -translate-y-1/2"
+      style={{ left: x, top: y }}
+    >
+      <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+        <span className="size-1.5 shrink-0 rounded-full bg-success" />
+        {text}
+      </div>
+    </div>
+  );
+}
+
+function ClosingLine() {
+  return (
+    <div className="animate-fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-6 text-center">
+      <p className="text-sm text-muted-foreground">One message. Six business systems. Zero manual work.</p>
+      <p className="text-2xl font-semibold tracking-tight">This is HIRA.</p>
+    </div>
+  );
+}
+
 function DemoWidget() {
   const reducedMotion = useReducedMotion();
+  const compact = useIsCompact();
   const [beatIndex, setBeatIndex] = useState(0);
-  const [messages, setMessages] = useState<RenderedMessage[]>(() => {
-    const first = toRendered(BEATS[0]);
-    return first ? [first] : [];
-  });
-  const [ephemeral, setEphemeral] = useState<Ephemeral>(null);
-  const [showEnd, setShowEnd] = useState(false);
+  const [messageVisible, setMessageVisible] = useState(false);
+  const [status, setStatus] = useState<Record<SystemId, SystemStatus>>(IDLE_STATUS);
+  const [settled, setSettled] = useState(false);
+  const [replyVisible, setReplyVisible] = useState(false);
+  const [closingVisible, setClosingVisible] = useState(false);
   const [paused, setPaused] = useState(false);
   const [tabHidden, setTabHidden] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onVisibility = () => setTabHidden(document.hidden);
@@ -188,58 +299,58 @@ function DemoWidget() {
   }, []);
 
   useEffect(() => {
-    if (paused || tabHidden || reducedMotion) {
-      return;
-    }
-    const currentHold = BEATS[beatIndex].hold;
+    if (paused || tabHidden || reducedMotion) return;
     const timer = setTimeout(() => {
       const nextIndex = beatIndex + 1;
       if (nextIndex >= BEATS.length) {
-        setShowEnd(false);
-        setEphemeral(null);
-        const first = toRendered(BEATS[0]);
-        setMessages(first ? [first] : []);
+        setMessageVisible(false);
+        setStatus(IDLE_STATUS);
+        setSettled(false);
+        setReplyVisible(false);
+        setClosingVisible(false);
         setBeatIndex(0);
         return;
       }
       const beat = BEATS[nextIndex];
-      const rendered = toRendered(beat);
-      if (rendered) {
-        setMessages((prev) => [...prev, rendered]);
-        setEphemeral(null);
-      } else if (beat.kind === "typing") {
-        setEphemeral({ kind: "typing" });
-      } else if (beat.kind === "system") {
-        setEphemeral({ kind: "system", text: beat.text });
-      } else if (beat.kind === "end") {
-        setShowEnd(true);
-        setEphemeral(null);
-      }
+      if (beat.message) setMessageVisible(true);
+      if (beat.systems) setStatus((prev) => ({ ...prev, ...beat.systems }));
+      if (beat.settled) setSettled(true);
+      if (beat.reply) setReplyVisible(true);
+      if (beat.closing) setClosingVisible(true);
       setBeatIndex(nextIndex);
-    }, currentHold);
+    }, BEATS[beatIndex].hold);
     return () => clearTimeout(timer);
   }, [beatIndex, paused, tabHidden, reducedMotion]);
 
-  useEffect(() => {
-    if (reducedMotion) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [messages, ephemeral, reducedMotion]);
-
   const summary =
-    "Demo: a customer asks about SUVs, HIRA answers from the dealership's own inventory, explains financing, books a test drive, and hands off to a person when asked.";
+    "Demo: a WhatsApp message triggers six business systems — Knowledge, CRM, Inventory, Finance, Calendar, and Human Team — each working independently before settling together in one synchronized moment and producing a reply. One message, six systems, zero manual work.";
+
+  const trigger = triggerPos(compact);
+  const reply = replyPos(compact);
+  const width = canvasWidth(compact);
 
   if (reducedMotion) {
     return (
-      <div role="img" aria-label={summary} className="w-fit">
-        <PhoneFrame>
-          <div aria-hidden="true" className="flex h-full flex-col gap-2 overflow-y-auto p-3">
-            {STATIC_MESSAGES.map((m) => (
-              <MessageBubble key={m.id} message={m} />
-            ))}
-          </div>
-        </PhoneFrame>
+      <div role="img" aria-label={summary} className="w-full overflow-x-auto">
+        <div
+          aria-hidden="true"
+          className="relative mx-auto"
+          style={{ width, height: CANVAS_HEIGHT }}
+        >
+          <Cables status={DONE_STATUS} compact={compact} />
+          {SYSTEMS.map((sys) => (
+            <SystemNode
+              key={sys.id}
+              sys={sys}
+              status="done"
+              settled
+              statusTextVisible
+              compact={compact}
+            />
+          ))}
+          <Pill x={trigger.x} y={trigger.y} text="Do you have anything in a BMW X7?" />
+          <Pill x={reply.x} y={reply.y} text="Booked for tomorrow, 4:00 PM." />
+        </div>
       </div>
     );
   }
@@ -249,38 +360,53 @@ function DemoWidget() {
       role="group"
       aria-label={`${summary} Animation pauses while hovered or focused.`}
       tabIndex={0}
-      className="w-fit rounded-[2.5rem] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      className="rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
     >
-      <div aria-hidden="true">
-        <PhoneFrame>
-          <div ref={scrollRef} className="flex h-full flex-col gap-2 overflow-y-auto p-3 scroll-smooth">
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
+      <div className="overflow-x-auto">
+        <div
+          aria-hidden="true"
+          className="relative mx-auto"
+          style={{ width, height: CANVAS_HEIGHT }}
+        >
+          <Cables status={status} compact={compact} />
+          <div key={settled ? "settled" : "working"} className={cn(settled && "animate-signature-settle")}>
+            {SYSTEMS.map((sys) => (
+              <SystemNode
+                key={sys.id}
+                sys={sys}
+                status={status[sys.id]}
+                settled={settled}
+                statusTextVisible={!settled}
+                compact={compact}
+              />
             ))}
-            {ephemeral?.kind === "typing" && <TypingBubble />}
-            {ephemeral?.kind === "system" && <SystemNotice text={ephemeral.text} />}
           </div>
-          {showEnd && <EndCard />}
-        </PhoneFrame>
+          {messageVisible && !closingVisible && (
+            <Pill x={trigger.x} y={trigger.y} text="Do you have anything in a BMW X7?" />
+          )}
+          {replyVisible && !closingVisible && (
+            <Pill x={reply.x} y={reply.y} text="Booked for tomorrow, 4:00 PM." />
+          )}
+          {closingVisible && <ClosingLine />}
+        </div>
       </div>
     </div>
   );
 }
 
-// Section-level wrapper — same slot Product Proof occupied (immediately
-// below Hero), same "SEE IT IN ACTION" eyebrow treatment, so this is a
-// drop-in replacement rather than a new page section.
+// Section-level wrapper: quiet, industrial restraint rather than another
+// dark "spotlight" stage — generous vertical space and a thin top/bottom
+// rule set this section apart, not a mood-lit background. Deliberately no
+// eyebrow label above the stage this time: the animation explains itself,
+// it isn't captioned first.
 export function SignatureDemo() {
   return (
-    <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-24">
-      <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-        See it in action
-      </h2>
-      <div className="mt-6">
+    <section className="border-y border-border/60 py-24 sm:py-32">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <DemoWidget />
       </div>
     </section>
