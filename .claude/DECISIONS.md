@@ -561,6 +561,52 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
   1. **Connection model**: "guided-manual v1" — each business creates its own Meta App/System User on Meta's own site and pastes its Phone Number ID, WABA ID, access token, and app secret into a HIRA form. Rejected: full Embedded Signup (a one-click OAuth-style flow Meta hosts) — that requires Meta Tech Provider approval, which HIRA does not yet have; building toward it now would mean shipping code that can't actually be used until an external approval lands.
   2. **PR scope**: split Sprint 69 into four independent PRs (Deployment/Reliability, Self-Serve WhatsApp + 24h window, Knowledge Safety, Escalation Queue) rather than the single PR the brief requested, given the size and blast radius of touching webhook auth and message sending.
   New `WhatsAppCredential` table (`business_id` FK unique, `access_token_encrypted`, `app_secret_encrypted`) mirrors `CalendarCredential` (DEC-032) exactly, and reuses `settings.calendar_encryption_key`/Fernet for encryption rather than introducing a new required env var — same "one key, another use" reasoning DEC-032 already used for its own second purpose (HMAC-signing the OAuth `state` param). The Meta webhook **verify token** (the one-time GET handshake proving endpoint ownership) stays global/shared across all businesses — it is not a per-message trust boundary, so every business is instructed to paste the same HIRA-provided value into their own Meta App's webhook config.
+- **Architecture diagram** — connect flow and the inbound webhook flow it enables, both per-business from here on:
+
+```mermaid
+sequenceDiagram
+    participant Owner as Business owner
+    participant Meta as Meta (their own App)
+    participant FE as HIRA frontend
+    participant API as POST /api/v1/whatsapp/connect
+    participant Graph as Meta Graph API
+    participant DB as WhatsAppCredential (Fernet-encrypted)
+
+    Owner->>Meta: Create Meta App + System User (on Meta's own site)
+    Owner->>FE: Paste Phone Number ID, WABA ID, access token, app secret
+    FE->>API: POST /connect {phone_number_id, waba_id, access_token, app_secret}
+    API->>Graph: Test call using the submitted access_token
+    alt credentials invalid
+        Graph-->>API: 401 / 404
+        API-->>FE: 422 + specific reason (form stays open to retry)
+    else credentials valid
+        Graph-->>API: 200
+        API->>DB: encrypt + store access_token, app_secret
+        API-->>FE: connected (masked phone number)
+    end
+```
+
+```mermaid
+sequenceDiagram
+    participant Meta as Meta (customer's WhatsApp)
+    participant WH as POST /webhooks/whatsapp
+    participant BizLookup as Business + WhatsAppCredential lookup
+    participant DB as WhatsAppCredential (decrypt app_secret)
+    participant Pipeline as generate_reply() / send_text()
+
+    Meta->>WH: inbound message (HMAC-signed with THIS business's app_secret)
+    WH->>WH: parse JSON, extract phone_number_id (untrusted so far)
+    WH->>BizLookup: find Business + WhatsAppCredential by phone_number_id
+    BizLookup->>DB: decrypt this business's own app_secret
+    WH->>WH: verify HMAC signature against that decrypted secret
+    alt signature invalid or no credential found
+        WH-->>Meta: 403
+    else signature valid
+        WH->>Pipeline: persist + process (grounded reply, 24h window checked before send)
+        Pipeline->>Meta: send_text(..., access_token=this business's own token)
+    end
+```
+
 - **Context**: `app/onboarding/whatsapp.py::connect_phone_number()` was a manual script-run utility and the dashboard's "Connect WhatsApp" wizard had no backend endpoint at all — it only built a copy-pasteable message for the owner to send the founder. That workflow does not scale past the founder's personal attention and was called out explicitly in the Sprint 69 proposal as one of two blockers to "a business can use HIRA for an entire workday without the founder."
 - **Concrete implementation shape** (ordinary engineering choices within the decisions above, not separately escalated):
   - **Webhook signature verification reordered.** `app/webhooks/whatsapp.py::receive()` previously verified the inbound HMAC signature against one global secret *before* parsing the payload. It now parses the untrusted JSON first (safe — nothing is trusted or persisted from it yet) to extract `phone_number_id`, looks up the `Business` and its `WhatsAppCredential`, decrypts that business's own `app_secret`, and only then verifies the signature against it — a real security-sensitive reordering, not cosmetic. Any failure at any step (unparseable body, unknown `phone_number_id`, no stored credential, signature mismatch) rejects with 403, collapsing what used to be one failure mode into several without changing the response the caller sees.
