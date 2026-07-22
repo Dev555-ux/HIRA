@@ -58,9 +58,13 @@ def test_import_indexes_extracted_text_and_reports_counts(db_session):
         assert url == "https://example.com/hours"
         return "Opening Hours", "We open at 9am.\n\nWe close at 5pm."
 
-    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"}, fetch_page=fake_fetch)
+    client = _client(
+        db_session, claims_for_token=lambda t: {"sub": "user_a"}, fetch_page=fake_fetch
+    )
 
-    resp = client.post("/api/v1/kb/website", headers=_auth(), json={"url": "https://example.com/hours"})
+    resp = client.post(
+        "/api/v1/kb/website", headers=_auth(), json={"url": "https://example.com/hours"}
+    )
 
     assert resp.status_code == 201
     body = resp.json()
@@ -102,7 +106,9 @@ def test_import_rejects_page_with_no_readable_content(db_session):
     _seed_business(db_session, "A", "user_a")
     db_session.commit()
     client = _client(
-        db_session, claims_for_token=lambda t: {"sub": "user_a"}, fetch_page=lambda url: ("Empty", "   ")
+        db_session,
+        claims_for_token=lambda t: {"sub": "user_a"},
+        fetch_page=lambda url: ("Empty", "   "),
     )
 
     resp = client.post("/api/v1/kb/website", headers=_auth(), json={"url": "https://example.com"})
@@ -120,7 +126,9 @@ def test_import_surfaces_fetch_failure_as_422(db_session):
     def failing_fetch(url):
         raise WebImportError("Could not fetch it")
 
-    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"}, fetch_page=failing_fetch)
+    client = _client(
+        db_session, claims_for_token=lambda t: {"sub": "user_a"}, fetch_page=failing_fetch
+    )
 
     resp = client.post("/api/v1/kb/website", headers=_auth(), json={"url": "https://example.com"})
 
@@ -137,7 +145,9 @@ def test_import_falls_back_to_url_as_title_when_page_has_none(db_session):
         fetch_page=lambda url: ("", "Some content here."),
     )
 
-    resp = client.post("/api/v1/kb/website", headers=_auth(), json={"url": "https://example.com/page"})
+    resp = client.post(
+        "/api/v1/kb/website", headers=_auth(), json={"url": "https://example.com/page"}
+    )
 
     assert resp.status_code == 201
     stored = db_session.query(KbEntry).filter_by(business_id=biz.id).one()

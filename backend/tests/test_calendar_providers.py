@@ -55,7 +55,9 @@ def test_create_event_blocks_availability_and_future_bookings():
     window = _slot(1)
     provider.create_event(
         calendar_id="cal1",
-        draft=CalendarEventDraft(starts_at=window.starts_at, ends_at=window.ends_at, summary="Cleaning"),
+        draft=CalendarEventDraft(
+            starts_at=window.starts_at, ends_at=window.ends_at, summary="Cleaning"
+        ),
     )
 
     assert provider.get_availability(calendar_id="cal1", window=window) == []
@@ -79,7 +81,9 @@ def test_update_event_reschedules():
     window = _slot(1)
     event = provider.create_event(
         calendar_id="cal1",
-        draft=CalendarEventDraft(starts_at=window.starts_at, ends_at=window.ends_at, summary="Cleaning"),
+        draft=CalendarEventDraft(
+            starts_at=window.starts_at, ends_at=window.ends_at, summary="Cleaning"
+        ),
     )
 
     new_window = _slot(4)
@@ -95,9 +99,7 @@ def test_update_event_reschedules():
 def test_update_unknown_event_raises_not_found():
     provider = MockCalendarProvider()
     with pytest.raises(CalendarNotFoundError):
-        provider.update_event(
-            calendar_id="cal1", event_id="missing", changes=CalendarEventUpdate()
-        )
+        provider.update_event(calendar_id="cal1", event_id="missing", changes=CalendarEventUpdate())
 
 
 def test_cancel_event_frees_the_slot():
@@ -105,7 +107,9 @@ def test_cancel_event_frees_the_slot():
     window = _slot(1)
     event = provider.create_event(
         calendar_id="cal1",
-        draft=CalendarEventDraft(starts_at=window.starts_at, ends_at=window.ends_at, summary="Cleaning"),
+        draft=CalendarEventDraft(
+            starts_at=window.starts_at, ends_at=window.ends_at, summary="Cleaning"
+        ),
     )
     provider.cancel_event(calendar_id="cal1", event_id=event.provider_event_id)
 
@@ -126,5 +130,7 @@ def test_fail_with_makes_every_method_raise():
     with pytest.raises(CalendarConflictError):
         provider.create_event(
             calendar_id="cal1",
-            draft=CalendarEventDraft(starts_at=window.starts_at, ends_at=window.ends_at, summary="x"),
+            draft=CalendarEventDraft(
+                starts_at=window.starts_at, ends_at=window.ends_at, summary="x"
+            ),
         )

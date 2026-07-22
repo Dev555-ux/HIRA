@@ -108,6 +108,15 @@ class Settings(BaseSettings):
     # until a real DSN is set (in Railway's Variables tab for production).
     sentry_dsn: str = ""
 
+    # Webhook health monitoring (Sprint 69). How long WhatsApp inbound traffic
+    # can go quiet before GET /health/whatsapp flips unhealthy and raises a
+    # Sentry alert (a no-op without SENTRY_DSN, same as every other Sentry
+    # call in this app). 60 minutes is a starting point for a single-business
+    # pilot — revisit once real traffic patterns (e.g. overnight quiet hours)
+    # are observed; this is deliberately configurable rather than hardcoded
+    # for exactly that reason.
+    webhook_stale_threshold_minutes: int = 60
+
     # Rate limits (Sprint 52B, Task 1) — deliberately configurable rather
     # than hardcoded, since the right number for a 5-10 person beta and for
     # a larger launch aren't the same. slowapi's own string format:

@@ -54,9 +54,7 @@ def test_playground_requires_authentication(db_session):
 
 def test_playground_returns_reply_and_retrieved_kb_entries(db_session, monkeypatch):
     biz, _ = _seed_business(db_session, "A", "user_a")
-    index_entry(
-        db_session, biz.id, "Hours", "We open at 9am.", provider=FakeEmbeddingProvider()
-    )
+    index_entry(db_session, biz.id, "Hours", "We open at 9am.", provider=FakeEmbeddingProvider())
     db_session.commit()
     _mock_providers(monkeypatch, fixed_reply="We're open at 9am!")
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
@@ -113,11 +111,19 @@ def test_playground_rejects_oversized_message(db_session, monkeypatch):
 def test_playground_is_scoped_to_calling_business(db_session, monkeypatch):
     biz_a, _ = _seed_business(db_session, "A", "user_a")
     index_entry(
-        db_session, biz_a.id, "Secret A", "Only business A knows this.", provider=FakeEmbeddingProvider()
+        db_session,
+        biz_a.id,
+        "Secret A",
+        "Only business A knows this.",
+        provider=FakeEmbeddingProvider(),
     )
     biz_b, _ = _seed_business(db_session, "B", "user_b")
     index_entry(
-        db_session, biz_b.id, "Secret B", "Only business B knows this.", provider=FakeEmbeddingProvider()
+        db_session,
+        biz_b.id,
+        "Secret B",
+        "Only business B knows this.",
+        provider=FakeEmbeddingProvider(),
     )
     db_session.commit()
     _mock_providers(monkeypatch)
@@ -133,7 +139,9 @@ def test_playground_is_scoped_to_calling_business(db_session, monkeypatch):
     app.dependency_overrides.clear()
 
 
-def test_playground_message_reports_a_tool_outcome_when_a_tool_call_is_proposed(db_session, monkeypatch):
+def test_playground_message_reports_a_tool_outcome_when_a_tool_call_is_proposed(
+    db_session, monkeypatch
+):
     from app.ai.lead_tools import CREATE_LEAD
     from app.ai.llm.base import ToolCall
 
@@ -150,7 +158,9 @@ def test_playground_message_reports_a_tool_outcome_when_a_tool_call_is_proposed(
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
 
     resp = client.post(
-        "/api/v1/onboarding/playground/message", headers=_auth(), json={"message": "I'd like a quote"}
+        "/api/v1/onboarding/playground/message",
+        headers=_auth(),
+        json={"message": "I'd like a quote"},
     )
 
     assert resp.status_code == 200
@@ -181,7 +191,9 @@ class TestPlaygroundHistory:
         assert resp.json()["data"]["messages"] == []
         app.dependency_overrides.clear()
 
-    def test_returns_prior_turns_in_order_after_messages_have_been_sent(self, db_session, monkeypatch):
+    def test_returns_prior_turns_in_order_after_messages_have_been_sent(
+        self, db_session, monkeypatch
+    ):
         _seed_business(db_session, "A", "user_a")
         db_session.commit()
         _mock_providers(monkeypatch, fixed_reply="Sure thing!")

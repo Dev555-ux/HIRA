@@ -236,13 +236,13 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 
 ### INFRA-007 — Add rate limiting to public/webhook endpoints
 
-- **Description**: Found during Sprint 34's production-readiness security review (2026-07-10) — `POST /webhooks/whatsapp` and the public `GET /calendar/oauth/callback` have no request-rate limiting of any kind (confirmed: no `slowapi` or equivalent dependency, no limiter middleware anywhere in `app/`). Signature/HMAC verification on the webhook prevents forged payloads, but not a high-volume request flood. Not fixed this sprint — adding a limiter is a new dependency and needs a design decision (per-IP? per-business? which endpoints?), out of scope for a "no major new features, reuse existing architecture" sprint.
+- **Description**: Found during Sprint 34's production-readiness security review (2026-07-10) — `POST /webhooks/whatsapp` and the public `GET /calendar/oauth/callback` have no request-rate limiting of any kind. **Partially resolved since**: Sprint 52B added the rate-limiting infrastructure itself (`app/core/rate_limit.py`, `slowapi`) and applied it to three endpoints — `POST /kb/website` (`RATE_LIMIT_KB_UPLOAD`), `POST /onboarding/business` (`RATE_LIMIT_BUSINESS_CREATION`), and `POST /onboarding/playground/message` (`RATE_LIMIT_DEMO_CHAT`) — confirmed via `grep` for `@limiter.limit` across `app/api/*.py`. **This item's own two originally-named endpoints (webhook, OAuth callback) are still unprotected** — re-verified 2026-07-22 (Sprint 69 codebase study), and tracked identically as `IMPLEMENTATION_PLAN.md`'s `SEC-5`/Milestone 2. Correcting a Sprint 69 proposal report that stated this item was fully stale/done — it was only partially done.
 - **Priority**: P2
 - **Category**: Operations
 - **Estimated effort**: S
 - **Dependencies**: None
-- **Status**: To Do
-- **Success criteria**: A rate limit is enforced on `POST /webhooks/whatsapp` and the OAuth callback, with a decision recorded in `DECISIONS.md` for the library/strategy chosen.
+- **Status**: Partially done — see `IMPLEMENTATION_PLAN.md` `SEC-5` for the remaining webhook/OAuth-callback gap
+- **Success criteria**: A rate limit is enforced on `POST /webhooks/whatsapp` and the OAuth callback, with a decision recorded in `DECISIONS.md` for the library/strategy chosen (the library — `slowapi` — is already decided and in use elsewhere; only these two endpoints remain).
 
 ---
 

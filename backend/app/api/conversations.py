@@ -41,7 +41,9 @@ DEFAULT_MESSAGE_LIMIT = 50
 MAX_MESSAGE_LIMIT = 200
 
 
-def _latest_message_previews(db: Session, conversation_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+def _latest_message_previews(
+    db: Session, conversation_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
     """One row per conversation: the body of its most recent message."""
     if not conversation_ids:
         return {}
@@ -54,7 +56,9 @@ def _latest_message_previews(db: Session, conversation_ids: list[uuid.UUID]) -> 
     return {row.conversation_id: row.body for row in db.execute(stmt).all()}
 
 
-def _conversation_ids_with_pending(db: Session, conversation_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+def _conversation_ids_with_pending(
+    db: Session, conversation_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
     if not conversation_ids:
         return set()
     stmt = (
@@ -138,9 +142,7 @@ def list_conversations(
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
 
     stmt = (
-        stmt.order_by(Conversation.last_message_at.desc().nullslast())
-        .limit(limit)
-        .offset(offset)
+        stmt.order_by(Conversation.last_message_at.desc().nullslast()).limit(limit).offset(offset)
     )
     rows = db.execute(stmt).all()
 

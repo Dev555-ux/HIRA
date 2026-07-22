@@ -38,7 +38,11 @@ def main() -> None:
             ).first()
             print("Businesses:")
             for b in businesses:
-                marker = " <- current mock-auth business" if current and current.business_id == b.id else ""
+                marker = (
+                    " <- current mock-auth business"
+                    if current and current.business_id == b.id
+                    else ""
+                )
                 print(f"  {b.name!r} ({b.id}){marker}")
             print('\nUsage: .venv/bin/python scripts/use_demo_business.py "<business name>"')
             return
@@ -61,7 +65,9 @@ def main() -> None:
         else:
             previous = db.get(Business, user.business_id)
             user.business_id = business.id
-            print(f"Switched dev-mock-user from {previous.name if previous else '(none)'!r} to {name!r}")
+            print(
+                f"Switched dev-mock-user from {previous.name if previous else '(none)'!r} to {name!r}"
+            )
         db.commit()
     finally:
         db.close()

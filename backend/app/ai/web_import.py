@@ -50,9 +50,7 @@ def fetch_page(
             # Redirects are disabled rather than re-validated per-hop — the
             # simplest way to close the classic redirect-to-internal-IP SSRF
             # bypass without a custom transport.
-            response = client.get(
-                url, follow_redirects=False, headers={"User-Agent": _USER_AGENT}
-            )
+            response = client.get(url, follow_redirects=False, headers={"User-Agent": _USER_AGENT})
             response.raise_for_status()
         except httpx.HTTPError as exc:
             # exc can be a raw connection/DNS/timeout error (or, via

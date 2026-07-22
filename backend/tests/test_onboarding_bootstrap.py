@@ -86,7 +86,10 @@ def test_create_or_update_business_creates(db_session):
 
 def test_create_or_update_business_updates_without_renaming(db_session):
     business.create_or_update_business(
-        db_session, name="Original Name", phone_number_id="PN1", whatsapp_business_account_id="WABA1"
+        db_session,
+        name="Original Name",
+        phone_number_id="PN1",
+        whatsapp_business_account_id="WABA1",
     )
     updated, action = business.create_or_update_business(
         db_session, name="Ignored Name", phone_number_id="PN1", whatsapp_business_account_id="WABA2"
@@ -158,7 +161,9 @@ def test_seed_facts_inserts_and_is_idempotent(db_session, monkeypatch):
 
     def fake_index_entry(db, business_id, title, content):
         inserted_titles.append(title)
-        entry = KbEntry(business_id=business_id, title=title, content=content, embedding=[0.0] * 384)
+        entry = KbEntry(
+            business_id=business_id, title=title, content=content, embedding=[0.0] * 384
+        )
         db.add(entry)
         return [entry]
 

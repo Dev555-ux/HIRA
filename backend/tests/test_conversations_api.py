@@ -263,7 +263,9 @@ def test_filter_pending_returns_only_conversations_awaiting_approval(db_session)
     cust_clear = _customer(db_session, biz.id, wa_phone="+10000002")
     conv_pending = _conversation(db_session, biz.id, cust_pending.id)
     conv_clear = _conversation(db_session, biz.id, cust_clear.id)
-    _message(db_session, conv_pending.id, biz.id, direction="outbound", msg_status="pending_approval")
+    _message(
+        db_session, conv_pending.id, biz.id, direction="outbound", msg_status="pending_approval"
+    )
     _message(db_session, conv_clear.id, biz.id, direction="outbound", msg_status="sent")
     db_session.commit()
 
@@ -317,7 +319,9 @@ def test_preview_reflects_the_latest_message_body(db_session):
     biz, _ = _seed_business(db_session, "A", "user_a")
     cust = _customer(db_session, biz.id, wa_phone="+10000001")
     conv = _conversation(db_session, biz.id, cust.id)
-    _message(db_session, conv.id, biz.id, body="First message", created_at=NOW - timedelta(minutes=10))
+    _message(
+        db_session, conv.id, biz.id, body="First message", created_at=NOW - timedelta(minutes=10)
+    )
     _message(db_session, conv.id, biz.id, body="Second message", created_at=NOW)
     db_session.commit()
 
@@ -378,7 +382,9 @@ def test_list_messages_returns_oldest_first(db_session):
     biz, _ = _seed_business(db_session, "A", "user_a")
     cust = _customer(db_session, biz.id, wa_phone="+10000001")
     conv = _conversation(db_session, biz.id, cust.id)
-    first = _message(db_session, conv.id, biz.id, body="First", created_at=NOW - timedelta(minutes=5))
+    first = _message(
+        db_session, conv.id, biz.id, body="First", created_at=NOW - timedelta(minutes=5)
+    )
     second = _message(db_session, conv.id, biz.id, body="Second", created_at=NOW)
     db_session.commit()
 
@@ -396,7 +402,14 @@ def test_list_messages_includes_status_for_ai_reply_state(db_session):
     biz, _ = _seed_business(db_session, "A", "user_a")
     cust = _customer(db_session, biz.id, wa_phone="+10000001")
     conv = _conversation(db_session, biz.id, cust.id)
-    _message(db_session, conv.id, biz.id, direction="outbound", body="Draft reply", msg_status="pending_approval")
+    _message(
+        db_session,
+        conv.id,
+        biz.id,
+        direction="outbound",
+        body="Draft reply",
+        msg_status="pending_approval",
+    )
     db_session.commit()
 
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})

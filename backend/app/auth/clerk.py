@@ -53,7 +53,9 @@ def verify_clerk_token(token: str) -> dict:
         )
     except HTTPException:
         raise
-    except Exception as exc:  # invalid signature / expired / malformed / issuer mismatch / JWKS fetch failure
+    except (
+        Exception
+    ) as exc:  # invalid signature / expired / malformed / issuer mismatch / JWKS fetch failure
         logger.warning("Clerk token verification failed: %s: %s", type(exc).__name__, exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token"
