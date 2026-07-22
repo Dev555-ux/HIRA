@@ -399,13 +399,22 @@ function DemoWidget() {
 }
 
 // Section-level wrapper: quiet, industrial restraint rather than another
-// dark "spotlight" stage — generous vertical space and a thin top/bottom
-// rule set this section apart, not a mood-lit background. Deliberately no
-// eyebrow label above the stage this time: the animation explains itself,
-// it isn't captioned first.
+// dark "spotlight" stage — generous vertical space and a thin top rule set
+// this section apart, not a mood-lit background. Deliberately no eyebrow
+// label above the stage this time: the animation explains itself, it isn't
+// captioned first.
+//
+// Sprint 68: was `border-y border-border/60` — the translucent border was
+// the only non-full-strength divider on the page, and pairing it with
+// Trust's own border-t immediately below (0 margin between them) produced
+// a doubled 2px seam where every other section boundary on the page is a
+// single 1px line (Sprint 67 audit). A single full-strength border-t
+// matches every other divider and still marks the Hero → Signature Demo
+// edge; Trust's own border-t continues to mark the edge below it, same as
+// it always has.
 export function SignatureDemo() {
   return (
-    <section className="border-y border-border/60 py-24 sm:py-32">
+    <section className="border-t py-24 sm:py-32">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <DemoWidget />
       </div>

@@ -1,3 +1,15 @@
+import { cardClassName } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { SectionHeader } from "@/components/marketing/section-header";
+
+// Steps stay <li> inside an <ol> (correct semantics for an ordered
+// sequence) rather than the shared <Card> component, which always renders
+// a <div> — Card has no asChild/polymorphic-tag support (unlike Button),
+// and it's used across the whole dashboard, so it isn't touched here.
+// Reusing its exported class string keeps this visually identical to
+// every other card on the page without duplicating (and risking drifting
+// from) the literal class list by hand.
+
 const STEPS = [
   {
     step: "1",
@@ -28,12 +40,10 @@ export function HowItWorks() {
   return (
     <section id="how-it-works" className="scroll-mt-16 border-t bg-secondary/40 py-16 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-semibold tracking-tight">Set up in four steps</h2>
-        </div>
+        <SectionHeader title="Set up in four steps" className="mx-auto max-w-2xl" />
         <ol className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((item) => (
-            <li key={item.step} className="rounded-xl border bg-card p-6">
+            <li key={item.step} className={cn(cardClassName, "p-6")}>
               <span className="flex size-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
                 {item.step}
               </span>

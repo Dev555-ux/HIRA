@@ -14,6 +14,19 @@ import { Trust } from "@/components/marketing/trust";
 // Hero states the problem and SignatureDemo proves the fix immediately after
 // — a visitor sees the promise and its evidence within the first two
 // sections, before Problem makes the deeper case for anyone not yet sold.
+//
+// Sprint 68 — documented vertical-padding scale for every section below
+// (Sprint 67 audit: six of eight sections already converged on the middle
+// tier; Solution was the one outlier, now fixed). Any new section should
+// pick one of these three rather than inventing a fourth:
+//
+//   Compact band            py-10 sm:py-12   (40 → 48px)   — Trust, AiEmployees
+//   Standard section        py-16 sm:py-24   (64 → 96px)   — everything else
+//   Flagship / hero-adjacent py-24 sm:py-32  (96 → 128px)  — SignatureDemo only
+//
+// Footer (py-8, fixed) is deliberately outside this scale — it's a closing
+// utility bar, not a narrative section, and was never part of the rhythm
+// the scale above describes.
 export function MarketingPage() {
   return (
     <div className="flex min-h-screen flex-col">
