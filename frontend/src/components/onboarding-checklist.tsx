@@ -21,12 +21,12 @@ interface ChecklistStep {
  * computed from real data (KB entry count, business.whatsapp_connection_status,
  * business.onboarding_status) — nothing here is a fabricated claim.
  *
- * WhatsApp Connection and Go Live have no self-serve backend action yet (see
- * ONBOARDING_IMPLEMENTATION_PLAN.md Milestones D/F — TODO once those land).
- * Rather than a dead "Coming soon" label, "Connect"/"Retry" route to Settings
- * — the one real page that already shows WhatsApp connection state — and
- * "Enable AI" surfaces an honest toast instead of pretending to flip a switch
- * that doesn't exist server-side. */
+ * WhatsApp Connection is now a real, self-serve backend action (Sprint 69,
+ * ONBOARD-D) — "Connect"/"Retry" route to Settings, which auto-opens the
+ * real connect form (?whatsapp=connect), not a placeholder. Go Live still
+ * has no self-serve action (ONBOARDING_IMPLEMENTATION_PLAN.md Milestone F,
+ * not this sprint's scope) — "Enable AI" surfaces an honest toast instead of
+ * pretending to flip a switch that doesn't exist server-side. */
 export function OnboardingChecklist({ business }: { business: Business }) {
   const { data: kbEntries } = useKbEntries();
   const { toast } = useToast();

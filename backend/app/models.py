@@ -264,3 +264,24 @@ class CalendarCredential(Base):
     scopes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class WhatsAppCredential(Base):
+    """A business's own Meta System User token + app secret (Sprint 69,
+    self-serve "guided-manual v1" WhatsApp connection) — mirrors
+    CalendarCredential's shape exactly (one row per business, secrets
+    encrypted at rest with the same Fernet key). `Business.
+    whatsapp_phone_number_id`/`whatsapp_business_account_id` are not
+    secrets and stay where they already were; only the two actual
+    credentials live here."""
+
+    __tablename__ = "whatsapp_credentials"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), unique=True
+    )
+    access_token_encrypted: Mapped[str] = mapped_column(Text)
+    app_secret_encrypted: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

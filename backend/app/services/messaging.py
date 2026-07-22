@@ -35,14 +35,21 @@ def send_text(
     to: str,
     body: str,
     *,
+    access_token: str,
     client: httpx.Client | None = None,
     max_attempts: int = 3,
 ) -> str:
-    """Send a text message; return the WhatsApp message id. Raises on failure."""
+    """Send a text message; return the WhatsApp message id. Raises on failure.
+
+    `access_token` is required and keyword-only (Sprint 69) — no default, so
+    a caller can't accidentally fall through to a shared global token. Each
+    business now has its own stored, encrypted access token
+    (app/whatsapp/credentials.py); callers resolve it before calling this.
+    """
     url = (
         f"{settings.whatsapp_api_base}/{settings.whatsapp_graph_version}/{phone_number_id}/messages"
     )
-    headers = {"Authorization": f"Bearer {settings.whatsapp_access_token}"}
+    headers = {"Authorization": f"Bearer {access_token}"}
     payload = {
         "messaging_product": "whatsapp",
         "to": to,

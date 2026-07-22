@@ -1,5 +1,7 @@
 """Tests for the protected dashboard API: auth guard + tenant isolation."""
 
+import pytest
+from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -7,10 +9,21 @@ from sqlalchemy import select
 from app.ai.llm.mock import MockProvider
 from app.api.dashboard import get_reply_sender
 from app.auth.dependencies import get_token_verifier
+from app.core.config import settings
 from app.db.session import get_db
 from app.main import app
 from app.models import Business, Conversation, Customer, Message, User
+from app.whatsapp.credentials import store_credentials
 from tests.test_knowledge_base import FakeEmbeddingProvider
+
+
+@pytest.fixture(autouse=True)
+def _whatsapp_encryption_key(monkeypatch):
+    # Sprint 69: approve_and_send now needs a stored, encrypted
+    # WhatsAppCredential (not just Business.whatsapp_phone_number_id) to
+    # reach the send step — _seed_business below stores one automatically
+    # whenever a phone number is given, using this key.
+    monkeypatch.setattr(settings, "calendar_encryption_key", Fernet.generate_key().decode())
 
 
 def _mock_ai_providers(monkeypatch, *, fixed_reply="Yes, we're open weekends 10-2."):
@@ -29,6 +42,8 @@ def _seed_business(db, name, clerk_user_id, phone="PN1"):
     biz = Business(name=name, whatsapp_phone_number_id=phone)
     db.add(biz)
     db.flush()
+    if phone is not None:
+        store_credentials(db, biz.id, access_token="test-token", app_secret="test-secret")
     user = User(business_id=biz.id, clerk_user_id=clerk_user_id, email=f"{name}@x.com")
     db.add(user)
     customer = Customer(business_id=biz.id, wa_phone="+15551230000")
@@ -50,7 +65,7 @@ def _seed_business(db, name, clerk_user_id, phone="PN1"):
     return biz, user, msg
 
 
-def _client(db_session, *, claims_for_token, sender=lambda *a: "wamid.out"):
+def _client(db_session, *, claims_for_token, sender=lambda *a, **k: "wamid.out"):
     """TestClient with auth verifier + sender overridden (no Clerk, no WhatsApp)."""
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_token_verifier] = lambda: lambda token: claims_for_token(token)
@@ -104,7 +119,7 @@ def test_approve_returns_409_when_whatsapp_not_connected(db_session):
     client = _client(
         db_session,
         claims_for_token=lambda t: {"sub": "user_a"},
-        sender=lambda *a: sent.append(a) or "wamid.should-not-happen",
+        sender=lambda *a, **k: sent.append(a) or "wamid.should-not-happen",
     )
 
     resp = client.post(f"/api/v1/messages/{msg.id}/approve", headers=_auth())
@@ -314,7 +329,7 @@ def test_reject_never_sends_whatsapp_message(db_session):
     client = _client(
         db_session,
         claims_for_token=lambda t: {"sub": "user_a"},
-        sender=lambda *a: calls.append(a) or "wamid.x",
+        sender=lambda *a, **k: calls.append(a) or "wamid.x",
     )
 
     client.post(f"/api/v1/messages/{msg.id}/reject", headers=_auth())
