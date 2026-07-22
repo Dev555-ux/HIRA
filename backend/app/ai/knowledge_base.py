@@ -42,8 +42,15 @@ def index_entry(
     content: str,
     *,
     provider: EmbeddingProvider | None = None,
+    status: str = "published",
+    import_batch_id: uuid.UUID | None = None,
 ) -> list[KbEntry]:
-    """Chunk + embed `content` and store one KB row per chunk. Returns the rows."""
+    """Chunk + embed `content` and store one KB row per chunk. Returns the rows.
+
+    `status="draft"` (with a shared `import_batch_id`) is how website import
+    stages content for review instead of publishing it immediately — see
+    DEC-039. Manual entries use the defaults (published, no batch).
+    """
     provider = provider or get_embedding_provider()
     chunks = chunk_text(content)
     if not chunks:
@@ -51,7 +58,14 @@ def index_entry(
 
     vectors = provider.embed_documents(chunks)
     entries = [
-        KbEntry(business_id=business_id, title=title, content=chunk, embedding=vector)
+        KbEntry(
+            business_id=business_id,
+            title=title,
+            content=chunk,
+            embedding=vector,
+            status=status,
+            import_batch_id=import_batch_id,
+        )
         for chunk, vector in zip(chunks, vectors, strict=True)
     ]
     db.add_all(entries)
@@ -92,13 +106,37 @@ def update_entry(
 
 
 def delete_entry(db: Session, business_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
-    """Delete a KB entry, tenant-scoped. Returns False if it doesn't exist for this business."""
+    """Delete a KB entry, tenant-scoped. Returns False if it doesn't exist for this business.
+
+    Also used to reject a draft — there's no value in keeping rejected scrape
+    noise around, so a reject is just a delete of a still-draft row.
+    """
     entry = get_scoped(db, KbEntry, business_id, entry_id)
     if entry is None:
         return False
     db.delete(entry)
     db.flush()
     return True
+
+
+def list_drafts(db: Session, business_id: uuid.UUID) -> list[KbEntry]:
+    """All draft (not yet reviewed) entries for this business, tenant-scoped."""
+    stmt = (
+        select(KbEntry)
+        .where(KbEntry.business_id == business_id, KbEntry.status == "draft")
+        .order_by(KbEntry.import_batch_id, KbEntry.created_at)
+    )
+    return list(db.scalars(stmt).all())
+
+
+def publish_entry(db: Session, business_id: uuid.UUID, entry_id: uuid.UUID) -> KbEntry | None:
+    """Move a draft entry to published, tenant-scoped. Returns None if not found."""
+    entry = get_scoped(db, KbEntry, business_id, entry_id)
+    if entry is None:
+        return None
+    entry.status = "published"
+    db.flush()
+    return entry
 
 
 def search(
@@ -120,7 +158,7 @@ def search(
     distance = KbEntry.embedding.cosine_distance(query_vector).label("distance")
     stmt = (
         select(KbEntry, distance)
-        .where(KbEntry.business_id == business_id)
+        .where(KbEntry.business_id == business_id, KbEntry.status == "published")
         .order_by(distance)
         .limit(k)
     )
@@ -139,7 +177,11 @@ def has_any_entries(db: Session, business_id: uuid.UUID) -> bool:
     across an off-topic question, not flip-flop turn to turn.
     """
     return (
-        db.scalars(select(KbEntry.id).where(KbEntry.business_id == business_id).limit(1)).first()
+        db.scalars(
+            select(KbEntry.id)
+            .where(KbEntry.business_id == business_id, KbEntry.status == "published")
+            .limit(1)
+        ).first()
         is not None
     )
 

@@ -14,6 +14,9 @@ vi.mock("@/lib/api", () => ({
     updateKbEntry: vi.fn(),
     deleteKbEntry: vi.fn(),
     importWebsite: vi.fn(),
+    listKbDrafts: vi.fn(),
+    publishKbEntry: vi.fn(),
+    rejectKbEntry: vi.fn(),
   },
 }));
 
@@ -43,6 +46,7 @@ describe("KnowledgeBasePage — website import", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.listKbEntries).mockResolvedValue([]);
+    vi.mocked(api.listKbDrafts).mockResolvedValue([]);
   });
 
   it("shows an Import Website button beside Add a fact", async () => {
@@ -130,11 +134,12 @@ describe("KnowledgeBasePage — website import", () => {
   });
 
   describe("success experience", () => {
-    it("shows what HIRA actually learned, not just a bare upload confirmation", async () => {
+    it("shows what HIRA found, pending review, not a bare 'learned' claim", async () => {
       const user = userEvent.setup();
       vi.mocked(api.importWebsite).mockResolvedValue({
         pages_imported: 1,
         entries_created: 4,
+        import_batch_id: "batch-1",
         entries: [
           { id: "1", title: "Example", content: "We are open 9am to 5pm." },
           { id: "2", title: "Example", content: "Consultations start at $60." },
@@ -146,16 +151,19 @@ describe("KnowledgeBasePage — website import", () => {
       await user.type(screen.getByPlaceholderText("https://example.com"), "https://example.com");
       await user.click(screen.getByRole("button", { name: "Teach HIRA" }));
 
-      expect(await screen.findByText("HIRA is ready")).toBeInTheDocument();
-      expect(screen.getByText("4 new facts learned from example.com.")).toBeInTheDocument();
+      expect(await screen.findByText("Pending your review")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Found 4 new facts from example.com — HIRA won't use any of it until you approve it below.",
+        ),
+      ).toBeInTheDocument();
       expect(screen.getByText("We are open 9am to 5pm.")).toBeInTheDocument();
       expect(screen.getByText("Consultations start at $60.")).toBeInTheDocument();
 
-      const cta = screen.getByRole("link", { name: "Ask HIRA what it learned" });
-      expect(cta).toHaveAttribute("href", "/demo");
+      expect(screen.queryByRole("link", { name: /ask hira/i })).not.toBeInTheDocument();
 
-      // List refreshed: one call on mount, one after the mutation invalidates the query.
-      await waitFor(() => expect(api.listKbEntries).toHaveBeenCalledTimes(2));
+      // Drafts refreshed: one call on mount, one after the mutation invalidates the query.
+      await waitFor(() => expect(api.listKbDrafts).toHaveBeenCalledTimes(2));
     });
 
     it("closes and resets when Done is clicked, ready for a fresh import next time", async () => {
@@ -163,6 +171,7 @@ describe("KnowledgeBasePage — website import", () => {
       vi.mocked(api.importWebsite).mockResolvedValue({
         pages_imported: 1,
         entries_created: 1,
+        import_batch_id: "batch-1",
         entries: [{ id: "1", title: "Example", content: "A fact." }],
       });
 
@@ -172,11 +181,11 @@ describe("KnowledgeBasePage — website import", () => {
       await user.click(screen.getByRole("button", { name: "Teach HIRA" }));
 
       await user.click(await screen.findByRole("button", { name: "Done" }));
-      expect(screen.queryByText("HIRA is ready")).not.toBeInTheDocument();
+      expect(screen.queryByText("Pending your review")).not.toBeInTheDocument();
 
       await user.click(await screen.findByRole("button", { name: /import website/i }));
       expect(screen.getByText("Teach HIRA from your website")).toBeInTheDocument();
-      expect(screen.queryByText("HIRA is ready")).not.toBeInTheDocument();
+      expect(screen.queryByText("Pending your review")).not.toBeInTheDocument();
     });
   });
 });
@@ -185,12 +194,13 @@ describe("KnowledgeBasePage — manual facts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.listKbEntries).mockResolvedValue([]);
+    vi.mocked(api.listKbDrafts).mockResolvedValue([]);
   });
 
   it("confirms after teaching HIRA a fact manually", async () => {
     const user = userEvent.setup();
     vi.mocked(api.createKbEntry).mockResolvedValue([
-      { id: "1", title: "Office hours", content: "9am-5pm", created_at: "", updated_at: "" },
+      { id: "1", title: "Office hours", content: "9am-5pm", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
     ]);
 
     renderWithProviders(<KnowledgeBasePage />);
@@ -210,8 +220,9 @@ describe("KnowledgeBasePage — delete confirmation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.listKbEntries).mockResolvedValue([
-      { id: "1", title: "Office hours", content: "9am-5pm", created_at: "", updated_at: "" },
+      { id: "1", title: "Office hours", content: "9am-5pm", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
     ]);
+    vi.mocked(api.listKbDrafts).mockResolvedValue([]);
   });
 
   it("uses a styled dialog, not a native confirm(), to confirm deletion", async () => {
@@ -252,9 +263,100 @@ describe("KnowledgeBasePage — delete confirmation", () => {
   });
 });
 
+describe("KnowledgeBasePage — pending review (draft imports)", () => {
+  const draftEntry = (id: string, content: string) => ({
+    id,
+    title: "Opening Hours",
+    content,
+    status: "draft" as const,
+    import_batch_id: "batch-1",
+    created_at: "",
+    updated_at: "",
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.listKbEntries).mockResolvedValue([]);
+  });
+
+  it("does not show a Pending Review section when there are no drafts", async () => {
+    vi.mocked(api.listKbDrafts).mockResolvedValue([]);
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await screen.findByText("HIRA doesn't know this yet");
+    expect(screen.queryByLabelText("Approve fact")).not.toBeInTheDocument();
+  });
+
+  it("shows each draft batch with its facts and per-fact actions", async () => {
+    vi.mocked(api.listKbDrafts).mockResolvedValue([
+      {
+        import_batch_id: "batch-1",
+        entries: [draftEntry("1", "We open at 9am."), draftEntry("2", "We close at 5pm.")],
+      },
+    ]);
+    renderWithProviders(<KnowledgeBasePage />);
+
+    expect(await screen.findByText(/2 facts imported from Opening Hours/)).toBeInTheDocument();
+    expect(screen.getByText("We open at 9am.")).toBeInTheDocument();
+    expect(screen.getByText("We close at 5pm.")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Approve fact")).toHaveLength(2);
+    expect(screen.getAllByLabelText("Reject fact")).toHaveLength(2);
+  });
+
+  it("publishes a single fact when Approve is clicked", async () => {
+    vi.mocked(api.listKbDrafts).mockResolvedValue([
+      { import_batch_id: "batch-1", entries: [draftEntry("1", "We open at 9am.")] },
+    ]);
+    vi.mocked(api.publishKbEntry).mockResolvedValue({
+      ...draftEntry("1", "We open at 9am."),
+      status: "published",
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByLabelText("Approve fact"));
+
+    await waitFor(() =>
+      expect(api.publishKbEntry).toHaveBeenCalledWith(expect.any(Function), "1"),
+    );
+  });
+
+  it("rejects (deletes) a single fact when Reject is clicked", async () => {
+    vi.mocked(api.listKbDrafts).mockResolvedValue([
+      { import_batch_id: "batch-1", entries: [draftEntry("1", "We open at 9am.")] },
+    ]);
+    vi.mocked(api.rejectKbEntry).mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByLabelText("Reject fact"));
+
+    await waitFor(() => expect(api.rejectKbEntry).toHaveBeenCalledWith(expect.any(Function), "1"));
+  });
+
+  it("publishes every fact in the batch when Approve all is clicked", async () => {
+    vi.mocked(api.listKbDrafts).mockResolvedValue([
+      {
+        import_batch_id: "batch-1",
+        entries: [draftEntry("1", "We open at 9am."), draftEntry("2", "We close at 5pm.")],
+      },
+    ]);
+    vi.mocked(api.publishKbEntry).mockResolvedValue(draftEntry("1", "We open at 9am."));
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: "Approve all" }));
+
+    await waitFor(() => expect(api.publishKbEntry).toHaveBeenCalledTimes(2));
+    expect(api.publishKbEntry).toHaveBeenCalledWith(expect.any(Function), "1");
+    expect(api.publishKbEntry).toHaveBeenCalledWith(expect.any(Function), "2");
+  });
+});
+
 describe("KnowledgeBasePage — empty and error states", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.listKbDrafts).mockResolvedValue([]);
   });
 
   it("explains what to do next instead of a bare 'no data' message", async () => {

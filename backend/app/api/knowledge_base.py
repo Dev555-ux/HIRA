@@ -2,15 +2,13 @@
 
 An owner types a title + fact, or submits a URL; either way the content is
 chunked and embedded via the existing `EmbeddingProvider` and stored as one or
-more `kb_entries` rows (see app/ai/knowledge_base.py). Website import
-(`POST /website`) fetches and cleans exactly one page (app/ai/web_import.py)
-and indexes it immediately — no multi-page crawl, no PDF extraction, and no
-draft/review staging before content goes live. That fuller pipeline
-(`kb_entry_drafts`, owner approval before anything reaches this table) is
-designed in ONBOARDING_ARCHITECTURE.md Milestone B / TODOS.md ONBOARD-B but
-not built; this endpoint is a smaller, direct-to-live alternative pending a
-decision on whether a review step is still wanted before real customers see
-imported content.
+more `kb_entries` rows (see app/ai/knowledge_base.py). Manually-typed facts
+are published immediately — the owner already reviewed their own text by
+definition. Website import (`POST /website`) fetches and cleans exactly one
+page (app/ai/web_import.py) and stores it as `status="draft"`, sharing one
+`import_batch_id` across every chunk from that page — it never becomes live
+knowledge until reviewed through `GET /drafts` + `POST /{id}/publish` (or
+rejected via `POST /{id}/reject`). See DEC-039.
 
 Every route sits behind `get_current_principal`, same as dashboard.py, and
 every query is tenant-scoped via `tenant_query`/`get_scoped` — a business can
@@ -28,7 +26,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.embeddings import EmbeddingProvider, get_embedding_provider
-from app.ai.knowledge_base import delete_entry, index_entry, update_entry
+from app.ai.knowledge_base import (
+    delete_entry,
+    index_entry,
+    list_drafts,
+    publish_entry,
+    update_entry,
+)
 from app.ai.web_import import WebImportError, fetch_page
 from app.auth.dependencies import Principal, get_current_principal
 from app.core.config import settings
@@ -87,6 +91,8 @@ def _serialize(entry: KbEntry) -> dict:
         "id": str(entry.id),
         "title": entry.title,
         "content": entry.content,
+        "status": entry.status,
+        "import_batch_id": str(entry.import_batch_id) if entry.import_batch_id else None,
         "created_at": entry.created_at.isoformat(),
         "updated_at": entry.updated_at.isoformat(),
     }
@@ -99,7 +105,8 @@ def list_entries(
     limit: int = Query(default=DEFAULT_KB_LIMIT, ge=1, le=MAX_KB_LIMIT),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
-    base_stmt = tenant_query(KbEntry, principal.business_id)
+    """Only published entries — drafts pending review live in `GET /drafts`."""
+    base_stmt = tenant_query(KbEntry, principal.business_id).where(KbEntry.status == "published")
     total = db.scalar(select(func.count()).select_from(base_stmt.subquery()))
 
     stmt = base_stmt.order_by(KbEntry.title, KbEntry.created_at).limit(limit).offset(offset)
@@ -107,6 +114,25 @@ def list_entries(
     return {
         "data": [_serialize(e) for e in rows],
         "meta": {"total": total, "limit": limit, "offset": offset},
+    }
+
+
+@router.get("/drafts")
+def get_drafts(
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Entries imported from a website but not yet reviewed, grouped by import batch."""
+    drafts = list_drafts(db, principal.business_id)
+    batches: dict[str, list[dict]] = {}
+    for entry in drafts:
+        key = str(entry.import_batch_id)
+        batches.setdefault(key, []).append(_serialize(entry))
+    return {
+        "data": [
+            {"import_batch_id": batch_id, "entries": entries}
+            for batch_id, entries in batches.items()
+        ],
     }
 
 
@@ -152,16 +178,53 @@ def import_website(
     if not text.strip():
         raise HTTPException(status_code=422, detail="No readable content found at URL")
 
-    entries = index_entry(db, principal.business_id, title or url, text, provider=provider)
+    batch_id = uuid.uuid4()
+    entries = index_entry(
+        db,
+        principal.business_id,
+        title or url,
+        text,
+        provider=provider,
+        status="draft",
+        import_batch_id=batch_id,
+    )
     db.commit()
     # `entries` (not just the count) lets the frontend show what was actually
-    # learned, not just a number — same objects index_entry already built,
-    # just also serialized here rather than discarded.
+    # imported, not just a number — same objects index_entry already built,
+    # just also serialized here rather than discarded. Draft, not live yet —
+    # the frontend's success state must say "pending review," not "learned."
     return {
         "pages_imported": 1,
         "entries_created": len(entries),
+        "import_batch_id": str(batch_id),
         "entries": [{"id": str(e.id), "title": e.title, "content": e.content} for e in entries],
     }
+
+
+@router.post("/{entry_id}/publish")
+def publish(
+    entry_id: uuid.UUID,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    entry = publish_entry(db, principal.business_id, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    db.commit()
+    db.refresh(entry)
+    return {"data": _serialize(entry)}
+
+
+@router.post("/{entry_id}/reject", status_code=status.HTTP_204_NO_CONTENT)
+def reject(
+    entry_id: uuid.UUID,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> None:
+    deleted = delete_entry(db, principal.business_id, entry_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    db.commit()
 
 
 @router.patch("/{entry_id}")

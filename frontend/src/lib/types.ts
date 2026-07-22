@@ -309,10 +309,16 @@ export interface RescheduleAppointmentPayload {
 // several chunks stored under the same title if the content was long enough
 // to split (see backend/app/ai/chunking.py); manual FAQ-length entries are
 // almost always a single chunk.
+//
+// Draft -> Review -> Approve -> Publish (DEC-039): manual entries are always
+// "published" immediately. Website imports come back "draft" and only ever
+// appear here (GET /kb) once approved — see KbDraftBatch/GET /kb/drafts.
 export interface KbEntry {
   id: string;
   title: string;
   content: string;
+  status: "draft" | "published";
+  import_batch_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -328,8 +334,9 @@ export interface UpdateKbEntryPayload {
 }
 
 // Website import (/api/v1/kb/website) — fetches one page, cleans it, and
-// indexes it the same way a manual entry is. Unlike the other /kb endpoints,
-// the backend returns this shape directly (not wrapped in {data: ...}).
+// indexes it the same way a manual entry is, but as a draft pending review
+// (not immediately live). Unlike the other /kb endpoints, the backend
+// returns this shape directly (not wrapped in {data: ...}).
 export interface ImportWebsitePayload {
   url: string;
 }
@@ -337,10 +344,18 @@ export interface ImportWebsitePayload {
 export interface ImportWebsiteResult {
   pages_imported: number;
   entries_created: number;
-  // What was actually learned, not just the count — shown in the post-import
+  import_batch_id: string;
+  // What was actually imported, not just the count — shown in the post-import
   // summary. Every chunk from one page shares the page's title (see the
   // KbEntry comment above), so it's the content, not the title, that varies.
   entries: { id: string; title: string; content: string }[];
+}
+
+// One website import's worth of draft entries awaiting review together —
+// see GET /api/v1/kb/drafts.
+export interface KbDraftBatch {
+  import_batch_id: string;
+  entries: KbEntry[];
 }
 
 // Demo Chat (/api/v1/onboarding/playground/*, formerly "Playground") — a

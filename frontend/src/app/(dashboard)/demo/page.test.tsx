@@ -32,6 +32,8 @@ function kbEntry(overrides: Partial<KbEntry> = {}): KbEntry {
     id: "kb-1",
     title: "Hours",
     content: "We are open 9-5.",
+    status: "published",
+    import_batch_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,

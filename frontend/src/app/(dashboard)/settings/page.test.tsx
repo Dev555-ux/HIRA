@@ -124,8 +124,8 @@ describe("SettingsPage", () => {
   describe("Knowledge", () => {
     it("shows the real knowledge base count and links to the real page", async () => {
       vi.mocked(api.listKbEntries).mockResolvedValue([
-        { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
-        { id: "2", title: "Pricing", content: "$50", created_at: "", updated_at: "" },
+        { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
+        { id: "2", title: "Pricing", content: "$50", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
       ]);
       renderWithProviders();
 
@@ -309,8 +309,8 @@ describe("SettingsPage", () => {
   describe("AI Employee", () => {
     it("shows status, knowledge learned, and reply mode in business language, never model/provider names", async () => {
       vi.mocked(api.listKbEntries).mockResolvedValue([
-        { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
-        { id: "2", title: "Pricing", content: "$50", created_at: "", updated_at: "" },
+        { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
+        { id: "2", title: "Pricing", content: "$50", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
       ]);
       renderWithProviders();
 
@@ -350,7 +350,7 @@ describe("SettingsPage", () => {
   describe("No implementation details leak anywhere on the page", () => {
     it("never shows the old 'Systems' card or any internal model/provider name", async () => {
       vi.mocked(api.listKbEntries).mockResolvedValue([
-        { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+        { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
       ]);
       vi.mocked(api.getCalendarStatus).mockResolvedValue({
         connected: true,

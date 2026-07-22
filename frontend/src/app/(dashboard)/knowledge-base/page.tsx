@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   AlertTriangle,
   Check,
+  Clock,
   Globe,
   Pencil,
   Plus,
@@ -11,8 +12,8 @@ import {
   Search,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -20,7 +21,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -37,11 +38,14 @@ import {
   useCreateKbEntry,
   useDeleteKbEntry,
   useImportWebsite,
+  useKbDrafts,
   useKbEntries,
+  usePublishKbEntry,
+  useRejectKbEntry,
   useUpdateKbEntry,
 } from "@/hooks/use-knowledge-base";
 import { ApiError } from "@/lib/api";
-import type { ImportWebsiteResult, KbEntry } from "@/lib/types";
+import type { ImportWebsiteResult, KbDraftBatch, KbEntry } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/utils";
 
 const schema = z.object({
@@ -76,10 +80,13 @@ export default function KnowledgeBasePage() {
 
   const { toast } = useToast();
   const { data: entries, isLoading, isError, error, refetch } = useKbEntries();
+  const { data: draftBatches } = useKbDrafts();
   const createEntry = useCreateKbEntry();
   const updateEntry = useUpdateKbEntry();
   const deleteEntry = useDeleteKbEntry();
   const importWebsite = useImportWebsite();
+  const publishEntry = usePublishKbEntry();
+  const rejectEntry = useRejectKbEntry();
 
   const filtered = useMemo(() => {
     if (!entries) return [];
@@ -129,6 +136,24 @@ export default function KnowledgeBasePage() {
           </div>
         }
       />
+
+      {draftBatches && draftBatches.length > 0 && (
+        <div className="mb-6 space-y-4">
+          {draftBatches.map((batch) => (
+            <DraftBatchCard
+              key={batch.import_batch_id}
+              batch={batch}
+              onApprove={(id) => publishEntry.mutate(id)}
+              onReject={(id) => rejectEntry.mutate(id)}
+              onApproveAll={() => {
+                for (const entry of batch.entries) publishEntry.mutate(entry.id);
+                toast({ title: "Published — HIRA will start using this right away." });
+              }}
+              isPending={publishEntry.isPending || rejectEntry.isPending}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="relative mb-4 max-w-sm">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -282,6 +307,72 @@ export default function KnowledgeBasePage() {
   );
 }
 
+// One website import's worth of drafts, held for review before HIRA can use
+// any of it (DEC-039) — approving/rejecting is per-entry, with "Approve all"
+// as a shortcut for the common case of the whole page being accurate.
+function DraftBatchCard({
+  batch,
+  onApprove,
+  onReject,
+  onApproveAll,
+  isPending,
+}: {
+  batch: KbDraftBatch;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+  onApproveAll: () => void;
+  isPending: boolean;
+}) {
+  const factWord = batch.entries.length === 1 ? "fact" : "facts";
+  return (
+    <Card className="border-warning/40 bg-warning/5">
+      <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
+        <div className="flex items-center gap-2">
+          <Clock className="size-4 text-warning" />
+          <CardTitle className="text-sm">
+            {batch.entries.length} {factWord} imported from {batch.entries[0]?.title} — pending
+            your review
+          </CardTitle>
+        </div>
+        <Button size="sm" onClick={onApproveAll} disabled={isPending}>
+          <Check /> Approve all
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-2 pt-0">
+        {batch.entries.map((entry) => (
+          <div
+            key={entry.id}
+            className="flex items-start justify-between gap-4 rounded-lg border bg-background p-3"
+          >
+            <p className="text-sm text-muted-foreground">{entry.content}</p>
+            <div className="flex shrink-0 gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Approve fact"
+                onClick={() => onApprove(entry.id)}
+                disabled={isPending}
+              >
+                <Check className="text-success" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Reject fact"
+                className="text-destructive hover:text-destructive"
+                onClick={() => onReject(entry.id)}
+                disabled={isPending}
+              >
+                <X />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 function KbEntryForm({
   entry,
   onSubmit,
@@ -416,17 +507,18 @@ function ImportWebsiteDialog({
     return (
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>HIRA is ready</DialogTitle>
+          <DialogTitle>Pending your review</DialogTitle>
           <DialogDescription>
-            {result.entries_created} new {factWord} learned
-            {submittedUrl ? ` from ${hostnameOf(submittedUrl)}` : ""}.
+            Found {result.entries_created} new {factWord}
+            {submittedUrl ? ` from ${hostnameOf(submittedUrl)}` : ""} — HIRA won&apos;t use any of
+            it until you approve it below.
           </DialogDescription>
         </DialogHeader>
         {preview.length > 0 && (
           <ul className="space-y-2.5 rounded-lg border p-4">
             {preview.map((entry) => (
               <li key={entry.id} className="flex items-start gap-2 text-sm">
-                <Check className="mt-0.5 size-4 shrink-0 text-success" />
+                <Clock className="mt-0.5 size-4 shrink-0 text-warning" />
                 <span className="line-clamp-2 text-muted-foreground">{entry.content}</span>
               </li>
             ))}
@@ -438,12 +530,7 @@ function ImportWebsiteDialog({
           </p>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={onDone}>
-            Done
-          </Button>
-          <Button asChild>
-            <Link href="/demo">Ask HIRA what it learned</Link>
-          </Button>
+          <Button onClick={onDone}>Done</Button>
         </DialogFooter>
       </DialogContent>
     );

@@ -145,14 +145,14 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 
 - **Priority**: P2
 - **Category**: Technical
-- **Status**: Partially built, unreviewed — see PROGRESS.md Session 22 (2026-07-06). `POST /api/v1/kb/website` ships a direct single-URL fetch→clean→chunk→index endpoint (`app/ai/web_import.py`), but indexes straight to live `kb_entries` with **no** `kb_entry_drafts` staging/approval step, conflicting with this task's own design in `ONBOARDING_ARCHITECTURE.md`. **Open decision for the founder**: accept direct-to-live as the permanent design, or add the review step on top. PDF ingestion, manual-drafts, dedup, and confidence-flagging are still not built either way.
+- **Status**: Website import done (Sprint 69, 2026-07-16) — the founder's open decision is resolved: a review step was added on top rather than accepting direct-to-live. `POST /api/v1/kb/website` now creates `status="draft"` `kb_entries` sharing one `import_batch_id` per page, invisible to retrieval and the live KB list until explicitly published (DEC-039); no separate `kb_entry_drafts` table was needed — a `status` column on the existing table does the job. PDF ingestion, manual-drafts, dedup, and confidence-flagging are still not built.
 - **Dependencies**: ONBOARD-A
 
 ### ONBOARD-C — Knowledge review UI + test-drive playground
 
 - **Priority**: P2
 - **Category**: Technical
-- **Status**: To Do
+- **Status**: Knowledge review UI done (Sprint 69) — `GET /kb/drafts`, `POST /kb/{id}/publish`, `POST /kb/{id}/reject`, and a Pending Review section on the Knowledge Base page (per-fact approve/reject, approve-all-in-batch). Test-drive playground was already done separately (Demo Chat, Sprint 51 — see DEC-037); not re-scoped here.
 - **Dependencies**: ONBOARD-B
 
 ### ONBOARD-D — WhatsApp connection (guided-manual, v1)

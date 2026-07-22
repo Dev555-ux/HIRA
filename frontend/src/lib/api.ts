@@ -20,6 +20,7 @@ import type {
   EscalateResult,
   ImportWebsitePayload,
   ImportWebsiteResult,
+  KbDraftBatch,
   KbEntry,
   Lead,
   LeadStage,
@@ -171,6 +172,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  listKbDrafts: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<KbDraftBatch[]>>("/api/v1/kb/drafts", getToken).then((r) => r.data),
+
+  publishKbEntry: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<KbEntry>>(`/api/v1/kb/${id}/publish`, getToken, {
+      method: "POST",
+    }).then((r) => r.data),
+
+  rejectKbEntry: (getToken: GetToken, id: string) =>
+    apiFetch<void>(`/api/v1/kb/${id}/reject`, getToken, { method: "POST" }),
 
   sendPlaygroundMessage: (getToken: GetToken, message: string) =>
     apiFetch<ApiEnvelope<PlaygroundResponse>>(
