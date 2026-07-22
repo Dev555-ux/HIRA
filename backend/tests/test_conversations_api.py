@@ -257,6 +257,23 @@ def test_filter_closed_returns_only_closed_conversations(db_session):
     app.dependency_overrides.clear()
 
 
+def test_filter_escalated_returns_only_escalated_conversations(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    _conversation(db_session, biz.id, cust.id, conv_status="active")
+    _conversation(db_session, biz.id, cust.id, conv_status="escalated")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth(), params={"status": "escalated"})
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["status"] == "escalated"
+    app.dependency_overrides.clear()
+
+
 def test_filter_pending_returns_only_conversations_awaiting_approval(db_session):
     biz, _ = _seed_business(db_session, "A", "user_a")
     cust_pending = _customer(db_session, biz.id, wa_phone="+10000001")

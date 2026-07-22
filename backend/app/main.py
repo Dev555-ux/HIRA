@@ -21,6 +21,7 @@ from app.api.calendar import router as calendar_router
 from app.api.conversations import router as conversations_router
 from app.api.customers import router as customers_router
 from app.api.dashboard import router as dashboard_router
+from app.api.escalations import router as escalations_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.leads import router as leads_router
 from app.api.onboarding import router as onboarding_router
@@ -172,6 +173,7 @@ app.include_router(leads_router)
 app.include_router(customers_router)
 app.include_router(calendar_router)
 app.include_router(appointments_router)
+app.include_router(escalations_router)
 
 
 @app.get("/health")
