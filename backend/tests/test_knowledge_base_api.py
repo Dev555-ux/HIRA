@@ -1,5 +1,6 @@
 """Tests for the Knowledge Base CRUD API: auth guard, tenant isolation, embeddings."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.knowledge_base import get_kb_embedding_provider
@@ -163,7 +164,14 @@ def test_patch_title_only_does_not_reembed(db_session):
     assert resp.status_code == 200
     db_session.refresh(entry)
     assert entry.title == "New title"
-    assert list(entry.embedding) == list(original_vector)
+    # pgvector stores embeddings as 4-byte float4, not Python's float64 — a
+    # genuine round-trip through the column can lose precision in the last
+    # few digits (observed in CI's Postgres though not this sandbox's, same
+    # image tag). Exact list equality asserts a bit-for-bit guarantee the
+    # storage type was never designed to provide; pytest.approx compares
+    # elementwise within a relative tolerance, which is what "the embedding
+    # is unchanged" actually means here.
+    assert list(entry.embedding) == pytest.approx(list(original_vector))
     app.dependency_overrides.clear()
 
 
