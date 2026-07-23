@@ -143,8 +143,11 @@ def test_generate_reply_offers_no_tools_for_a_knowledge_question(db_session):
     spy = _SpyProvider(fixed_reply="We're open 9am-5pm on weekdays.")
 
     generate_reply(
-        db_session, conversation, "what are your business hours?",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "what are your business hours?",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     assert spy.calls[0]["tools"] == []
@@ -155,8 +158,11 @@ def test_generate_reply_offers_no_tools_for_a_capability_question(db_session):
     spy = _SpyProvider(fixed_reply="I can check availability and book appointments for you.")
 
     generate_reply(
-        db_session, conversation, "Can you schedule meetings?",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Can you schedule meetings?",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     assert spy.calls[0]["tools"] == []
@@ -179,12 +185,20 @@ def test_generate_reply_offers_only_calendar_tools_for_a_booking_action(db_sessi
     # by the Action Readiness Check — see test_planning.py — so this needs a
     # complete request to reach Stage 2's tool selection at all.
     generate_reply(
-        db_session, conversation, "Book a meeting tomorrow at 3pm",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Book a meeting tomorrow at 3pm",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     tool_names = {schema.name for schema in spy.calls[0]["tools"]}
-    assert tool_names == {BOOK_APPOINTMENT, CHECK_AVAILABILITY, RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT}
+    assert tool_names == {
+        BOOK_APPOINTMENT,
+        CHECK_AVAILABILITY,
+        RESCHEDULE_APPOINTMENT,
+        CANCEL_APPOINTMENT,
+    }
 
 
 def test_generate_reply_offers_only_crm_tools_for_a_lead_action(db_session):
@@ -192,8 +206,11 @@ def test_generate_reply_offers_only_crm_tools_for_a_lead_action(db_session):
     spy = _SpyProvider(fixed_reply="Got it, logging that lead.")
 
     generate_reply(
-        db_session, conversation, "Create a lead for John",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Create a lead for John",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     tool_names = {schema.name for schema in spy.calls[0]["tools"]}
@@ -208,8 +225,11 @@ def test_generate_reply_withholds_tools_and_asks_for_missing_date(db_session):
     spy = _SpyProvider(fixed_reply="Sure — what date works for you?")
 
     generate_reply(
-        db_session, conversation, "Book a meeting.",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Book a meeting.",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     assert spy.calls[0]["tools"] == []
@@ -221,8 +241,11 @@ def test_generate_reply_withholds_tools_and_asks_for_missing_time(db_session):
     spy = _SpyProvider(fixed_reply="What time works best?")
 
     generate_reply(
-        db_session, conversation, "Book a meeting with John tomorrow.",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Book a meeting with John tomorrow.",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     assert spy.calls[0]["tools"] == []
@@ -234,12 +257,20 @@ def test_generate_reply_offers_tools_once_booking_is_complete(db_session):
     spy = _SpyProvider(fixed_reply="Great, checking availability now.")
 
     generate_reply(
-        db_session, conversation, "Book a meeting with John tomorrow at 3 PM.",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Book a meeting with John tomorrow at 3 PM.",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     tool_names = {schema.name for schema in spy.calls[0]["tools"]}
-    assert tool_names == {BOOK_APPOINTMENT, CHECK_AVAILABILITY, RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT}
+    assert tool_names == {
+        BOOK_APPOINTMENT,
+        CHECK_AVAILABILITY,
+        RESCHEDULE_APPOINTMENT,
+        CANCEL_APPOINTMENT,
+    }
     assert "Action planning" not in spy.calls[0]["system"]
 
 
@@ -248,8 +279,11 @@ def test_generate_reply_withholds_tools_and_asks_for_lead_name(db_session):
     spy = _SpyProvider(fixed_reply="Sure — who's the lead?")
 
     generate_reply(
-        db_session, conversation, "Create a lead.",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Create a lead.",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     assert spy.calls[0]["tools"] == []
@@ -261,8 +295,11 @@ def test_generate_reply_withholds_tools_and_asks_which_appointment_to_cancel(db_
     spy = _SpyProvider(fixed_reply="Which appointment would you like to cancel?")
 
     generate_reply(
-        db_session, conversation, "Cancel my appointment.",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Cancel my appointment.",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     assert spy.calls[0]["tools"] == []
@@ -278,11 +315,16 @@ def test_generate_reply_requires_confirmation_before_cancelling_a_specified_appo
     # — so this exercises governance's REQUIRES_CONFIRMATION policy, not
     # Sprint 58's readiness gate.
     _, conversation = _setup_business_with_kb(db_session)
-    spy = _SpyProvider(fixed_reply="Just to confirm, you'd like me to cancel tomorrow's appointment?")
+    spy = _SpyProvider(
+        fixed_reply="Just to confirm, you'd like me to cancel tomorrow's appointment?"
+    )
 
     generate_reply(
-        db_session, conversation, "Cancel tomorrow's meeting",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Cancel tomorrow's meeting",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     assert spy.calls[0]["tools"] == []
@@ -295,8 +337,11 @@ def test_generate_reply_requires_confirmation_before_rescheduling(db_session):
     spy = _SpyProvider(fixed_reply="Just to confirm, move it to tomorrow at 10am?")
 
     generate_reply(
-        db_session, conversation, "Reschedule my appointment to tomorrow at 10am.",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Reschedule my appointment to tomorrow at 10am.",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     assert spy.calls[0]["tools"] == []
@@ -310,12 +355,20 @@ def test_generate_reply_still_executes_a_ready_booking_immediately(db_session):
     spy = _SpyProvider(fixed_reply="Great, checking availability now.")
 
     generate_reply(
-        db_session, conversation, "Book a meeting with John tomorrow at 3 PM.",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Book a meeting with John tomorrow at 3 PM.",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     tool_names = {schema.name for schema in spy.calls[0]["tools"]}
-    assert tool_names == {BOOK_APPOINTMENT, CHECK_AVAILABILITY, RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT}
+    assert tool_names == {
+        BOOK_APPOINTMENT,
+        CHECK_AVAILABILITY,
+        RESCHEDULE_APPOINTMENT,
+        CANCEL_APPOINTMENT,
+    }
     assert "Action planning" not in spy.calls[0]["system"]
 
 
@@ -328,12 +381,20 @@ def test_generate_reply_leaves_an_unrecognised_action_unmodified_by_governance(d
     spy = _SpyProvider(fixed_reply="Sure, let me look into that.")
 
     generate_reply(
-        db_session, conversation, "Update my appointment details.",
-        llm=spy, embedding=FakeEmbeddingProvider(),
+        db_session,
+        conversation,
+        "Update my appointment details.",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
     )
 
     tool_names = {schema.name for schema in spy.calls[0]["tools"]}
-    assert tool_names == {BOOK_APPOINTMENT, CHECK_AVAILABILITY, RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT}
+    assert tool_names == {
+        BOOK_APPOINTMENT,
+        CHECK_AVAILABILITY,
+        RESCHEDULE_APPOINTMENT,
+        CANCEL_APPOINTMENT,
+    }
 
 
 class _SequencedProvider(LLMProvider):
@@ -839,7 +900,9 @@ def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appoint
     provider = MockCalendarProvider()
     monkeypatch.setattr(
         "app.ai.tools.get_appointment_service",
-        lambda db, business_id: AppointmentService(db, business_id, provider, calendar_id="primary"),
+        lambda db, business_id: AppointmentService(
+            db, business_id, provider, calendar_id="primary"
+        ),
     )
     sent = {"count": 0}
 
@@ -853,9 +916,7 @@ def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appoint
 
     # Nothing durably persisted -- no stale pending Message, no orphaned Appointment.
     assert (
-        db_session.scalars(
-            select(Message).where(Message.conversation_id == conversation_id)
-        ).all()
+        db_session.scalars(select(Message).where(Message.conversation_id == conversation_id)).all()
         == []
     )
     assert db_session.scalars(select(Appointment)).all() == []

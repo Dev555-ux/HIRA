@@ -6,11 +6,14 @@ this skeleton in later Sprint 1 tasks.
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 
 from app.api.appointments import router as appointments_router
@@ -23,9 +26,11 @@ from app.api.leads import router as leads_router
 from app.api.onboarding import router as onboarding_router
 from app.api.settings import router as settings_router
 from app.core.config import settings
-from app.core.monitoring import capture_exception, init_sentry
+from app.core.monitoring import capture_exception, capture_message, init_sentry
 from app.core.rate_limit import init_rate_limiting
 from app.core.request_logging import RequestLoggingMiddleware
+from app.db.session import get_db
+from app.models import Message
 from app.webhooks.whatsapp import router as whatsapp_router
 
 logger = logging.getLogger(__name__)
@@ -177,3 +182,43 @@ def health() -> dict[str, str]:
     the service is up. Returns HTTP 200 with a small JSON body.
     """
     return {"status": "ok"}
+
+
+@app.get("/health/whatsapp")
+def health_whatsapp(db: Session = Depends(get_db)) -> JSONResponse:
+    """Webhook liveness signal (Sprint 69, DEPLOY-5) — not "is the server
+    up" (that's /health above), but "have we actually heard from Meta
+    recently." Deliberately separate from /health: Railway's own
+    healthcheckPath (railway.json) stays pointed at /health so a quiet
+    webhook (e.g. a pilot business with no messages overnight) never causes
+    a restart loop — this endpoint is meant to be polled by an external
+    uptime monitor (see documentation/DEPLOYMENT.md), not Railway itself.
+
+    Datetimes here are naive/UTC-implied, matching every other timestamp
+    column in this app (see DEC-032's note on Appointment timestamps) — no
+    tz-aware comparison is needed or attempted.
+    """
+    latest = db.scalars(
+        select(Message.created_at)
+        .where(Message.direction == "inbound")
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    ).first()
+    if latest is None:
+        return JSONResponse(status_code=200, content={"status": "no_traffic_yet"})
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    age = now - latest
+    threshold = timedelta(minutes=settings.webhook_stale_threshold_minutes)
+    if age > threshold:
+        capture_message(
+            f"WhatsApp webhook silent for {age}, exceeding the "
+            f"{threshold} threshold (last inbound message at {latest.isoformat()})."
+        )
+        return JSONResponse(
+            status_code=503,
+            content={"status": "stale", "last_inbound_at": latest.isoformat()},
+        )
+    return JSONResponse(
+        status_code=200, content={"status": "ok", "last_inbound_at": latest.isoformat()}
+    )

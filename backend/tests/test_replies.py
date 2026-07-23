@@ -487,7 +487,9 @@ def test_concurrent_approve_tool_call_executes_tool_exactly_once(db_session, mon
     call_count = {"n": 0}
     call_lock = threading.Lock()
 
-    def fake_execute_tool_call(db, business_id, tool_call, *, customer_id, conversation_id, commit=True):
+    def fake_execute_tool_call(
+        db, business_id, tool_call, *, customer_id, conversation_id, commit=True
+    ):
         with call_lock:
             call_count["n"] += 1
         return ToolExecutionResult(True, "Appointment booked.", uuid.uuid4())

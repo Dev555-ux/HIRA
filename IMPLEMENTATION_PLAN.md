@@ -47,14 +47,16 @@ Each finding keeps its original severity from the audit. Effort uses S (hours–
 
 **Goal**: get off the founder's laptop + ngrok and onto infrastructure that can run unattended and be debugged after the fact. This is the precondition for a *credible* pilot (one that doesn't depend on a laptop staying on).
 
-| ID | Finding | Priority | Effort | Dependencies | Blocks | Order |
-|---|---|---|---|---|---|---|
-| DEPLOY-1 | No production deployment exists (`INFRA-001`) | Critical | M | SEC-1, SEC-2 (don't deploy with insecure defaults or no CORS) | Pilot (recommended), Production (required) | 10 |
-| DEPLOY-3 | No automated database backups (`INFRA-004`) | High | S | DEPLOY-1 (needs a managed DB target) | Pilot (recommended), Production (required) | 11 |
-| DEPLOY-2 | No centralized logging / error monitoring (`INFRA-005`) | High | M | DEPLOY-1 | Pilot (recommended), Production (required) | 12 |
-| DEPLOY-5 | No webhook health monitoring/alerting (`INFRA-003`, `INFRA-006`) | Medium | M | DEPLOY-1, DEPLOY-2 | Production | 13 |
-| WA-1 | Unknown-business payloads dropped silently, no alerting | Low | S | DEPLOY-2 (needs somewhere to alert to) | Production | 14 |
-| DEPLOY-4 | No graceful shutdown handling | Medium | M | DEPLOY-1 | Production (superseded later by REL-1's durable queue, but cheap interim mitigation) | 15 |
+**Status (Sprint 69, 2026-07-22)**: code/config side of this milestone is complete — `backend/Dockerfile` and `backend/railway.json` already existed and needed no changes; `GET /health/whatsapp` (webhook staleness + a Sentry-based alert, reusing the already-implemented `app/core/monitoring.py` integration) is new this sprint; `documentation/DEPLOYMENT.md` is the exact runbook for the rest. **Nothing here is marked Done** — actually creating the Railway/Vercel projects, setting real secrets, and confirming a live deployment is explicitly the founder's own action (real billing, real credentials), not something a coding sprint can complete unilaterally. Update this table to Done only after `DEPLOYMENT.md`'s end-to-end verification section has actually been run.
+
+| ID | Finding | Priority | Effort | Dependencies | Blocks | Order | Status |
+|---|---|---|---|---|---|---|---|
+| DEPLOY-1 | No production deployment exists (`INFRA-001`) | Critical | M | SEC-1, SEC-2 (don't deploy with insecure defaults or no CORS) | Pilot (recommended), Production (required) | 10 | Config/runbook ready (`DEPLOYMENT.md`) — pending founder execution |
+| DEPLOY-3 | No automated database backups (`INFRA-004`) | High | S | DEPLOY-1 (needs a managed DB target) | Pilot (recommended), Production (required) | 11 | Runbook step 5 — a Railway dashboard toggle, no code; pending founder execution |
+| DEPLOY-2 | No centralized logging / error monitoring (`INFRA-005`) | High | M | DEPLOY-1 | Pilot (recommended), Production (required) | 12 | Code already existed (`app/core/monitoring.py`, Sprint 52B) — only needs a real `SENTRY_DSN` (runbook step 4); pending founder execution |
+| DEPLOY-5 | No webhook health monitoring/alerting (`INFRA-003`, `INFRA-006`) | Medium | M | DEPLOY-1, DEPLOY-2 | Production | 13 | `GET /health/whatsapp` shipped this sprint; pending an external uptime monitor being pointed at it (runbook step 6) |
+| WA-1 | Unknown-business payloads dropped silently, no alerting | Low | S | DEPLOY-2 (needs somewhere to alert to) | Production | 14 | Not yet addressed |
+| DEPLOY-4 | No graceful shutdown handling | Medium | M | DEPLOY-1 | Production (superseded later by REL-1's durable queue, but cheap interim mitigation) | 15 | Not yet addressed |
 
 **Milestone 1 total effort**: ~1 M (deploy) + 1 S + 2 M + 1 M + 1 S ≈ **2–3 weeks**.
 

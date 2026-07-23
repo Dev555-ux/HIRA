@@ -68,7 +68,9 @@ def test_fetch_page_raises_on_http_error():
         return httpx.Response(404)
 
     with pytest.raises(WebImportError):
-        fetch_page("https://example.com/missing", client=_client(handler), resolve_host=_resolve_public)
+        fetch_page(
+            "https://example.com/missing", client=_client(handler), resolve_host=_resolve_public
+        )
 
 
 def test_fetch_page_raises_on_transport_error():
@@ -89,9 +91,7 @@ def test_fetch_page_transport_error_message_does_not_leak_internals(caplog):
 
     with caplog.at_level(logging.WARNING, logger="app.ai.web_import"):
         with pytest.raises(WebImportError) as exc_info:
-            fetch_page(
-                "https://example.com", client=_client(handler), resolve_host=_resolve_public
-            )
+            fetch_page("https://example.com", client=_client(handler), resolve_host=_resolve_public)
 
     assert "internal transport detail 12345" not in str(exc_info.value)
     assert "internal transport detail 12345" in caplog.text
@@ -102,7 +102,11 @@ def test_fetch_page_rejects_loopback_host():
         raise AssertionError("should not fetch — blocked before the request")
 
     with pytest.raises(WebImportError):
-        fetch_page("http://localhost:8000/admin", client=_client(handler), resolve_host=lambda h: ["127.0.0.1"])
+        fetch_page(
+            "http://localhost:8000/admin",
+            client=_client(handler),
+            resolve_host=lambda h: ["127.0.0.1"],
+        )
 
 
 def test_fetch_page_rejects_private_network_host():

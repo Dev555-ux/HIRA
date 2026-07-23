@@ -161,7 +161,12 @@ DEMO_CUSTOMERS: list[dict] = [
                 "sent",
                 47,
             ),
-            ("inbound", "Afternoons are better. Let me check my schedule and get back to you.", "received", 20),
+            (
+                "inbound",
+                "Afternoons are better. Let me check my schedule and get back to you.",
+                "received",
+                20,
+            ),
             (
                 "outbound",
                 "Sounds good — just message whenever you're ready and I'll find a slot that works.",

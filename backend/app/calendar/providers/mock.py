@@ -47,7 +47,8 @@ class MockCalendarProvider(CalendarProvider):
 
     def _overlaps_busy(self, window: TimeSlot) -> bool:
         return any(
-            b.starts_at < window.ends_at and b.ends_at > window.starts_at for b in self._busy_windows
+            b.starts_at < window.ends_at and b.ends_at > window.starts_at
+            for b in self._busy_windows
         )
 
     def get_availability(self, *, calendar_id: str, window: TimeSlot) -> list[TimeSlot]:

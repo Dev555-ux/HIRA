@@ -27,8 +27,7 @@ def test_app_logger_is_configured_for_info_with_our_handler():
     assert app_logger.level == logging.INFO
     assert app_logger.propagate is False
     assert any(
-        type(h) is logging.StreamHandler and h.formatter is not None
-        for h in app_logger.handlers
+        type(h) is logging.StreamHandler and h.formatter is not None for h in app_logger.handlers
     )
 
 

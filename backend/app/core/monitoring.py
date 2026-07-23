@@ -76,3 +76,16 @@ def capture_exception(exc: BaseException) -> None:
     around apps with their own exception handlers.
     """
     sentry_sdk.capture_exception(exc)
+
+
+def capture_message(message: str, *, level: str = "warning") -> None:
+    """Explicit capture for a real, non-exception condition worth alerting
+    on — first use is GET /health/whatsapp (Sprint 69) reporting that
+    inbound WhatsApp traffic has gone quiet longer than expected. Reuses
+    Sentry as the alerting channel rather than introducing a new one: it's
+    already the configured destination for capture_exception above, and
+    Sentry's own dashboard/email notifications are the actual "alert" —
+    this function only has to get the message there. No-ops the same way
+    every other sentry_sdk call does when SENTRY_DSN is unset.
+    """
+    sentry_sdk.capture_message(message, level=level)

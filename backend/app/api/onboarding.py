@@ -94,9 +94,7 @@ def onboarding_status(
     try:
         business = get_business_for_clerk_user(db, clerk_user_id)
     except Exception:
-        logger.exception(
-            "onboarding_status: DB lookup failed for clerk_user_id=%s", clerk_user_id
-        )
+        logger.exception("onboarding_status: DB lookup failed for clerk_user_id=%s", clerk_user_id)
         raise
     if business is None:
         logger.info("onboarding_status: no business yet for clerk_user_id=%s", clerk_user_id)

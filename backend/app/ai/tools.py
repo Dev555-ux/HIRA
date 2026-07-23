@@ -212,7 +212,9 @@ def execute_tool_call(
     committing internally regardless of `commit`.
     """
     if tool_call.name in LEAD_TOOL_NAMES:
-        return execute_lead_tool_call(db, business_id, tool_call, customer_id=customer_id, commit=commit)
+        return execute_lead_tool_call(
+            db, business_id, tool_call, customer_id=customer_id, commit=commit
+        )
 
     try:
         appointment_service = get_appointment_service(db, business_id)
@@ -229,7 +231,9 @@ def execute_tool_call(
             on_commit_failure = (
                 None
                 if commit
-                else (lambda: appointment_service.cancel_calendar_event(appointment.google_event_id))
+                else (
+                    lambda: appointment_service.cancel_calendar_event(appointment.google_event_id)
+                )
             )
             return ToolExecutionResult(
                 True, "Appointment booked.", appointment.id, on_commit_failure=on_commit_failure

@@ -29,9 +29,7 @@ def connect_phone_number(
     the update has already happened is a no-op. Raises `LookupError` if
     neither id matches any business.
     """
-    business = find_business_by_any_phone_number_id(
-        db, [old_phone_number_id, new_phone_number_id]
-    )
+    business = find_business_by_any_phone_number_id(db, [old_phone_number_id, new_phone_number_id])
     if business is None:
         raise LookupError(
             "No business found with the old or new phone number id. "
