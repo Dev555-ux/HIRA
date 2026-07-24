@@ -70,7 +70,7 @@ def test_import_indexes_extracted_text_and_reports_counts(db_session):
     body = resp.json()
     assert body["pages_imported"] == 1
     assert body["entries_created"] == 2
-    # The response includes what was actually learned, not just a count —
+    # The response includes what was actually imported, not just a count —
     # this is what the frontend's post-import summary shows the owner.
     assert {e["title"] for e in body["entries"]} == {"Opening Hours"}
     assert {e["content"] for e in body["entries"]} == {"We open at 9am.", "We close at 5pm."}
@@ -79,6 +79,42 @@ def test_import_indexes_extracted_text_and_reports_counts(db_session):
     assert {e.title for e in stored} == {"Opening Hours"}
     assert {e.content for e in stored} == {"We open at 9am.", "We close at 5pm."}
     assert all(e.embedding is not None for e in stored)
+    app.dependency_overrides.clear()
+
+
+def test_import_creates_drafts_sharing_one_batch_id_not_published(db_session):
+    """DEC-039: an import must never be immediately live — it's a draft
+    pending review until explicitly published, unlike a manual entry."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+
+    def fake_fetch(url):
+        return "Opening Hours", "We open at 9am.\n\nWe close at 5pm."
+
+    client = _client(
+        db_session, claims_for_token=lambda t: {"sub": "user_a"}, fetch_page=fake_fetch
+    )
+
+    resp = client.post("/api/v1/kb/website", headers=_auth(), json={"url": "https://example.com"})
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["import_batch_id"] is not None
+    stored = db_session.query(KbEntry).filter_by(business_id=biz.id).all()
+    assert len(stored) == 2
+    assert all(e.status == "draft" for e in stored)
+    assert len({e.import_batch_id for e in stored}) == 1
+    assert str(stored[0].import_batch_id) == body["import_batch_id"]
+
+    # A draft import must not appear in the live KB list...
+    list_resp = client.get("/api/v1/kb", headers=_auth())
+    assert list_resp.json()["data"] == []
+    # ...but must appear in the drafts queue, grouped under that batch.
+    drafts_resp = client.get("/api/v1/kb/drafts", headers=_auth())
+    batches = drafts_resp.json()["data"]
+    assert len(batches) == 1
+    assert batches[0]["import_batch_id"] == body["import_batch_id"]
+    assert len(batches[0]["entries"]) == 2
     app.dependency_overrides.clear()
 
 
