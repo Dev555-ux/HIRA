@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_current_principal
@@ -130,8 +130,28 @@ def assign_escalation(
     if escalation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
-    escalation.assigned_to = principal.user_id
+    # Conditional UPDATE, not a load-then-write: two requests racing to claim
+    # the same escalation serialize on Postgres's row-level lock here, so only
+    # one can ever win. The WHERE clause also re-asserts tenant scoping
+    # (get_scoped above already confirmed it, but the mutation stays
+    # self-contained rather than trusting a moment-old read) and allows a
+    # no-op re-claim by whoever already holds it.
+    claimed = db.execute(
+        update(Escalation)
+        .where(
+            Escalation.id == escalation_id,
+            Escalation.business_id == principal.business_id,
+            (Escalation.assigned_to.is_(None)) | (Escalation.assigned_to == principal.user_id),
+        )
+        .values(assigned_to=principal.user_id)
+    ).rowcount
     db.commit()
+    if claimed == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This escalation is already assigned to someone else.",
+        )
+
     db.refresh(escalation)
     conversation = db.get(Conversation, escalation.conversation_id)
     customer = db.get(Customer, conversation.customer_id)
@@ -148,6 +168,11 @@ def unassign_escalation(
     escalation = get_scoped(db, Escalation, principal.business_id, escalation_id)
     if escalation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    if escalation.assigned_to != principal.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the user who claimed this escalation can unassign it.",
+        )
 
     escalation.assigned_to = None
     db.commit()
@@ -171,9 +196,17 @@ def resolve_escalation(
     escalation.status = "resolved"
     escalation.resolved_by = principal.user_id
     escalation.resolved_at = _now()
+
+    conversation = db.get(Conversation, escalation.conversation_id)
+    # Resolving is what actually clears "escalated" — without this, the
+    # conversation stays permanently stuck out of the Inbox's Open filter and
+    # permanently stuck in its Escalated filter, even though the escalation
+    # itself is now resolved (release-review finding).
+    if conversation is not None and conversation.status == "escalated":
+        conversation.status = "active"
+
     db.commit()
     db.refresh(escalation)
-    conversation = db.get(Conversation, escalation.conversation_id)
     customer = db.get(Customer, conversation.customer_id)
     emails = _user_emails(
         db,
