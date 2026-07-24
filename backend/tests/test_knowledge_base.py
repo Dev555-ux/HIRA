@@ -1,13 +1,18 @@
 """Tests for KB ingestion + pgvector semantic search (deterministic fake provider)."""
 
 import hashlib
+import uuid
+
+import pytest
 
 from app.ai.embeddings.base import EmbeddingProvider
 from app.ai.knowledge_base import (
+    KbEntryAlreadyPublishedError,
     has_any_entries,
     index_entry,
     list_drafts,
     publish_entry,
+    reject_entry,
     retrieve_context,
     search,
 )
@@ -272,3 +277,75 @@ def test_publish_entry_is_tenant_scoped(db_session):
     result = publish_entry(db_session, biz_a.id, entries[0].id)
 
     assert result is None
+
+
+def test_reject_entry_deletes_a_draft(db_session):
+    provider = FakeEmbeddingProvider()
+    biz = _business(db_session, "Clinic A")
+    entries = index_entry(
+        db_session, biz.id, "Draft", "New fact.", provider=provider, status="draft"
+    )
+
+    result = reject_entry(db_session, biz.id, entries[0].id)
+
+    assert result is True
+    assert db_session.get(KbEntry, entries[0].id) is None
+
+
+def test_reject_entry_returns_false_when_not_found(db_session):
+    biz = _business(db_session, "Clinic A")
+
+    result = reject_entry(db_session, biz.id, uuid.uuid4())
+
+    assert result is False
+
+
+def test_reject_entry_refuses_an_already_published_entry(db_session):
+    """Stale-tab/concurrent scenario: one tab publishes a draft while another,
+    stale tab still shows it as pending and fires Reject — reject must not
+    delete the now-live entry (release-review H-1 regression)."""
+    provider = FakeEmbeddingProvider()
+    biz = _business(db_session, "Clinic A")
+    entries = index_entry(
+        db_session, biz.id, "Draft", "New fact.", provider=provider, status="draft"
+    )
+    publish_entry(db_session, biz.id, entries[0].id)  # "tab A" publishes first
+
+    with pytest.raises(KbEntryAlreadyPublishedError):
+        reject_entry(db_session, biz.id, entries[0].id)  # "tab B" still tries to reject
+
+    survivor = db_session.get(KbEntry, entries[0].id)
+    assert survivor is not None
+    assert survivor.status == "published"
+
+
+def test_reject_entry_is_tenant_scoped(db_session):
+    provider = FakeEmbeddingProvider()
+    biz_a = _business(db_session, "Clinic A")
+    biz_b = _business(db_session, "Clinic B")
+    entries = index_entry(
+        db_session, biz_b.id, "Draft", "New fact.", provider=provider, status="draft"
+    )
+
+    result = reject_entry(db_session, biz_a.id, entries[0].id)
+
+    assert result is False
+    assert db_session.get(KbEntry, entries[0].id) is not None  # business B's draft untouched
+
+
+def test_reject_entry_tenant_scoping_beats_published_status(db_session):
+    """A cross-tenant attempt to reject another business's already-published
+    entry must still 404-equivalent (return False), not leak that the entry
+    exists/is published via a 409-equivalent — same non-disclosure rule as
+    every other tenant-scoped lookup in this codebase."""
+    provider = FakeEmbeddingProvider()
+    biz_a = _business(db_session, "Clinic A")
+    biz_b = _business(db_session, "Clinic B")
+    entries = index_entry(
+        db_session, biz_b.id, "Draft", "New fact.", provider=provider, status="draft"
+    )
+    publish_entry(db_session, biz_b.id, entries[0].id)
+
+    result = reject_entry(db_session, biz_a.id, entries[0].id)
+
+    assert result is False

@@ -351,3 +351,44 @@ def test_reject_another_businesss_draft_404s(db_session):
     assert resp.status_code == 404
     assert db_session.get(KbEntry, entry_b.id) is not None
     app.dependency_overrides.clear()
+
+
+def test_reject_an_already_published_entry_409s_without_deleting_it(db_session):
+    """Stale-tab/concurrent scenario, over the real HTTP path: one request
+    publishes a draft, then a second (stale) request tries to reject the same
+    entry_id. It must not delete the now-live entry (release-review H-1)."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    entry = KbEntry(business_id=biz.id, title="Draft", content="x", status="draft")
+    db_session.add(entry)
+    db_session.commit()
+    entry_id = entry.id
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    publish_resp = client.post(f"/api/v1/kb/{entry_id}/publish", headers=_auth())
+    assert publish_resp.status_code == 200
+
+    reject_resp = client.post(f"/api/v1/kb/{entry_id}/reject", headers=_auth())
+
+    assert reject_resp.status_code == 409
+    survivor = db_session.get(KbEntry, entry_id)
+    assert survivor is not None
+    assert survivor.status == "published"
+    app.dependency_overrides.clear()
+
+
+def test_reject_another_businesss_published_entry_404s_not_409s(db_session):
+    """Tenant isolation must win over the status check: rejecting another
+    business's already-published entry looks identical to rejecting a
+    nonexistent one (404), never revealing via a 409 that it exists."""
+    biz_a, _ = _seed_business(db_session, "A", "user_a")
+    biz_b, _ = _seed_business(db_session, "B", "user_b")
+    entry_b = KbEntry(business_id=biz_b.id, title="Live", content="x", status="published")
+    db_session.add(entry_b)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.post(f"/api/v1/kb/{entry_b.id}/reject", headers=_auth())
+
+    assert resp.status_code == 404
+    assert db_session.get(KbEntry, entry_b.id) is not None
+    app.dependency_overrides.clear()
