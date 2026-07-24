@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,20 @@ from app.db.base import Base
 
 class Business(Base):
     __tablename__ = "businesses"
+    __table_args__ = (
+        # Partial (not full) unique: whatsapp_phone_number_id is NULL for every
+        # business that hasn't connected WhatsApp yet, and those NULLs must
+        # coexist. Only actually-connected numbers need to be distinct — two
+        # businesses sharing one Meta phone_number_id would have the webhook
+        # route that number's inbound messages to whichever business connected
+        # it last (app/webhooks/whatsapp.py looks businesses up by this field).
+        Index(
+            "uq_businesses_whatsapp_phone_number_id",
+            "whatsapp_phone_number_id",
+            unique=True,
+            postgresql_where=text("whatsapp_phone_number_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))
@@ -154,6 +168,15 @@ class KbEntry(Base):
     # 384 = BAAI/bge-small-en-v1.5 (local embeddings). Changing provider to a
     # different dimension requires a migration. See app/ai/embeddings.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
+    # Draft -> Review -> Approve -> Publish (Sprint 69, DEC-039). Manually
+    # typed facts are published immediately (the owner already reviewed their
+    # own text by definition); only website import creates "draft" rows.
+    # Retrieval (app/ai/knowledge_base.py) filters to "published" only — a
+    # draft must never ground a live customer-facing answer.
+    status: Mapped[str] = mapped_column(String(20), default="published", server_default="published")
+    # Shared by every chunk from one website import, so a whole scrape can be
+    # reviewed/approved together. NULL for manually-typed entries.
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -268,5 +291,26 @@ class CalendarCredential(Base):
     refresh_token_encrypted: Mapped[str] = mapped_column(Text)
     calendar_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     scopes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class WhatsAppCredential(Base):
+    """A business's own Meta System User token + app secret (Sprint 69,
+    self-serve "guided-manual v1" WhatsApp connection) — mirrors
+    CalendarCredential's shape exactly (one row per business, secrets
+    encrypted at rest with the same Fernet key). `Business.
+    whatsapp_phone_number_id`/`whatsapp_business_account_id` are not
+    secrets and stay where they already were; only the two actual
+    credentials live here."""
+
+    __tablename__ = "whatsapp_credentials"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), unique=True
+    )
+    access_token_encrypted: Mapped[str] = mapped_column(Text)
+    app_secret_encrypted: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

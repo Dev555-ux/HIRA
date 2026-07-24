@@ -8,6 +8,7 @@ import type {
   BusinessSettings,
   CalendarSettings,
   CalendarStatus,
+  ConnectWhatsAppPayload,
   Conversation,
   ConversationStatusFilter,
   CreateAppointmentPayload,
@@ -23,6 +24,7 @@ import type {
   EscalationStatusFilter,
   ImportWebsitePayload,
   ImportWebsiteResult,
+  KbDraftBatch,
   KbEntry,
   Lead,
   LeadStage,
@@ -41,6 +43,7 @@ import type {
   UpdateDraftResult,
   UpdateKbEntryPayload,
   UpdateLeadPayload,
+  WhatsAppStatus,
 } from "./types";
 
 export class ApiError extends Error {
@@ -174,6 +177,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  listKbDrafts: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<KbDraftBatch[]>>("/api/v1/kb/drafts", getToken).then((r) => r.data),
+
+  publishKbEntry: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<KbEntry>>(`/api/v1/kb/${id}/publish`, getToken, {
+      method: "POST",
+    }).then((r) => r.data),
+
+  rejectKbEntry: (getToken: GetToken, id: string) =>
+    apiFetch<void>(`/api/v1/kb/${id}/reject`, getToken, { method: "POST" }),
 
   sendPlaygroundMessage: (getToken: GetToken, message: string) =>
     apiFetch<ApiEnvelope<PlaygroundResponse>>(
@@ -336,6 +350,18 @@ export const api = {
 
   disconnectCalendar: (getToken: GetToken) =>
     apiFetch<void>("/api/v1/calendar/disconnect", getToken, { method: "DELETE" }),
+
+  getWhatsAppStatus: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<WhatsAppStatus>>("/api/v1/whatsapp/status", getToken).then((r) => r.data),
+
+  connectWhatsApp: (getToken: GetToken, payload: ConnectWhatsAppPayload) =>
+    apiFetch<ApiEnvelope<WhatsAppStatus>>("/api/v1/whatsapp/connect", getToken, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  disconnectWhatsApp: (getToken: GetToken) =>
+    apiFetch<void>("/api/v1/whatsapp/disconnect", getToken, { method: "POST" }),
 
   getAvailability: (getToken: GetToken, params: { starts_at: string; ends_at: string }) =>
     apiFetch<ApiEnvelope<AvailabilitySlot[]>>(

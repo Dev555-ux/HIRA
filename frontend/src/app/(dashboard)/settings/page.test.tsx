@@ -16,13 +16,22 @@ function aiEmployeeCard() {
 }
 
 vi.mock("@/lib/api", () => ({
-  ApiError: class extends Error {},
+  ApiError: class extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  },
   api: {
     getSettings: vi.fn(),
     updateSettings: vi.fn(),
     getOnboardingStatus: vi.fn(),
     listKbEntries: vi.fn(),
     getCalendarStatus: vi.fn(),
+    getWhatsAppStatus: vi.fn(),
+    connectWhatsApp: vi.fn(),
+    disconnectWhatsApp: vi.fn(),
   },
 }));
 
@@ -31,7 +40,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => mockSearchParams(),
 }));
 
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 
 const openProfile = vi.fn();
 
@@ -82,6 +91,12 @@ describe("SettingsPage", () => {
     vi.mocked(api.listKbEntries).mockResolvedValue([]);
     vi.mocked(api.getCalendarStatus).mockResolvedValue({ connected: false, calendar_id: null });
     vi.mocked(api.getSettings).mockResolvedValue({ mode: "assisted" });
+    vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
+      connected: false,
+      status: "not_connected",
+      phone_number_id_masked: null,
+      connected_at: null,
+    });
   });
 
   describe("Business profile", () => {
@@ -124,8 +139,8 @@ describe("SettingsPage", () => {
   describe("Knowledge", () => {
     it("shows the real knowledge base count and links to the real page", async () => {
       vi.mocked(api.listKbEntries).mockResolvedValue([
-        { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
-        { id: "2", title: "Pricing", content: "$50", created_at: "", updated_at: "" },
+        { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
+        { id: "2", title: "Pricing", content: "$50", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
       ]);
       renderWithProviders();
 
@@ -176,36 +191,38 @@ describe("SettingsPage", () => {
 
       expect(screen.queryByText("Phone number ID")).not.toBeInTheDocument();
       expect(screen.queryByText("Access token")).not.toBeInTheDocument();
-      expect(screen.queryByText(/webhook|token|graph api|cloud api|oauth/i)).not.toBeInTheDocument();
       expect(
         screen.getByText(/customers keep messaging the number they already know/i),
       ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Connect WhatsApp" })).toBeInTheDocument();
     });
 
-    it("shows the reward and a test-message CTA once connected, not a dead badge", async () => {
-      vi.mocked(api.getOnboardingStatus).mockResolvedValue({
-        has_business: true,
-        business: { ...onboardingStatus.business!, whatsapp_connection_status: "connected" },
+    it("shows the reward, masked number, and a test-message CTA once connected, not a dead badge", async () => {
+      vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
+        connected: true,
+        status: "connected",
+        phone_number_id_masked: "••••7890",
+        connected_at: "2026-07-22T00:00:00Z",
       });
       renderWithProviders();
 
       expect(
         await screen.findByText(/customers can message your business through WhatsApp/i),
       ).toBeInTheDocument();
+      expect(screen.getByText("••••7890")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Send a test message" })).toHaveAttribute(
         "href",
         "/demo",
       );
+      expect(screen.getByRole("button", { name: /disconnect/i })).toBeInTheDocument();
     });
 
     it("shows business-language status, not the raw backend enum", async () => {
-      vi.mocked(api.getOnboardingStatus).mockResolvedValue({
-        has_business: true,
-        business: {
-          ...onboardingStatus.business!,
-          whatsapp_connection_status: "pending_verification",
-        },
+      vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
+        connected: false,
+        status: "pending_verification",
+        phone_number_id_masked: null,
+        connected_at: null,
       });
       renderWithProviders();
 
@@ -214,60 +231,91 @@ describe("SettingsPage", () => {
       expect(screen.getByRole("button", { name: "Continue setup" })).toBeInTheDocument();
     });
 
-    describe("connection wizard", () => {
-      function mockClipboard(writeText: (text: string) => Promise<void>) {
-        Object.defineProperty(navigator, "clipboard", {
-          value: { writeText },
-          configurable: true,
-        });
-      }
-
-      it("walks from why-connect to the request details, and copies them", async () => {
+    describe("disconnect", () => {
+      it("asks for confirmation before disconnecting", async () => {
         const user = userEvent.setup();
-        const writeText = vi.fn().mockResolvedValue(undefined);
-        mockClipboard(writeText);
+        vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
+          connected: true,
+          status: "connected",
+          phone_number_id_masked: "••••7890",
+          connected_at: "2026-07-22T00:00:00Z",
+        });
+        renderWithProviders();
+
+        await user.click(await screen.findByRole("button", { name: /disconnect/i }));
+        expect(screen.getByRole("heading", { name: "Disconnect WhatsApp?" })).toBeInTheDocument();
+        expect(api.disconnectWhatsApp).not.toHaveBeenCalled();
+
+        await user.click(screen.getByRole("button", { name: "Disconnect" }));
+        await waitFor(() => expect(api.disconnectWhatsApp).toHaveBeenCalledTimes(1));
+      });
+    });
+
+    describe("connection wizard", () => {
+      it("walks from why-connect to the real form, and submits real credentials", async () => {
+        const user = userEvent.setup();
+        vi.mocked(api.connectWhatsApp).mockResolvedValue({
+          connected: true,
+          status: "connected",
+          phone_number_id_masked: "••••7890",
+          connected_at: "2026-07-22T00:00:00Z",
+        });
         renderWithProviders();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
         expect(screen.getByRole("heading", { name: "Connect WhatsApp" })).toBeInTheDocument();
-        expect(
-          screen.getByText(/nothing changes for them/i),
-        ).toBeInTheDocument();
-        // No OAuth, no fake redirect — the dialog is the whole flow.
-        expect(screen.queryByText(/redirecting/i)).not.toBeInTheDocument();
+        expect(screen.getByText(/nothing changes for them/i)).toBeInTheDocument();
 
-        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.click(screen.getByRole("button", { name: "I have these ready" }));
         expect(
-          screen.getByRole("heading", { name: "Your WhatsApp Business number" }),
+          screen.getByRole("heading", { name: "Connect WhatsApp for Bright Smile Dental Studio" }),
         ).toBeInTheDocument();
 
-        const copyButton = screen.getByRole("button", { name: /copy request details/i });
-        expect(copyButton).toBeDisabled();
+        const connectButton = screen.getByRole("button", { name: "Connect" });
+        expect(connectButton).toBeDisabled();
 
-        await user.type(screen.getByPlaceholderText("+1 555 000 1234"), "+15550001234");
-        expect(copyButton).not.toBeDisabled();
+        await user.type(screen.getByLabelText("Phone Number ID"), "9876543210");
+        await user.type(screen.getByLabelText("WhatsApp Business Account ID"), "waba-123");
+        await user.type(screen.getByLabelText("System User access token"), "real-access-token");
+        await user.type(screen.getByLabelText("App Secret"), "real-app-secret");
+        expect(connectButton).not.toBeDisabled();
 
-        await user.click(copyButton);
-        expect(writeText).toHaveBeenCalledWith(
-          expect.stringContaining("Bright Smile Dental Studio"),
+        await user.click(connectButton);
+
+        await waitFor(() =>
+          expect(api.connectWhatsApp).toHaveBeenCalledWith(expect.any(Function), {
+            phone_number_id: "9876543210",
+            whatsapp_business_account_id: "waba-123",
+            access_token: "real-access-token",
+            app_secret: "real-app-secret",
+          }),
         );
-        expect(writeText).toHaveBeenCalledWith(expect.stringContaining("+15550001234"));
-        expect(await screen.findByText("Copied")).toBeInTheDocument();
+        expect(await screen.findByText("WhatsApp connected")).toBeInTheDocument();
+        expect(screen.queryByRole("heading", { name: /connect whatsapp/i })).not.toBeInTheDocument();
       });
 
-      it("shows an honest error if the copy itself fails, not a silent no-op", async () => {
+      it("shows the specific rejection reason from the backend, without closing the form", async () => {
         const user = userEvent.setup();
-        const writeText = vi.fn().mockRejectedValue(new Error("denied"));
-        mockClipboard(writeText);
+        vi.mocked(api.connectWhatsApp).mockRejectedValue(
+          new ApiError(422, "Meta rejected the access token — check you copied it."),
+        );
         renderWithProviders();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
-        await user.click(screen.getByRole("button", { name: "Continue" }));
-        await user.type(screen.getByPlaceholderText("+1 555 000 1234"), "+15550001234");
-        await user.click(screen.getByRole("button", { name: /copy request details/i }));
+        await user.click(screen.getByRole("button", { name: "I have these ready" }));
+        await user.type(screen.getByLabelText("Phone Number ID"), "9876543210");
+        await user.type(screen.getByLabelText("WhatsApp Business Account ID"), "waba-123");
+        await user.type(screen.getByLabelText("System User access token"), "bad-token");
+        await user.type(screen.getByLabelText("App Secret"), "real-app-secret");
+        await user.click(screen.getByRole("button", { name: "Connect" }));
 
-        expect(await screen.findByText("Couldn't copy automatically")).toBeInTheDocument();
-        expect(screen.getByText(/select the text above and copy it manually/i)).toBeInTheDocument();
+        expect(
+          await screen.findByText("Meta rejected the access token — check you copied it."),
+        ).toBeInTheDocument();
+        // Still open — the owner can fix the field and retry, not start over.
+        expect(
+          screen.getByRole("heading", { name: /connect whatsapp for/i }),
+        ).toBeInTheDocument();
       });
 
       it("resets back to the intro step after closing and reopening", async () => {
@@ -275,23 +323,20 @@ describe("SettingsPage", () => {
         renderWithProviders();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
-        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.click(screen.getByRole("button", { name: "I have these ready" }));
         expect(
-          screen.getByRole("heading", { name: "Your WhatsApp Business number" }),
+          screen.getByRole("heading", { name: /connect whatsapp for/i }),
         ).toBeInTheDocument();
 
-        // The details step has Back/Copy, not Cancel — close via the dialog's
-        // own Close control instead, same as a user pressing Escape or
-        // clicking outside.
         await user.click(screen.getByRole("button", { name: "Close" }));
         expect(
-          screen.queryByRole("heading", { name: "Your WhatsApp Business number" }),
+          screen.queryByRole("heading", { name: /connect whatsapp for/i }),
         ).not.toBeInTheDocument();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
         expect(screen.getByRole("heading", { name: "Connect WhatsApp" })).toBeInTheDocument();
         expect(
-          screen.queryByRole("heading", { name: "Your WhatsApp Business number" }),
+          screen.queryByRole("heading", { name: /connect whatsapp for/i }),
         ).not.toBeInTheDocument();
       });
 
@@ -309,8 +354,8 @@ describe("SettingsPage", () => {
   describe("AI Employee", () => {
     it("shows status, knowledge learned, and reply mode in business language, never model/provider names", async () => {
       vi.mocked(api.listKbEntries).mockResolvedValue([
-        { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
-        { id: "2", title: "Pricing", content: "$50", created_at: "", updated_at: "" },
+        { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
+        { id: "2", title: "Pricing", content: "$50", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
       ]);
       renderWithProviders();
 
@@ -350,7 +395,7 @@ describe("SettingsPage", () => {
   describe("No implementation details leak anywhere on the page", () => {
     it("never shows the old 'Systems' card or any internal model/provider name", async () => {
       vi.mocked(api.listKbEntries).mockResolvedValue([
-        { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+        { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
       ]);
       vi.mocked(api.getCalendarStatus).mockResolvedValue({
         connected: true,

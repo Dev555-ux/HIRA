@@ -4,6 +4,8 @@ import hashlib
 import hmac
 import json
 
+import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -12,6 +14,16 @@ from app.db.session import get_db
 from app.main import app
 from app.models import Business, Conversation, Customer, Message
 from app.webhooks.whatsapp import _get_or_create_customer, get_reply_dispatcher
+from app.whatsapp.credentials import store_credentials
+
+TEST_APP_SECRET = "test-app-secret"
+
+
+@pytest.fixture(autouse=True)
+def _whatsapp_encryption_key(monkeypatch):
+    # Sprint 69: signature verification now decrypts each business's own
+    # stored app secret rather than reading one global settings value.
+    monkeypatch.setattr(settings, "calendar_encryption_key", Fernet.generate_key().decode())
 
 
 def _client(db_session):
@@ -30,8 +42,20 @@ def _client(db_session):
     return TestClient(app), dispatched
 
 
-def _sign(body: bytes) -> str:
-    digest = hmac.new(settings.whatsapp_app_secret.encode(), body, hashlib.sha256).hexdigest()
+def _connected_business(db, phone_number_id="PN1", app_secret=TEST_APP_SECRET) -> Business:
+    """Creates and commits a business with a stored, encrypted WhatsApp
+    credential — the precondition (Sprint 69) for the webhook to accept
+    anything signed with `app_secret` for this phone_number_id."""
+    business = Business(name="Clinic A", whatsapp_phone_number_id=phone_number_id)
+    db.add(business)
+    db.flush()
+    store_credentials(db, business.id, access_token="test-token", app_secret=app_secret)
+    db.commit()
+    return business
+
+
+def _sign(body: bytes, app_secret: str = TEST_APP_SECRET) -> str:
+    digest = hmac.new(app_secret.encode(), body, hashlib.sha256).hexdigest()
     return f"sha256={digest}"
 
 
@@ -86,6 +110,7 @@ def test_verification_handshake_wrong_token(db_session):
 
 
 def test_post_rejects_bad_signature(db_session):
+    _connected_business(db_session)  # a real, connected business — signature is still wrong
     client, _ = _client(db_session)
     body = json.dumps(_inbound_payload("PN1", "wamid.1")).encode()
     resp = client.post(
@@ -97,10 +122,91 @@ def test_post_rejects_bad_signature(db_session):
     app.dependency_overrides.clear()
 
 
-def test_post_persists_inbound_and_dispatches_reply(db_session):
+def test_post_rejects_unknown_phone_number_id(db_session):
+    client, _ = _client(db_session)
+    body = json.dumps(_inbound_payload("no-such-number", "wamid.1")).encode()
+    resp = client.post(
+        "/webhooks/whatsapp",
+        content=body,
+        # Correctly signed, but for a phone_number_id no business has connected.
+        headers={"X-Hub-Signature-256": _sign(body), "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 403
+    app.dependency_overrides.clear()
+
+
+def test_post_rejects_a_business_with_no_stored_credential(db_session):
+    # Business.whatsapp_phone_number_id set directly (bypassing the connect
+    # flow, as old data/a partial migration might look) but no
+    # WhatsAppCredential row — must be rejected, not fall back to anything.
     business = Business(name="Clinic A", whatsapp_phone_number_id="PN1")
     db_session.add(business)
     db_session.commit()
+    client, _ = _client(db_session)
+    body = json.dumps(_inbound_payload("PN1", "wamid.1")).encode()
+    resp = client.post(
+        "/webhooks/whatsapp",
+        content=body,
+        headers={"X-Hub-Signature-256": _sign(body), "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 403
+    app.dependency_overrides.clear()
+
+
+def test_post_rejects_a_signature_signed_with_a_different_businesss_secret(db_session):
+    # Two connected businesses, each with their own secret (Sprint 69's core
+    # guarantee) — a payload claiming to be business A's phone number but
+    # signed with business B's secret must be rejected.
+    _connected_business(db_session, phone_number_id="PN1", app_secret="secret-a")
+    _connected_business(db_session, phone_number_id="PN2", app_secret="secret-b")
+    client, _ = _client(db_session)
+    body = json.dumps(_inbound_payload("PN1", "wamid.1")).encode()
+    resp = client.post(
+        "/webhooks/whatsapp",
+        content=body,
+        headers={
+            "X-Hub-Signature-256": _sign(body, "secret-b"),
+            "Content-Type": "application/json",
+        },
+    )
+    assert resp.status_code == 403
+    app.dependency_overrides.clear()
+
+
+def test_post_accepts_each_business_signed_with_its_own_secret(db_session):
+    # The positive case for the above: two businesses, each correctly signed
+    # with their own secret, both succeed independently.
+    _connected_business(db_session, phone_number_id="PN1", app_secret="secret-a")
+    _connected_business(db_session, phone_number_id="PN2", app_secret="secret-b")
+    client, dispatched = _client(db_session)
+
+    body_a = json.dumps(_inbound_payload("PN1", "wamid.a")).encode()
+    resp_a = client.post(
+        "/webhooks/whatsapp",
+        content=body_a,
+        headers={
+            "X-Hub-Signature-256": _sign(body_a, "secret-a"),
+            "Content-Type": "application/json",
+        },
+    )
+    body_b = json.dumps(_inbound_payload("PN2", "wamid.b")).encode()
+    resp_b = client.post(
+        "/webhooks/whatsapp",
+        content=body_b,
+        headers={
+            "X-Hub-Signature-256": _sign(body_b, "secret-b"),
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert resp_a.status_code == 200
+    assert resp_b.status_code == 200
+    assert len(dispatched) == 2
+    app.dependency_overrides.clear()
+
+
+def test_post_persists_inbound_and_dispatches_reply(db_session):
+    _connected_business(db_session)
 
     client, dispatched = _client(db_session)
     body = json.dumps(_inbound_payload("PN1", "wamid.abc")).encode()
@@ -121,9 +227,7 @@ def test_post_persists_inbound_and_dispatches_reply(db_session):
 
 
 def test_post_ignores_status_callback(db_session):
-    business = Business(name="Clinic A", whatsapp_phone_number_id="PN1")
-    db_session.add(business)
-    db_session.commit()
+    _connected_business(db_session)
 
     client, dispatched = _client(db_session)
     payload = {
@@ -153,9 +257,7 @@ def test_post_ignores_status_callback(db_session):
 
 
 def test_post_dedupes_repeated_message_id(db_session):
-    business = Business(name="Clinic A", whatsapp_phone_number_id="PN1")
-    db_session.add(business)
-    db_session.commit()
+    _connected_business(db_session)
 
     client, dispatched = _client(db_session)
     body = json.dumps(_inbound_payload("PN1", "wamid.dup")).encode()

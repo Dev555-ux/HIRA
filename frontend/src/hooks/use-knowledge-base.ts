@@ -11,6 +11,7 @@ import type {
 } from "@/lib/types";
 
 const KB_KEY = ["kb-entries"] as const;
+const KB_DRAFTS_KEY = ["kb-drafts"] as const;
 
 export function useKbEntries() {
   const { getToken, isLoaded } = useAuthContext();
@@ -18,6 +19,36 @@ export function useKbEntries() {
     queryKey: KB_KEY,
     queryFn: () => api.listKbEntries(getToken),
     enabled: isLoaded,
+  });
+}
+
+export function useKbDrafts() {
+  const { getToken, isLoaded } = useAuthContext();
+  return useQuery({
+    queryKey: KB_DRAFTS_KEY,
+    queryFn: () => api.listKbDrafts(getToken),
+    enabled: isLoaded,
+  });
+}
+
+export function usePublishKbEntry() {
+  const { getToken } = useAuthContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.publishKbEntry(getToken, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KB_KEY });
+      qc.invalidateQueries({ queryKey: KB_DRAFTS_KEY });
+    },
+  });
+}
+
+export function useRejectKbEntry() {
+  const { getToken } = useAuthContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.rejectKbEntry(getToken, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KB_DRAFTS_KEY }),
   });
 }
 
@@ -45,7 +76,7 @@ export function useImportWebsite() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: ImportWebsitePayload) => api.importWebsite(getToken, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KB_KEY }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KB_DRAFTS_KEY }),
   });
 }
 

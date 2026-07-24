@@ -1,6 +1,6 @@
 # HIRA Onboarding — Engineering Architecture
 
-**Status**: Design, not yet built. Companion to `ARCHITECTURE.md` (documents the system as it exists today) — this document specifies what gets added.
+**Status**: Design, mostly not built. A smaller, real subset of Section 2.3/2.4's draft/review idea shipped in Sprint 69 (2026-07-16, DEC-039): single-page website import creates `kb_entries` rows with `status="draft"` directly (no separate `kb_entry_drafts` table, no confidence flagging, no PDF/multi-page crawl) — see `app/ai/knowledge_base.py`, `app/api/knowledge_base.py`. The rest of this document (PDF ingestion, LLM-based extraction/structuring, provisioning-from-Clerk-signup — already done separately via ONBOARD-A) remains an unimplemented design, not current state. Companion to `ARCHITECTURE.md` (documents the system as it exists today) — this document specifies what gets added.
 **Scope**: Phases 3 and 6 of the onboarding design brief — automatic knowledge creation and full engineering design (backend, frontend, APIs, DB, background jobs, file processing, crawler, AI extraction pipeline). For the UX/journey narrative, see `ONBOARDING_USER_FLOW.md`. For milestones/sequencing, see `ONBOARDING_IMPLEMENTATION_PLAN.md`.
 **Guiding constraint**: reuse everything that already works. HIRA's retrieval, embedding, and multi-tenant scoping code is solid — onboarding should feed it, not replace it.
 

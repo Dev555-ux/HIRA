@@ -75,7 +75,7 @@ describe("OnboardingChecklist", () => {
 
   it("marks Teach HIRA done once at least one KB entry exists", async () => {
     vi.mocked(api.listKbEntries).mockResolvedValue([
-      { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+      { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
     ]);
     renderChecklist(business());
 
@@ -98,7 +98,7 @@ describe("OnboardingChecklist", () => {
   it("shows Enable AI once prerequisites are met, and it's a real toast, not a fake success", async () => {
     const user = userEvent.setup();
     vi.mocked(api.listKbEntries).mockResolvedValue([
-      { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+      { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
     ]);
     renderChecklist(business({ whatsapp_connection_status: "connected" }));
 
@@ -110,7 +110,7 @@ describe("OnboardingChecklist", () => {
 
   it("marks WhatsApp Connection Connected and Go Live Live from real business fields", async () => {
     vi.mocked(api.listKbEntries).mockResolvedValue([
-      { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+      { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
     ]);
     renderChecklist(
       business({ whatsapp_connection_status: "connected", onboarding_status: "live" }),
@@ -124,7 +124,7 @@ describe("OnboardingChecklist", () => {
 
   it("fades completed-step badges in rather than popping them in instantly", async () => {
     vi.mocked(api.listKbEntries).mockResolvedValue([
-      { id: "1", title: "Hours", content: "9-5", created_at: "", updated_at: "" },
+      { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
     ]);
     renderChecklist(
       business({ whatsapp_connection_status: "connected", onboarding_status: "live" }),

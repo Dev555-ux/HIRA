@@ -145,21 +145,21 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 
 - **Priority**: P2
 - **Category**: Technical
-- **Status**: Partially built, unreviewed — see PROGRESS.md Session 22 (2026-07-06). `POST /api/v1/kb/website` ships a direct single-URL fetch→clean→chunk→index endpoint (`app/ai/web_import.py`), but indexes straight to live `kb_entries` with **no** `kb_entry_drafts` staging/approval step, conflicting with this task's own design in `ONBOARDING_ARCHITECTURE.md`. **Open decision for the founder**: accept direct-to-live as the permanent design, or add the review step on top. PDF ingestion, manual-drafts, dedup, and confidence-flagging are still not built either way.
+- **Status**: Website import done (Sprint 69, 2026-07-16) — the founder's open decision is resolved: a review step was added on top rather than accepting direct-to-live. `POST /api/v1/kb/website` now creates `status="draft"` `kb_entries` sharing one `import_batch_id` per page, invisible to retrieval and the live KB list until explicitly published (DEC-039); no separate `kb_entry_drafts` table was needed — a `status` column on the existing table does the job. PDF ingestion, manual-drafts, dedup, and confidence-flagging are still not built.
 - **Dependencies**: ONBOARD-A
 
 ### ONBOARD-C — Knowledge review UI + test-drive playground
 
 - **Priority**: P2
 - **Category**: Technical
-- **Status**: To Do
+- **Status**: Knowledge review UI done (Sprint 69) — `GET /kb/drafts`, `POST /kb/{id}/publish`, `POST /kb/{id}/reject`, and a Pending Review section on the Knowledge Base page (per-fact approve/reject, approve-all-in-batch). Test-drive playground was already done separately (Demo Chat, Sprint 51 — see DEC-037); not re-scoped here.
 - **Dependencies**: ONBOARD-B
 
 ### ONBOARD-D — WhatsApp connection (guided-manual, v1)
 
 - **Priority**: P2
 - **Category**: Technical
-- **Status**: To Do
+- **Status**: Done (Sprint 69, 2026-07-16) — `POST /api/v1/whatsapp/connect`/`GET /status`/`POST /disconnect`, a per-business encrypted `WhatsAppCredential` (DEC-038), and a real form replacing the old copy-to-clipboard wizard. Live-verified against the real Meta Graph API's credential-validation call (a fake token was correctly rejected with a specific reason before anything was stored). Open as a PR, not yet merged.
 - **Dependencies**: ONBOARD-A. `SEC-1`/`SEC-2` (see `IMPLEMENTATION_PLAN.md` Milestone 0) are both done as of Sprint 50 (2026-07-15), so that precondition is cleared.
 
 ### ONBOARD-E — WhatsApp Embedded Signup (v2)
@@ -315,7 +315,7 @@ Current technical debt is limited to production-infrastructure hardening — see
 **Sprint 35 audit findings (2026-07-10) — Medium/Low, not fixed this sprint:**
 
 - **Appointment booking doesn't prevent picking a start time in the past.** Neither the "New appointment" nor "Reschedule" forms validate that `starts_at` is in the future before submitting — the backend would presumably still book it (no evidence either way it's rejected server-side). Cosmetic/edge-case: an owner mis-clicking a past date gets a weird historical appointment row, not a security or data-integrity issue.
-- **Settings' WhatsApp configuration remains disabled placeholders.** Pre-existing, unchanged — no backend endpoint exists for self-serve WhatsApp connection (`ONBOARD-D`/`ONBOARD-E`).
+- ~~**Settings' WhatsApp configuration remains disabled placeholders.**~~ Fixed Sprint 69 (`ONBOARD-D`) — real form, real backend, real connect/disconnect. `ONBOARD-E` (Embedded Signup) remains open, blocked on external Meta Tech Provider approval.
 
 **Resolved since Sprint 35:** the Analytics "Pending approvals" no-error-state gap (fixed Sprint 42) and the Dashboard's always-"Live" AI activity tile (replaced with a real Upcoming Appointments KPI, Sprint 40) — both removed from this list rather than left stale.
 

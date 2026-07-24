@@ -6,17 +6,18 @@ import {
   BookOpen,
   Building2,
   CalendarClock,
-  Clock,
-  Copy,
+  ExternalLink,
   Globe,
   MessageCircle,
   Palette,
   ShieldCheck,
+  Unlink,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -38,6 +39,7 @@ import { useCalendarStatus } from "@/hooks/use-calendar";
 import { useKbEntries } from "@/hooks/use-knowledge-base";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
+import { useConnectWhatsApp, useDisconnectWhatsApp, useWhatsAppStatus } from "@/hooks/use-whatsapp";
 import { ApiError } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
 import type { AiReplyMode, Business } from "@/lib/types";
@@ -54,10 +56,28 @@ export default function SettingsPage() {
   const { data: onboarding } = useOnboardingStatus();
   const { data: kbEntries } = useKbEntries();
   const { data: calendarStatus } = useCalendarStatus();
+  const { data: whatsappStatus } = useWhatsAppStatus();
   const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false);
-  const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
+  const [confirmDisconnectWhatsApp, setConfirmDisconnectWhatsApp] = useState(false);
+  const disconnectWhatsApp = useDisconnectWhatsApp();
+  const { toast } = useToast();
+  const whatsapp = describeWhatsAppConnection(whatsappStatus?.status);
   const business = onboarding?.business;
-  const whatsappConnected = onboarding?.business?.whatsapp_connection_status === "connected";
+  const whatsappConnected = whatsappStatus?.connected ?? false;
+
+  async function handleDisconnectWhatsApp() {
+    try {
+      await disconnectWhatsApp.mutateAsync();
+      toast({ title: "WhatsApp disconnected" });
+    } catch (err) {
+      toast({
+        title: "Couldn't disconnect",
+        description: err instanceof ApiError ? err.message : "Something went wrong — please try again.",
+        variant: "destructive",
+      });
+    }
+    setConfirmDisconnectWhatsApp(false);
+  }
 
   return (
     <>
@@ -182,12 +202,32 @@ export default function SettingsPage() {
             {whatsappConnected ? (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Your AI employee is connected — customers can message your business through
-                  WhatsApp right now, and HIRA replies from that same number automatically.
+                  Your AI employee is connected
+                  {whatsappStatus?.phone_number_id_masked ? (
+                    <>
+                      {" "}
+                      (<span className="font-medium text-foreground">
+                        {whatsappStatus.phone_number_id_masked}
+                      </span>
+                      )
+                    </>
+                  ) : null}{" "}
+                  — customers can message your business through WhatsApp right now, and HIRA
+                  replies from that same number automatically.
                 </p>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/demo">Send a test message</Link>
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/demo">Send a test message</Link>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirmDisconnectWhatsApp(true)}
+                    disabled={disconnectWhatsApp.isPending}
+                  >
+                    <Unlink /> Disconnect
+                  </Button>
+                </div>
               </>
             ) : (
               <>
@@ -197,12 +237,23 @@ export default function SettingsPage() {
                     : "Connecting your WhatsApp Business number is what lets HIRA read customer messages and reply from your business's own number — customers keep messaging the number they already know."}
                 </p>
                 <Button size="sm" variant="outline" onClick={() => setIsWhatsAppWizardOpen(true)}>
+                  <ExternalLink />{" "}
                   {whatsapp.label === "Needs attention" ? "Continue setup" : "Connect WhatsApp"}
                 </Button>
               </>
             )}
           </CardContent>
         </Card>
+
+        <ConfirmDialog
+          open={confirmDisconnectWhatsApp}
+          onOpenChange={setConfirmDisconnectWhatsApp}
+          title="Disconnect WhatsApp?"
+          description="HIRA will stop reading and replying to messages on this number until you reconnect it."
+          confirmLabel="Disconnect"
+          onConfirm={handleDisconnectWhatsApp}
+          isPending={disconnectWhatsApp.isPending}
+        />
 
         <WhatsAppConnectWizard
           open={isWhatsAppWizardOpen}
@@ -504,15 +555,17 @@ function WhatsAppWizardAutoOpen({ onOpen }: { onOpen: () => void }) {
   return null;
 }
 
-type WhatsAppWizardStep = "intro" | "details";
+type WhatsAppWizardStep = "intro" | "form";
 
-/** WhatsApp has no self-serve connect flow yet (no OAuth, no backend endpoint
- * to receive a connection request) — this wizard doesn't pretend otherwise.
- * It explains what connecting means, then turns the owner's WhatsApp Business
- * number into a copyable request they can hand to the HIRA team through
- * whatever channel they already use. Nothing here is submitted anywhere;
- * the number is held in local component state only, for building the
- * copied text, and is discarded when the dialog closes. */
+/** Real self-serve connection (Sprint 69, ONBOARD-D "guided-manual v1") —
+ * no Embedded Signup (that needs Meta's Tech Provider approval, not yet
+ * granted). The business owner creates their own Meta System User token on
+ * Meta's own site — same as connecting Google Calendar requires a trip
+ * through Google's own consent screen — then pastes the four resulting
+ * values here. HIRA verifies them against Meta's API before storing
+ * anything (POST /api/v1/whatsapp/connect), so a typo'd token fails
+ * immediately with a specific reason instead of on the first real customer
+ * message. Submitting again (reconnect) just replaces what's stored. */
 function WhatsAppConnectWizard({
   open,
   onOpenChange,
@@ -523,34 +576,46 @@ function WhatsAppConnectWizard({
   businessName: string;
 }) {
   const [step, setStep] = useState<WhatsAppWizardStep>("intro");
-  const [waNumber, setWaNumber] = useState("");
+  const [phoneNumberId, setPhoneNumberId] = useState("");
+  const [wabaId, setWabaId] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const connectWhatsApp = useConnectWhatsApp();
   const { toast } = useToast();
 
   function close(open: boolean) {
+    if (connectWhatsApp.isPending) return;
     onOpenChange(open);
     if (!open) {
       setStep("intro");
-      setWaNumber("");
+      setPhoneNumberId("");
+      setWabaId("");
+      setAccessToken("");
+      setAppSecret("");
+      setError(null);
     }
   }
 
-  async function handleCopy() {
-    const details = `Connect WhatsApp for ${businessName}\nWhatsApp Business number: ${waNumber.trim()}`;
+  async function handleConnect() {
+    setError(null);
     try {
-      await navigator.clipboard.writeText(details);
-      toast({
-        title: "Copied",
-        description: "Paste this wherever you already reach the HIRA team.",
-        variant: "success",
+      await connectWhatsApp.mutateAsync({
+        phone_number_id: phoneNumberId.trim(),
+        whatsapp_business_account_id: wabaId.trim(),
+        access_token: accessToken.trim(),
+        app_secret: appSecret.trim(),
       });
-    } catch {
-      toast({
-        title: "Couldn't copy automatically",
-        description: "Select the text above and copy it manually instead.",
-        variant: "destructive",
-      });
+      toast({ title: "WhatsApp connected", variant: "success" });
+      close(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong — please try again.");
     }
   }
+
+  const canSubmit = Boolean(
+    phoneNumberId.trim() && wabaId.trim() && accessToken.trim() && appSecret.trim(),
+  );
 
   return (
     <Dialog open={open} onOpenChange={close}>
@@ -578,10 +643,10 @@ function WhatsAppConnectWizard({
               </span>
             </li>
             <li className="flex items-start gap-3 text-sm">
-              <Clock className="mt-0.5 size-4 shrink-0 text-primary" />
+              <ExternalLink className="mt-0.5 size-4 shrink-0 text-primary" />
               <span className="text-muted-foreground">
-                Connecting isn&apos;t instant — it&apos;s a short, guided step the HIRA team does
-                with you, not an automatic signup.
+                You&apos;ll need four values from your own Meta App: a Phone Number ID, a WhatsApp
+                Business Account ID, a System User access token, and your App Secret.
               </span>
             </li>
           </ul>
@@ -589,38 +654,74 @@ function WhatsAppConnectWizard({
             <Button variant="outline" onClick={() => close(false)}>
               Cancel
             </Button>
-            <Button onClick={() => setStep("details")}>Continue</Button>
+            <Button onClick={() => setStep("form")}>I have these ready</Button>
           </DialogFooter>
         </DialogContent>
       )}
-      {open && step === "details" && (
+      {open && step === "form" && (
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Your WhatsApp Business number</DialogTitle>
+            <DialogTitle>Connect WhatsApp for {businessName}</DialogTitle>
             <DialogDescription>
-              Add the number your customers already message — we&apos;ll use this to connect it.
+              From your Meta App&apos;s dashboard — WhatsApp → API Setup, and App → Settings →
+              Basic for the App Secret.
             </DialogDescription>
           </DialogHeader>
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium">WhatsApp Business number</span>
-            <Input
-              placeholder="+1 555 000 1234"
-              value={waNumber}
-              onChange={(e) => setWaNumber(e.target.value)}
-            />
-          </label>
-          <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-            <p className="font-medium">Connect WhatsApp for {businessName}</p>
-            <p className="text-muted-foreground">
-              WhatsApp Business number: {waNumber.trim() || "—"}
-            </p>
+          <div className="space-y-3">
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium">Phone Number ID</span>
+              <Input
+                value={phoneNumberId}
+                onChange={(e) => setPhoneNumberId(e.target.value)}
+                placeholder="1234567890"
+                disabled={connectWhatsApp.isPending}
+              />
+            </label>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium">WhatsApp Business Account ID</span>
+              <Input
+                value={wabaId}
+                onChange={(e) => setWabaId(e.target.value)}
+                placeholder="1234567890"
+                disabled={connectWhatsApp.isPending}
+              />
+            </label>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium">System User access token</span>
+              <Input
+                type="password"
+                value={accessToken}
+                onChange={(e) => setAccessToken(e.target.value)}
+                placeholder="EAAG…"
+                disabled={connectWhatsApp.isPending}
+              />
+            </label>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium">App Secret</span>
+              <Input
+                type="password"
+                value={appSecret}
+                onChange={(e) => setAppSecret(e.target.value)}
+                placeholder="From App → Settings → Basic"
+                disabled={connectWhatsApp.isPending}
+              />
+            </label>
           </div>
+          {error && (
+            <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStep("intro")}>
+            <Button
+              variant="outline"
+              onClick={() => setStep("intro")}
+              disabled={connectWhatsApp.isPending}
+            >
               Back
             </Button>
-            <Button onClick={handleCopy} disabled={!waNumber.trim()}>
-              <Copy /> Copy request details
+            <Button onClick={handleConnect} disabled={!canSubmit || connectWhatsApp.isPending}>
+              {connectWhatsApp.isPending ? "Connecting…" : "Connect"}
             </Button>
           </DialogFooter>
         </DialogContent>
