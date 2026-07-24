@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,20 @@ from app.db.base import Base
 
 class Business(Base):
     __tablename__ = "businesses"
+    __table_args__ = (
+        # Partial (not full) unique: whatsapp_phone_number_id is NULL for every
+        # business that hasn't connected WhatsApp yet, and those NULLs must
+        # coexist. Only actually-connected numbers need to be distinct — two
+        # businesses sharing one Meta phone_number_id would have the webhook
+        # route that number's inbound messages to whichever business connected
+        # it last (app/webhooks/whatsapp.py looks businesses up by this field).
+        Index(
+            "uq_businesses_whatsapp_phone_number_id",
+            "whatsapp_phone_number_id",
+            unique=True,
+            postgresql_where=text("whatsapp_phone_number_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))

@@ -1,8 +1,10 @@
 """Tests for the WhatsApp API (/api/v1/whatsapp): connect/status/disconnect
 (Sprint 69, self-serve "guided-manual v1" connection)."""
 
+import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.dependencies import get_token_verifier
 from app.core.config import settings
@@ -193,6 +195,77 @@ def test_disconnect_is_a_no_op_when_never_connected(db_session):
 
     assert resp.status_code == 204
     app.dependency_overrides.clear()
+
+
+def test_connect_rejects_phone_number_already_connected_to_another_business(
+    db_session, monkeypatch
+):
+    _configure_encryption(monkeypatch)
+    biz_a, _ = _seed_business(db_session, "A", "user_a")
+    biz_b, _ = _seed_business(db_session, "B", "user_b")
+    db_session.commit()
+    monkeypatch.setattr(
+        "app.api.whatsapp.whatsapp_credentials.verify_whatsapp_credentials", lambda *a, **k: None
+    )
+    client_a = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp_a = client_a.post("/api/v1/whatsapp/connect", json=CONNECT_BODY, headers=_auth())
+    assert resp_a.status_code == 200
+    app.dependency_overrides.clear()
+
+    client_b = _client(db_session, claims_for_token=lambda t: {"sub": "user_b"})
+    resp_b = client_b.post("/api/v1/whatsapp/connect", json=CONNECT_BODY, headers=_auth())
+
+    assert resp_b.status_code == 409
+    assert "already connected" in resp_b.json()["detail"]
+    db_session.refresh(biz_b)
+    assert biz_b.whatsapp_phone_number_id is None
+    assert biz_b.whatsapp_connection_status == "not_connected"
+    assert get_stored_credential(db_session, biz_b.id) is None  # no orphaned credential
+    db_session.refresh(biz_a)
+    assert biz_a.whatsapp_phone_number_id == "1234567890"  # business A untouched
+    app.dependency_overrides.clear()
+
+
+def test_connect_allows_reconnecting_own_phone_number(db_session, monkeypatch):
+    """The uniqueness check excludes the caller's own business — a business
+    reconnecting/re-verifying the same number it already owns is not a
+    conflict with itself."""
+    _configure_encryption(monkeypatch)
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    monkeypatch.setattr(
+        "app.api.whatsapp.whatsapp_credentials.verify_whatsapp_credentials", lambda *a, **k: None
+    )
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    client.post("/api/v1/whatsapp/connect", json=CONNECT_BODY, headers=_auth())
+
+    resp = client.post("/api/v1/whatsapp/connect", json=CONNECT_BODY, headers=_auth())
+
+    assert resp.status_code == 200
+    app.dependency_overrides.clear()
+
+
+def test_businesses_whatsapp_phone_number_id_has_db_level_unique_constraint(db_session):
+    """Defense-in-depth: even bypassing the API's app-layer check entirely
+    (e.g. two requests racing past it concurrently), the database itself
+    refuses a second business row with the same phone_number_id."""
+    biz_a = Business(name="A", whatsapp_phone_number_id="1234567890")
+    db_session.add(biz_a)
+    db_session.commit()
+
+    biz_b = Business(name="B", whatsapp_phone_number_id="1234567890")
+    db_session.add(biz_b)
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+
+def test_businesses_can_share_unconnected_null_phone_number_id(db_session):
+    """The unique index is partial (WHERE NOT NULL) — many never-connected
+    businesses coexist fine."""
+    db_session.add(Business(name="A"))
+    db_session.add(Business(name="B"))
+    db_session.commit()  # does not raise
 
 
 def test_status_and_connect_are_tenant_scoped(db_session, monkeypatch):
