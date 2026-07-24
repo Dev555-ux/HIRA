@@ -334,7 +334,7 @@ describe("KnowledgeBasePage — pending review (draft imports)", () => {
     await waitFor(() => expect(api.rejectKbEntry).toHaveBeenCalledWith(expect.any(Function), "1"));
   });
 
-  it("publishes every fact in the batch when Approve all is clicked", async () => {
+  it("publishes every fact in the batch when Approve all is clicked, and reports full success", async () => {
     vi.mocked(api.listKbDrafts).mockResolvedValue([
       {
         import_batch_id: "batch-1",
@@ -350,6 +350,48 @@ describe("KnowledgeBasePage — pending review (draft imports)", () => {
     await waitFor(() => expect(api.publishKbEntry).toHaveBeenCalledTimes(2));
     expect(api.publishKbEntry).toHaveBeenCalledWith(expect.any(Function), "1");
     expect(api.publishKbEntry).toHaveBeenCalledWith(expect.any(Function), "2");
+    expect(
+      await screen.findByText("Published — HIRA will start using this right away."),
+    ).toBeInTheDocument();
+  });
+
+  it("awaits every publish call and reports partial success when some fail", async () => {
+    vi.mocked(api.listKbDrafts).mockResolvedValue([
+      {
+        import_batch_id: "batch-1",
+        entries: [draftEntry("1", "We open at 9am."), draftEntry("2", "We close at 5pm.")],
+      },
+    ]);
+    vi.mocked(api.publishKbEntry).mockImplementation((_getToken, id) =>
+      id === "1"
+        ? Promise.resolve(draftEntry("1", "We open at 9am."))
+        : Promise.reject(new Error("network error")),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: "Approve all" }));
+
+    await waitFor(() => expect(api.publishKbEntry).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Published 1 of 2 facts.")).toBeInTheDocument();
+    expect(screen.getByText("1 failed to publish — please try again.")).toBeInTheDocument();
+  });
+
+  it("reports failure without claiming success when every publish call fails", async () => {
+    vi.mocked(api.listKbDrafts).mockResolvedValue([
+      { import_batch_id: "batch-1", entries: [draftEntry("1", "We open at 9am.")] },
+    ]);
+    vi.mocked(api.publishKbEntry).mockRejectedValue(new Error("network error"));
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: "Approve all" }));
+
+    await waitFor(() => expect(api.publishKbEntry).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Couldn't publish any facts.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Published — HIRA will start using this right away."),
+    ).not.toBeInTheDocument();
   });
 });
 

@@ -77,6 +77,7 @@ export default function KnowledgeBasePage() {
   const [dialogTarget, setDialogTarget] = useState<DialogTarget>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<KbEntry | null>(null);
+  const [approvingBatchId, setApprovingBatchId] = useState<string | null>(null);
 
   const { toast } = useToast();
   const { data: entries, isLoading, isError, error, refetch } = useKbEntries();
@@ -120,6 +121,32 @@ export default function KnowledgeBasePage() {
     setIsImportOpen(false);
   }
 
+  async function handleApproveAll(batch: KbDraftBatch) {
+    setApprovingBatchId(batch.import_batch_id);
+    const results = await Promise.allSettled(
+      batch.entries.map((entry) => publishEntry.mutateAsync(entry.id)),
+    );
+    setApprovingBatchId(null);
+
+    const failed = results.filter((r) => r.status === "rejected").length;
+    const total = results.length;
+    if (failed === 0) {
+      toast({ title: "Published — HIRA will start using this right away.", variant: "success" });
+    } else if (failed === total) {
+      toast({
+        title: "Couldn't publish any facts.",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: `Published ${total - failed} of ${total} facts.`,
+        description: `${failed} failed to publish — please try again.`,
+        variant: "destructive",
+      });
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -145,11 +172,12 @@ export default function KnowledgeBasePage() {
               batch={batch}
               onApprove={(id) => publishEntry.mutate(id)}
               onReject={(id) => rejectEntry.mutate(id)}
-              onApproveAll={() => {
-                for (const entry of batch.entries) publishEntry.mutate(entry.id);
-                toast({ title: "Published — HIRA will start using this right away." });
-              }}
-              isPending={publishEntry.isPending || rejectEntry.isPending}
+              onApproveAll={() => handleApproveAll(batch)}
+              isPending={
+                publishEntry.isPending ||
+                rejectEntry.isPending ||
+                approvingBatchId === batch.import_batch_id
+              }
             />
           ))}
         </div>
