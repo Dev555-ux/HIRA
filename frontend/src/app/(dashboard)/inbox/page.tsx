@@ -9,7 +9,8 @@ import {
   Search,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { ChannelBadge } from "@/components/channel-badge";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
@@ -57,6 +58,9 @@ export default function InboxPage() {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <ConversationDeepLink onSelect={setSelectedId} />
+      </Suspense>
       <PageHeader
         title="Inbox"
         description="Customer conversations from WhatsApp."
@@ -107,6 +111,20 @@ export default function InboxPage() {
       </div>
     </>
   );
+}
+
+// The Escalations workspace links here with ?conversation=<id> so "Open
+// conversation" jumps straight to the message timeline instead of making the
+// team member search for it — same ?whatsapp=connect/Suspense pattern
+// Settings already uses for its own deep-link.
+function ConversationDeepLink({ onSelect }: { onSelect: (id: string) => void }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const id = searchParams.get("conversation");
+    if (id) onSelect(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+  return null;
 }
 
 function ConversationList({

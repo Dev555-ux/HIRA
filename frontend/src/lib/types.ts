@@ -69,7 +69,40 @@ export interface PaginatedEnvelope<T> {
 // Conversations / Inbox (/api/v1/conversations). Status filter chips map to
 // Conversation.status plus a derived "pending" view (see backend/app/api/
 // conversations.py's module docstring for the exact filter semantics).
-export type ConversationStatusFilter = "open" | "pending" | "closed";
+export type ConversationStatusFilter = "open" | "pending" | "closed" | "escalated";
+
+// Escalation Queue Workspace (/api/v1/escalations, Sprint 69, DEC-040).
+// Created by POST /messages/{id}/escalate; this is the read/manage side.
+export type EscalationReason =
+  | "low_confidence"
+  | "customer_request"
+  | "external_failure"
+  | "other";
+export type EscalationStatusFilter = "open" | "resolved";
+export type EscalationAssignedFilter = "mine" | "unassigned";
+
+export interface EscalationUserRef {
+  id: string;
+  email: string | null;
+}
+
+export interface Escalation {
+  id: string;
+  reason: EscalationReason;
+  status: "open" | "resolved";
+  assigned_to: EscalationUserRef | null;
+  resolved_by: EscalationUserRef | null;
+  resolved_at: string | null;
+  created_at: string;
+  conversation: {
+    id: string;
+    customer: {
+      id: string;
+      display_name: string | null;
+      wa_phone: string | null;
+    };
+  };
+}
 
 export interface ConversationCustomer {
   id: string;

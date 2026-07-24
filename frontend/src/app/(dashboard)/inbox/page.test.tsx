@@ -15,6 +15,11 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
+const mockSearchParams = vi.fn(() => new URLSearchParams());
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => mockSearchParams(),
+}));
+
 import { api } from "@/lib/api";
 
 const mockAuth: AuthContextValue = {
@@ -63,6 +68,7 @@ function renderWithProviders(ui: React.ReactElement) {
 describe("InboxPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSearchParams.mockReturnValue(new URLSearchParams());
     vi.mocked(api.listConversations).mockResolvedValue({
       data: [],
       meta: { total: 0, limit: 20, offset: 0 },
@@ -189,5 +195,21 @@ describe("InboxPage", () => {
     expect(
       await screen.findByText("Select a conversation to view its message timeline."),
     ).toBeInTheDocument();
+  });
+
+  it("auto-selects the conversation named in a ?conversation= deep link (e.g. from Escalations)", async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams("conversation=conv-1"));
+    vi.mocked(api.getConversation).mockResolvedValue(conversation());
+    vi.mocked(api.listMessages).mockResolvedValue({
+      data: [message()],
+      meta: { total: 1, limit: 50, offset: 0 },
+    });
+
+    renderWithProviders(<InboxPage />);
+
+    await waitFor(() =>
+      expect(api.getConversation).toHaveBeenCalledWith(expect.any(Function), "conv-1"),
+    );
+    expect(await screen.findByText("Are you open today?")).toBeInTheDocument();
   });
 });
