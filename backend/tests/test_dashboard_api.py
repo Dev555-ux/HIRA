@@ -1,5 +1,7 @@
 """Tests for the protected dashboard API: auth guard + tenant isolation."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
@@ -128,6 +130,31 @@ def test_approve_returns_409_when_whatsapp_not_connected(db_session):
     assert sent == []  # Meta API was never attempted
     db_session.refresh(msg)
     assert msg.status == "pending_approval"  # untouched
+    app.dependency_overrides.clear()
+
+
+def test_approve_returns_409_when_whatsapp_window_expired(db_session):
+    _, _, msg = _seed_business(db_session, "A", "user_a")
+    conversation = db_session.get(Conversation, msg.conversation_id)
+    conversation.window_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        hours=1
+    )
+    db_session.commit()
+    sent = []
+    client = _client(
+        db_session,
+        claims_for_token=lambda t: {"sub": "user_a"},
+        sender=lambda *a, **k: sent.append(a) or "wamid.should-not-happen",
+    )
+
+    resp = client.post(f"/api/v1/messages/{msg.id}/approve", headers=_auth())
+
+    assert resp.status_code == 409
+    assert "24-hour" in resp.json()["detail"]
+    assert sent == []  # Meta API was never attempted
+    db_session.refresh(msg)
+    assert msg.status == "failed"
+    assert msg.ai_meta["failure_reason"] == "whatsapp_window_expired"
     app.dependency_overrides.clear()
 
 

@@ -16,6 +16,8 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_current_principal
@@ -23,6 +25,10 @@ from app.db.session import get_db
 from app.models import Business
 from app.whatsapp import credentials as whatsapp_credentials
 from app.whatsapp.errors import WhatsAppCredentialInvalidError, WhatsAppNotConfiguredError
+
+PHONE_NUMBER_IN_USE_DETAIL = (
+    "This WhatsApp phone number is already connected to a different business."
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +87,16 @@ def connect_whatsapp(
     encrypted and marks the business connected. Also serves as "reconnect"
     — store_credentials is create-or-replace, so submitting new credentials
     for an already-connected business just replaces them.
+
+    A phone_number_id can belong to only one business: the webhook
+    (app/webhooks/whatsapp.py) routes an inbound message to whichever
+    business row has that phone_number_id, so two businesses sharing one
+    would mean the second connect silently steals the first's traffic.
+    Checked up front (cheap, catches the common sequential case before the
+    live Meta verification call), and enforced again by `db.flush()` below
+    against `uq_businesses_whatsapp_phone_number_id` (the actual race-proof
+    guard) *before* any credential is stored — so a request that loses that
+    race never leaves an orphaned WhatsAppCredential behind.
     """
     try:
         whatsapp_credentials.verify_whatsapp_credentials(
@@ -88,6 +104,27 @@ def connect_whatsapp(
         )
     except WhatsAppCredentialInvalidError as exc:
         raise HTTPException(status_code=422, detail=exc.reason) from exc
+
+    conflicting = db.scalars(
+        select(Business.id).where(
+            Business.whatsapp_phone_number_id == payload.phone_number_id,
+            Business.id != principal.business_id,
+        )
+    ).first()
+    if conflicting is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PHONE_NUMBER_IN_USE_DETAIL)
+
+    business = db.get(Business, principal.business_id)
+    business.whatsapp_phone_number_id = payload.phone_number_id
+    business.whatsapp_business_account_id = payload.whatsapp_business_account_id
+    business.whatsapp_connection_status = "connected"
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=PHONE_NUMBER_IN_USE_DETAIL
+        ) from None
 
     try:
         whatsapp_credentials.store_credentials(
@@ -99,17 +136,12 @@ def connect_whatsapp(
     except WhatsAppNotConfiguredError as exc:
         # The encryption key itself isn't set on this deployment — a
         # deployment/config gap, not something the business owner can fix.
+        db.rollback()
         logger.error("WhatsApp connect attempted but not configured: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="WhatsApp connection isn't available on this deployment yet.",
         ) from exc
-
-    business = db.get(Business, principal.business_id)
-    business.whatsapp_phone_number_id = payload.phone_number_id
-    business.whatsapp_business_account_id = payload.whatsapp_business_account_id
-    business.whatsapp_connection_status = "connected"
-    db.commit()
 
     stored = whatsapp_credentials.get_stored_credential(db, principal.business_id)
     return {"data": _serialize_status(business, stored)}
