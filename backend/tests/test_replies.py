@@ -4,6 +4,7 @@ import threading
 import uuid
 
 import pytest
+from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
@@ -16,6 +17,7 @@ from app.ai.tools import BOOK_APPOINTMENT
 from app.calendar.providers.base import CalendarError
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
+from app.core.config import settings
 from app.models import Appointment, Business, Conversation, Customer, Escalation, Message
 from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError
 from app.services.replies import (
@@ -25,14 +27,26 @@ from app.services.replies import (
     reject_reply,
     update_draft,
 )
+from app.whatsapp.credentials import store_credentials
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_knowledge_base import FakeEmbeddingProvider
+
+
+@pytest.fixture(autouse=True)
+def _whatsapp_encryption_key(monkeypatch):
+    # Sprint 69: approve_and_send now needs a stored, encrypted
+    # WhatsAppCredential (not just Business.whatsapp_phone_number_id) to
+    # reach the send step — every _pending_*_reply helper below stores one
+    # automatically whenever a phone number is given, using this key.
+    monkeypatch.setattr(settings, "calendar_encryption_key", Fernet.generate_key().decode())
 
 
 def _pending_reply(db, *, business_phone="PN1"):
     biz = Business(name="Clinic A", whatsapp_phone_number_id=business_phone)
     db.add(biz)
     db.flush()
+    if business_phone is not None:
+        store_credentials(db, biz.id, access_token="test-token", app_secret="test-secret")
     customer = Customer(business_id=biz.id, wa_phone="+15551230000")
     db.add(customer)
     db.flush()
@@ -56,7 +70,7 @@ def test_approve_and_send_marks_sent(db_session):
     biz, customer, msg = _pending_reply(db_session)
     captured = {}
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         captured.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.out123"
 
@@ -74,7 +88,7 @@ def test_approve_and_send_marks_sent(db_session):
 def test_approve_and_send_marks_failed_on_send_error(db_session):
     biz, _, msg = _pending_reply(db_session)
 
-    def failing_sender(*_args):
+    def failing_sender(*_args, **_kwargs):
         raise WhatsAppSendError("boom")
 
     with pytest.raises(WhatsAppSendError):
@@ -90,7 +104,7 @@ def test_approve_and_send_rejects_non_pending_message(db_session):
     db_session.flush()
 
     with pytest.raises(ValueError):
-        approve_and_send(db_session, biz.id, msg.id, sender=lambda *a: "x")
+        approve_and_send(db_session, biz.id, msg.id, sender=lambda *a, **k: "x")
 
 
 def test_approve_and_send_is_tenant_scoped(db_session):
@@ -98,14 +112,14 @@ def test_approve_and_send_is_tenant_scoped(db_session):
     other_business_id = uuid.uuid4()
 
     with pytest.raises(ValueError):
-        approve_and_send(db_session, other_business_id, msg.id, sender=lambda *a: "x")
+        approve_and_send(db_session, other_business_id, msg.id, sender=lambda *a, **k: "x")
 
 
 def test_approve_and_send_rejects_when_whatsapp_not_connected(db_session):
     biz, _, msg = _pending_reply(db_session, business_phone=None)
     sent = []
 
-    def sender_that_should_never_run(*_args):
+    def sender_that_should_never_run(*_args, **_kwargs):
         sent.append(_args)
         return "wamid.should-not-happen"
 
@@ -307,6 +321,8 @@ def _pending_tool_call_reply(db, *, business_phone="PN1"):
     biz = Business(name="Clinic A", whatsapp_phone_number_id=business_phone)
     db.add(biz)
     db.flush()
+    if business_phone is not None:
+        store_credentials(db, biz.id, access_token="test-token", app_secret="test-secret")
     customer = Customer(business_id=biz.id, wa_phone="+15551230000")
     db.add(customer)
     db.flush()
@@ -338,6 +354,8 @@ def _pending_lead_tool_call_reply(db, *, business_phone="PN1"):
     biz = Business(name="Clinic A", whatsapp_phone_number_id=business_phone)
     db.add(biz)
     db.flush()
+    if business_phone is not None:
+        store_credentials(db, biz.id, access_token="test-token", app_secret="test-secret")
     customer = Customer(business_id=biz.id, wa_phone="+15551230000")
     db.add(customer)
     db.flush()
@@ -368,7 +386,7 @@ def test_approve_tool_call_executes_then_sends(db_session, monkeypatch):
     )
     captured = {}
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         captured.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.out1"
 
@@ -393,7 +411,7 @@ def test_approve_tool_call_marks_failed_when_execution_fails(db_session, monkeyp
     monkeypatch.setattr("app.services.replies.execute_tool_call", _fails)
     sender_called = {"called": False}
 
-    def fake_sender(*args):
+    def fake_sender(*args, **_kwargs):
         sender_called["called"] = True
         return "wamid.out1"
 
@@ -411,7 +429,7 @@ def test_approve_lead_tool_call_executes_then_sends(db_session):
     biz, customer, msg = _pending_lead_tool_call_reply(db_session)
     captured = {}
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         captured.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.out1"
 
@@ -440,7 +458,7 @@ def test_concurrent_approve_only_one_wins_and_sends_once(db_session):
     send_calls: list[tuple] = []
     send_lock = threading.Lock()
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         with send_lock:
             send_calls.append((phone_number_id, to, body))
         return f"wamid.out{len(send_calls)}"
@@ -500,7 +518,7 @@ def test_concurrent_approve_tool_call_executes_tool_exactly_once(db_session, mon
     send_calls: list[str] = []
     send_lock = threading.Lock()
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         with send_lock:
             send_calls.append(body)
         return "wamid.out1"
@@ -574,7 +592,7 @@ def test_assisted_mode_final_commit_failure_leaves_no_orphaned_appointment(db_se
 
     sent = {"count": 0}
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         sent["count"] += 1
         return f"wamid.out{sent['count']}"
 

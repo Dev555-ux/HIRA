@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from app.ai.llm.base import LLMResponse, ToolCall
 from app.ai.orchestrator import generate_reply
@@ -22,6 +23,7 @@ from app.ai.tools import confirmation_message_for, execute_tool_call, response_t
 from app.db.session import SessionLocal
 from app.models import Business, Conversation, Customer, Escalation, Message
 from app.services.messaging import WhatsAppSendError, send_text
+from app.whatsapp.credentials import get_access_token, get_stored_credential
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ def generate_and_store_reply(
     conversation_id: uuid.UUID,
     user_text: str,
     *,
-    sender: Callable[[str, str, str], str] = send_text,
+    sender: Callable[..., str] = send_text,
 ) -> None:
     db = SessionLocal()
     try:
@@ -163,7 +165,7 @@ def _auto_send(
     business: Business,
     conversation: Conversation,
     message: Message,
-    sender: Callable[[str, str, str], str],
+    sender: Callable[..., str],
 ) -> Callable[[], None] | None:
     """Send/execute the reply immediately (Autonomous Mode) and mark sent/failed.
 
@@ -174,8 +176,35 @@ def _auto_send(
     Runs the tool with commit=False (Section A4) and returns the resulting
     `on_commit_failure` (or None) so the caller's single outer commit can
     compensate if it fails — see generate_and_store_reply.
+
+    Sprint 69: checked up front, before any tool call — no WhatsApp
+    connection (phone number or stored credential) or an expired 24-hour
+    service window both mean there's no way to notify the customer, so
+    nothing here should proceed far enough to need reverting. Mirrors
+    app/services/replies.py::approve_and_send's identical up-front checks.
     """
     customer = db.get(Customer, conversation.customer_id)
+    credential = get_stored_credential(db, business.id)
+
+    if not business.whatsapp_phone_number_id or credential is None:
+        message.status = "failed"
+        message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "whatsapp_not_connected"}
+        logger.warning(
+            "Autonomous send skipped for conversation %s: WhatsApp not connected", conversation.id
+        )
+        return None
+
+    if (
+        conversation.window_expires_at is not None
+        and datetime.now(timezone.utc).replace(tzinfo=None) > conversation.window_expires_at
+    ):
+        message.status = "failed"
+        message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "whatsapp_window_expired"}
+        logger.warning(
+            "Autonomous send skipped for conversation %s: WhatsApp 24h service window expired",
+            conversation.id,
+        )
+        return None
 
     if message.type == "tool_call":
         tool_call = ToolCall(
@@ -211,7 +240,12 @@ def _auto_send(
         on_commit_failure = None
 
     try:
-        wa_message_id = sender(business.whatsapp_phone_number_id, customer.wa_phone, message.body)
+        wa_message_id = sender(
+            business.whatsapp_phone_number_id,
+            customer.wa_phone,
+            message.body,
+            access_token=get_access_token(credential),
+        )
         message.status = "sent"
         message.wa_message_id = wa_message_id
         logger.info("Autonomously sent reply for conversation %s", conversation.id)

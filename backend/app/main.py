@@ -25,6 +25,7 @@ from app.api.knowledge_base import router as knowledge_base_router
 from app.api.leads import router as leads_router
 from app.api.onboarding import router as onboarding_router
 from app.api.settings import router as settings_router
+from app.api.whatsapp import router as whatsapp_api_router
 from app.core.config import settings
 from app.core.monitoring import capture_exception, capture_message, init_sentry
 from app.core.rate_limit import init_rate_limiting
@@ -163,6 +164,7 @@ app.add_middleware(
 app.add_middleware(RequestLoggingMiddleware)
 init_rate_limiting(app)
 app.include_router(whatsapp_router)
+app.include_router(whatsapp_api_router)
 app.include_router(dashboard_router)
 app.include_router(knowledge_base_router)
 app.include_router(onboarding_router)

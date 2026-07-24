@@ -8,6 +8,7 @@ import type {
   BusinessSettings,
   CalendarSettings,
   CalendarStatus,
+  ConnectWhatsAppPayload,
   Conversation,
   ConversationStatusFilter,
   CreateAppointmentPayload,
@@ -38,6 +39,7 @@ import type {
   UpdateDraftResult,
   UpdateKbEntryPayload,
   UpdateLeadPayload,
+  WhatsAppStatus,
 } from "./types";
 
 export class ApiError extends Error {
@@ -307,6 +309,18 @@ export const api = {
 
   disconnectCalendar: (getToken: GetToken) =>
     apiFetch<void>("/api/v1/calendar/disconnect", getToken, { method: "DELETE" }),
+
+  getWhatsAppStatus: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<WhatsAppStatus>>("/api/v1/whatsapp/status", getToken).then((r) => r.data),
+
+  connectWhatsApp: (getToken: GetToken, payload: ConnectWhatsAppPayload) =>
+    apiFetch<ApiEnvelope<WhatsAppStatus>>("/api/v1/whatsapp/connect", getToken, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((r) => r.data),
+
+  disconnectWhatsApp: (getToken: GetToken) =>
+    apiFetch<void>("/api/v1/whatsapp/disconnect", getToken, { method: "POST" }),
 
   getAvailability: (getToken: GetToken, params: { starts_at: string; ends_at: string }) =>
     apiFetch<ApiEnvelope<AvailabilitySlot[]>>(
