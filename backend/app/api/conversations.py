@@ -7,14 +7,15 @@ tenant-scoped via `tenant_query`/`get_scoped`, same as dashboard.py and
 knowledge_base.py — a business can only ever see its own conversations.
 
 Filter semantics (query param `status`):
-- "open"    -> Conversation.status == "active"
-- "closed"  -> Conversation.status == "closed"
-- "pending" -> conversations with at least one outbound message still
-               awaiting approval (Message.status == "pending_approval"). This
-               is a derived, cross-cutting view, not a Conversation.status
-               value, so it can overlap with "open" in practice.
-Omitting `status` returns every conversation regardless of status (including
-"escalated", which has no dedicated filter chip yet — see documentation/API.md).
+- "open"      -> Conversation.status == "active"
+- "closed"    -> Conversation.status == "closed"
+- "escalated" -> Conversation.status == "escalated"
+- "pending"   -> conversations with at least one outbound message still
+                 awaiting approval (Message.status == "pending_approval").
+                 This is a derived, cross-cutting view, not a
+                 Conversation.status value, so it can overlap with "open" in
+                 practice.
+Omitting `status` returns every conversation regardless of status.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from app.models import Conversation, Customer, Message
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["conversations"])
 
-StatusFilter = Literal["open", "pending", "closed"]
+StatusFilter = Literal["open", "pending", "closed", "escalated"]
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 DEFAULT_MESSAGE_LIMIT = 50
@@ -128,6 +129,8 @@ def list_conversations(
         stmt = stmt.where(Conversation.status == "active")
     elif status_filter == "closed":
         stmt = stmt.where(Conversation.status == "closed")
+    elif status_filter == "escalated":
+        stmt = stmt.where(Conversation.status == "escalated")
     elif status_filter == "pending":
         stmt = stmt.where(
             exists(

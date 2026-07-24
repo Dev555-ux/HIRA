@@ -35,7 +35,7 @@ Conventions: `2xx` success, `400` validation, `401` unauth, `403` forbidden, `40
 - `POST /webhooks/whatsapp` — inbound messages/status. Verifies signature, dedupes, persists, returns `200` fast, processes async.
 
 ### Conversations / Inbox
-- `GET /conversations` — **implemented** (2026-07-08). Query params: `search` (matches customer display name or WhatsApp number), `status` (`open` → `Conversation.status == "active"`; `closed` → `"closed"`; `pending` → has an outbound message with `status == "pending_approval"`, a derived cross-cutting view, not a `Conversation.status` value — omit for no filter, which also includes `escalated` conversations, which have no dedicated filter chip yet), `limit`/`offset` (pagination, `{"data": [...], "meta": {"total", "limit", "offset"}}`). Each row includes the joined `customer` (id/display_name/wa_phone), `last_message_at`-ordered, a `preview` (latest message body), and `has_pending_approval`.
+- `GET /conversations` — **implemented** (2026-07-08; `escalated` filter added Sprint 69). Query params: `search` (matches customer display name or WhatsApp number), `status` (`open` → `Conversation.status == "active"`; `closed` → `"closed"`; `escalated` → `"escalated"`; `pending` → has an outbound message with `status == "pending_approval"`, a derived cross-cutting view, not a `Conversation.status` value — omit for no filter), `limit`/`offset` (pagination, `{"data": [...], "meta": {"total", "limit", "offset"}}`). Each row includes the joined `customer` (id/display_name/wa_phone), `last_message_at`-ordered, a `preview` (latest message body), and `has_pending_approval`.
 - `GET /conversations/{id}` — **implemented**. Same summary shape as the list. Cross-tenant/unknown → `404`.
 - `GET /conversations/{id}/messages` — **implemented**. Paginated (`limit`/`offset`), returns the most recent page in oldest-first order (same convention as `app/ai/orchestrator.py`'s history loader). Cross-tenant/unknown conversation → `404`.
 - `POST /conversations/{id}/messages` — **not implemented** — human sends a manual reply. Originally sketched here; not part of the Inbox v1 scope.
@@ -74,9 +74,12 @@ The full "Pending Approvals V2" copilot workflow (Sprint 27, 2026-07-09): every 
 
 `Message.status` values as of Sprint 27: `received | pending_approval | sent | failed | rejected | escalated` — all plain strings (no CHECK constraint / migration needed to add a value, per `DATABASE.md`). `Message.type` gained `tool_call` in Sprint 29 (DEC-032) alongside the original `text` — a pending `tool_call` message's `body` is a human-readable, editable preview/confirmation string, and `ai_meta` carries `{tool_name, tool_arguments}`. Sprint 30 (DEC-033) reuses this exact same convention for CRM tool calls (`create_lead`/`update_lead_stage`/`set_lead_follow_up`) — no new `Message.type` value.
 
-### Escalations
-- `GET /escalations?status=open` — **not implemented**. `Escalation` rows are created by `POST /messages/{id}/escalate` (above) but there is no list/detail endpoint yet — see `.claude/DECISIONS.md` DEC-030.
-- `POST /escalations/{id}/resolve` — **not implemented**.
+### Escalations (Escalation Queue Workspace, Sprint 69 — DEC-040)
+- `GET /escalations` — **implemented**. Query params: `status` (`open`/`resolved`), `assigned` (`mine` → `Escalation.assigned_to == principal.user_id`; `unassigned` → `assigned_to IS NULL`), `limit`/`offset`. Each row joins its `Conversation`/`Customer` for context and includes `assigned_to`/`resolved_by` as `{id, email} | null` (not a bare UUID). `{"data": [...], "meta": {"total", "limit", "offset"}}`.
+- `POST /escalations/{id}/assign` — **implemented**. Self-claim only — always assigns to the calling principal, since there is no team roster/user-picker UI to assign a colleague's escalation for them.
+- `POST /escalations/{id}/unassign` — **implemented**. Clears `assigned_to`.
+- `POST /escalations/{id}/resolve` — **implemented**. Sets `status="resolved"`, `resolved_by=principal.user_id`, `resolved_at=now()`. No reopen endpoint (out of scope this sprint).
+- All four routes are tenant-scoped via `get_scoped`/an explicit `business_id` filter and return `404` (not a distinguishing error) for another business's escalation, same convention as `dashboard.py`.
 
 ### Calendar
 

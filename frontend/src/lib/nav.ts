@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   BarChart3,
   Calendar,
   CalendarClock,
@@ -24,6 +25,7 @@ export const navItems: NavItem[] = [
   { href: "/demo", label: "Demo Chat", icon: Sparkles },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/pending", label: "Pending Replies", icon: CheckCheck },
+  { href: "/escalations", label: "Escalations", icon: AlertTriangle },
   { href: "/knowledge-base", label: "Business Knowledge", icon: BookOpen },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/leads", label: "Leads", icon: Target },

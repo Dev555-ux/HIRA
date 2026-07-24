@@ -19,6 +19,9 @@ import type {
   CustomerDetail,
   Customer,
   EscalateResult,
+  Escalation,
+  EscalationAssignedFilter,
+  EscalationStatusFilter,
   ImportWebsitePayload,
   ImportWebsiteResult,
   KbDraftBatch,
@@ -238,6 +241,32 @@ export const api = {
       `/api/v1/conversations/${id}/messages${buildQuery(params)}`,
       getToken,
     ),
+
+  listEscalations: (
+    getToken: GetToken,
+    params: {
+      status?: EscalationStatusFilter;
+      assigned?: EscalationAssignedFilter;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ) =>
+    apiFetch<PaginatedEnvelope<Escalation[]>>(`/api/v1/escalations${buildQuery(params)}`, getToken),
+
+  assignEscalation: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<Escalation>>(`/api/v1/escalations/${id}/assign`, getToken, {
+      method: "POST",
+    }).then((r) => r.data),
+
+  unassignEscalation: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<Escalation>>(`/api/v1/escalations/${id}/unassign`, getToken, {
+      method: "POST",
+    }).then((r) => r.data),
+
+  resolveEscalation: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<Escalation>>(`/api/v1/escalations/${id}/resolve`, getToken, {
+      method: "POST",
+    }).then((r) => r.data),
 
   listLeads: (
     getToken: GetToken,
