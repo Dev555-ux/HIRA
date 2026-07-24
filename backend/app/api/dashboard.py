@@ -24,6 +24,7 @@ from app.db.tenant import tenant_query
 from app.models import Conversation, Customer, Message
 from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError, send_text
 from app.services.replies import (
+    WhatsAppWindowExpiredError,
     approve_and_send,
     escalate_reply,
     regenerate_draft,
@@ -143,6 +144,8 @@ def approve_message(
         # execute on approval — e.g. the slot was taken meanwhile (DEC-032).
         raise map_calendar_error(exc) from exc
     except WhatsAppNotConnectedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except WhatsAppWindowExpiredError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except WhatsAppSendError as exc:
         raise HTTPException(

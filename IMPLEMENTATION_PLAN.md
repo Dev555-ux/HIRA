@@ -77,7 +77,7 @@ Each finding keeps its original severity from the audit. Effort uses S (hours–
 | SCALE-3 | No per-tenant rate limiting (noisy-neighbor risk) | Medium | M | None | Production, Scale | 16 |
 | SEC-5 | No rate limiting on the webhook endpoint itself | Medium | M | Can share infra with SCALE-3 | Production | 17 |
 | SEC-4 | No data retention/deletion policy for customer PII | Medium | M | Depends on legal research (`RES-001`, already open in `TODOS.md`) | Production | 18 |
-| WA-2 | 24-hour service window tracked but never enforced before send | Medium | M | None | Production | 19 |
+| WA-2 | ~~24-hour service window tracked but never enforced before send~~ **Done (Sprint 69, 2026-07-16)** — both `approve_and_send` and `_auto_send` check `Conversation.window_expires_at` before sending, marking the message `failed`/`whatsapp_window_expired` instead of attempting it. Open as a PR, not yet merged. | Medium | M | None | Production | 19 |
 | REL-4 | Dedup race on concurrent webhook deliveries (uncaught `IntegrityError`) | Low | S | None | Production | 20 |
 | MAINT-2 | String-typed status/role/type columns, no CHECK constraints | Low | S | Needs a migration | Production (data-integrity hygiene) | 21 |
 | SEC-3 | Prompt injection / no output validation — full guardrail | High | M–L | REL-2 (fallback path) helps here; benefits from DEPLOY-2 (to see injection attempts in logs) | Production (specifically: general Autonomous Mode availability) | 22 |
@@ -131,7 +131,7 @@ Each finding keeps its original severity from the audit. Effort uses S (hours–
 16. `SCALE-3` — per-tenant rate limiting
 17. `SEC-5` — webhook rate limiting
 18. `SEC-4` — data retention/deletion policy (pending legal scope from `RES-001`)
-19. `WA-2` — 24h window enforcement
+19. `WA-2` — 24h window enforcement — **Done, Sprint 69**
 20. `REL-4` — dedup race handling
 21. `MAINT-2` — CHECK constraints
 22. `SEC-3` — prompt-injection guardrails (unlocks general Autonomous Mode availability)

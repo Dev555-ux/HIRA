@@ -7,6 +7,23 @@ dedupes by message id, persists the inbound message, and returns 200 quickly.
 Heavy work (AI orchestration) is intentionally NOT done here yet — that is
 dispatched later (S1-08+). The webhook's job is to authenticate, record, and
 acknowledge fast so Meta does not retry.
+
+Sprint 69 (self-serve WhatsApp): every business now brings its own Meta App,
+so the HMAC signature is no longer verified against one shared global
+secret — it must be verified against *that business's own* stored,
+encrypted app secret. That requires knowing which business a payload is for
+*before* the signature can be checked, which flips the original order: the
+payload is now parsed (as untrusted JSON) first, purely to read
+`phone_number_id` out of it, then the business (and its stored credential)
+is looked up, and only then is the signature verified with that business's
+own secret. Nothing from the payload is trusted or persisted until that
+signature check passes — parsing untrusted JSON to read one field is safe;
+acting on its contents before authentication is not, and this code doesn't.
+The verify_token used by the GET handshake above stays a single shared
+value on purpose — it's a one-time "prove you own this endpoint" handshake
+Meta performs once per App, not a per-message trust boundary, so every
+business is instructed to enter the same HIRA-provided value into their own
+Meta App's webhook config (see documentation/WHATSAPP_INTEGRATION.md).
 """
 
 from __future__ import annotations
@@ -25,6 +42,8 @@ from app.ai.processing import generate_and_store_reply
 from app.core.config import settings
 from app.db.session import get_db
 from app.models import Business, Conversation, Customer, Message
+from app.whatsapp.credentials import get_app_secret, get_stored_credential
+from app.whatsapp.errors import WhatsAppCredentialError
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -53,11 +72,23 @@ def verify_subscription(request: Request) -> Response:
     return Response(status_code=403)
 
 
-def _signature_valid(raw_body: bytes, header: str | None) -> bool:
+def _signature_valid(raw_body: bytes, header: str | None, app_secret: str) -> bool:
     if not header or not header.startswith("sha256="):
         return False
-    expected = hmac.new(settings.whatsapp_app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    expected = hmac.new(app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, header.removeprefix("sha256="))
+
+
+def _first_phone_number_id(payload: dict) -> str | None:
+    """A single webhook delivery is signed once, by one Meta App — so every
+    entry/change within it belongs to the same business. Reading the first
+    one found is enough to know which business's secret to verify against."""
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            phone_number_id = change.get("value", {}).get("metadata", {}).get("phone_number_id")
+            if phone_number_id:
+                return phone_number_id
+    return None
 
 
 async def _read_raw_body(request: Request) -> bytes:
@@ -87,10 +118,33 @@ def receive(
     in the app, and one Meta expects a fast ack from) can't starve the rest
     of the API under load.
     """
-    if not _signature_valid(raw_body, request.headers.get("X-Hub-Signature-256")):
+    try:
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return Response(status_code=403)
 
-    payload = json.loads(raw_body)
+    phone_number_id = _first_phone_number_id(payload)
+    if phone_number_id is None:
+        return Response(status_code=403)
+
+    business = db.scalars(
+        select(Business).where(Business.whatsapp_phone_number_id == phone_number_id)
+    ).first()
+    if business is None:
+        return Response(status_code=403)
+
+    credential = get_stored_credential(db, business.id)
+    if credential is None:
+        return Response(status_code=403)
+
+    try:
+        app_secret = get_app_secret(credential)
+    except WhatsAppCredentialError:
+        return Response(status_code=403)
+
+    if not _signature_valid(raw_body, request.headers.get("X-Hub-Signature-256"), app_secret):
+        return Response(status_code=403)
+
     new_inbound = _persist_inbound(db, payload)
     for conversation_id, user_text in new_inbound:
         dispatch(background_tasks, conversation_id, user_text)

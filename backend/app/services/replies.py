@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -32,6 +33,17 @@ from app.calendar.providers.base import CalendarError
 from app.db.tenant import get_scoped
 from app.models import Business, Conversation, Customer, Escalation, Message
 from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError, send_text
+from app.whatsapp.credentials import get_access_token, get_stored_credential
+
+
+class WhatsAppWindowExpiredError(RuntimeError):
+    """The customer's 24-hour WhatsApp service window has closed — a
+    free-form text send would violate Meta's platform rules (a template
+    message would be required instead, not yet supported). Raised before
+    any tool call or send is attempted, same as WhatsAppNotConnectedError
+    above it, so a booking can't execute with no way left to notify the
+    customer it happened."""
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +61,7 @@ def approve_and_send(
     business_id: uuid.UUID,
     message_id: uuid.UUID,
     *,
-    sender: Callable[[str, str, str], str] = send_text,
+    sender: Callable[..., str] = send_text,
 ) -> Message:
     """Approve a pending reply: if it's a proposed calendar action
     (message.type == "tool_call" — DEC-032), execute it now, then send the
@@ -57,11 +69,15 @@ def approve_and_send(
 
     Raises ValueError if the message isn't an approvable pending reply for this
     business. Raises WhatsAppNotConnectedError up front (before any tool call
-    or send is attempted) if the business has no WhatsApp number configured —
-    approving a tool_call message would otherwise execute a real side effect
-    (e.g. book a calendar slot) with no way to actually notify the customer.
-    Raises CalendarError (after marking the message failed) if a proposed
-    tool call fails to execute (e.g. the slot was taken meanwhile). Raises
+    or send is attempted) if the business has no WhatsApp number/credentials
+    configured — approving a tool_call message would otherwise execute a real
+    side effect (e.g. book a calendar slot) with no way to actually notify the
+    customer. Raises WhatsAppWindowExpiredError (Sprint 69, after marking the
+    message failed) if the customer's 24-hour service window has closed —
+    checked after claiming but before any tool call, so a booking can't
+    execute with no way left to tell the customer it happened. Raises
+    CalendarError (after marking the message failed) if a proposed tool call
+    fails to execute (e.g. the slot was taken meanwhile). Raises
     WhatsAppSendError (after marking the message failed) if the send fails.
 
     Concurrency: two requests approving the same message race between this
@@ -88,6 +104,9 @@ def approve_and_send(
 
     if not business.whatsapp_phone_number_id:
         raise WhatsAppNotConnectedError("This business has not connected WhatsApp yet")
+    credential = get_stored_credential(db, business_id)
+    if credential is None:
+        raise WhatsAppNotConnectedError("This business has not connected WhatsApp yet")
 
     claimed = db.execute(
         update(Message)
@@ -97,6 +116,23 @@ def approve_and_send(
     db.commit()
     if claimed == 0:
         raise ValueError("Message is not a pending reply for this business")
+
+    if (
+        conversation.window_expires_at is not None
+        and datetime.now(timezone.utc).replace(tzinfo=None) > conversation.window_expires_at
+    ):
+        message.status = "failed"
+        message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "whatsapp_window_expired"}
+        db.commit()
+        logger.warning(
+            "WhatsApp 24h service window expired for message %s (business %s); not sent",
+            message_id,
+            business_id,
+        )
+        raise WhatsAppWindowExpiredError(
+            "The customer's 24-hour WhatsApp service window has closed. "
+            "A template message would be required to reach them now, which isn't supported yet."
+        )
 
     on_commit_failure = None
     if message.type == "tool_call":
@@ -127,7 +163,12 @@ def approve_and_send(
         on_commit_failure = result.on_commit_failure
 
     try:
-        wa_message_id = sender(business.whatsapp_phone_number_id, customer.wa_phone, message.body)
+        wa_message_id = sender(
+            business.whatsapp_phone_number_id,
+            customer.wa_phone,
+            message.body,
+            access_token=get_access_token(credential),
+        )
     except WhatsAppSendError:
         message.status = "failed"
         db.commit()

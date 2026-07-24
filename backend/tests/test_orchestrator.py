@@ -1,5 +1,6 @@
 """Tests for the orchestrator and background reply processing (mock providers)."""
 
+from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
@@ -19,10 +20,21 @@ from app.ai.tools import (
 from app.calendar.providers.base import CalendarNotConnectedError
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
+from app.core.config import settings
 from app.models import Appointment, Business, Conversation, Escalation, Message
+from app.whatsapp.credentials import store_credentials
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_knowledge_base import FakeEmbeddingProvider
 from app.ai.knowledge_base import index_entry
+
+
+def _connect_whatsapp(db, monkeypatch, business_id):
+    """Autonomous-mode sends (Sprint 69) require a stored, encrypted
+    WhatsAppCredential in addition to Business.whatsapp_phone_number_id —
+    call this after creating an autonomous-mode test business that's
+    expected to actually reach the send step."""
+    monkeypatch.setattr(settings, "calendar_encryption_key", Fernet.generate_key().decode())
+    store_credentials(db, business_id, access_token="test-token", app_secret="test-secret")
 
 
 def _setup_business_with_kb(db):
@@ -648,6 +660,7 @@ def test_autonomous_mode_executes_lead_tool_call_immediately(db_session, monkeyp
     biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
     db_session.add(biz)
     db_session.flush()
+    _connect_whatsapp(db_session, monkeypatch, biz.id)
     customer = Customer(business_id=biz.id, wa_phone="+15550001111")
     db_session.add(customer)
     db_session.flush()
@@ -665,7 +678,7 @@ def test_autonomous_mode_executes_lead_tool_call_immediately(db_session, monkeyp
     )
     sent: dict = {}
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         sent.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.sent1"
 
@@ -692,6 +705,7 @@ def test_autonomous_mode_sends_reply_immediately(db_session, monkeypatch):
     biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
     db_session.add(biz)
     db_session.flush()
+    _connect_whatsapp(db_session, monkeypatch, biz.id)
     index_entry(db_session, biz.id, "Hours", "Open 9-5 weekdays.", provider=FakeEmbeddingProvider())
     customer = Customer(business_id=biz.id, wa_phone="+15550001111")
     db_session.add(customer)
@@ -709,7 +723,7 @@ def test_autonomous_mode_sends_reply_immediately(db_session, monkeypatch):
     )
     sent: dict = {}
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         sent.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.sent1"
 
@@ -732,6 +746,7 @@ def test_autonomous_mode_executes_tool_call_immediately(db_session, monkeypatch)
     biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
     db_session.add(biz)
     db_session.flush()
+    _connect_whatsapp(db_session, monkeypatch, biz.id)
     customer = Customer(business_id=biz.id, wa_phone="+15550001111")
     db_session.add(customer)
     db_session.flush()
@@ -763,7 +778,7 @@ def test_autonomous_mode_executes_tool_call_immediately(db_session, monkeypatch)
     )
     sent: dict = {}
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         sent.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.sent1"
 
@@ -794,6 +809,7 @@ def test_autonomous_mode_marks_failed_when_tool_call_execution_fails(db_session,
     biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
     db_session.add(biz)
     db_session.flush()
+    _connect_whatsapp(db_session, monkeypatch, biz.id)
     customer = Customer(business_id=biz.id, wa_phone="+15550001111")
     db_session.add(customer)
     db_session.flush()
@@ -824,7 +840,7 @@ def test_autonomous_mode_marks_failed_when_tool_call_execution_fails(db_session,
     monkeypatch.setattr("app.ai.tools.get_appointment_service", _raise_not_connected)
     sender_called = {"called": False}
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         sender_called["called"] = True
         return "wamid.sent1"
 
@@ -857,6 +873,7 @@ def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appoint
     biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
     db_session.add(biz)
     db_session.flush()
+    _connect_whatsapp(db_session, monkeypatch, biz.id)
     customer = Customer(business_id=biz.id, wa_phone="+15550001111")
     db_session.add(customer)
     db_session.flush()
@@ -906,7 +923,7 @@ def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appoint
     )
     sent = {"count": 0}
 
-    def fake_sender(phone_number_id, to, body):
+    def fake_sender(phone_number_id, to, body, **_kwargs):
         sent["count"] += 1
         return f"wamid.out{sent['count']}"
 

@@ -269,6 +269,21 @@ export interface CalendarStatus {
   calendar_id: string | null;
 }
 
+// WhatsApp self-serve connection (Sprint 69, /api/v1/whatsapp).
+export interface WhatsAppStatus {
+  connected: boolean;
+  status: "not_connected" | "pending_verification" | "connected";
+  phone_number_id_masked: string | null;
+  connected_at: string | null;
+}
+
+export interface ConnectWhatsAppPayload {
+  phone_number_id: string;
+  whatsapp_business_account_id: string;
+  access_token: string;
+  app_secret: string;
+}
+
 export interface AvailabilitySlot {
   starts_at: string;
   ends_at: string;

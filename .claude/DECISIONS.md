@@ -553,6 +553,74 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 
 ---
 
+## DEC-038 — Self-serve WhatsApp: per-business Meta credentials ("guided-manual v1"), Fernet-encrypted, reusing the calendar encryption key
+
+- **Date**: 2026-07-16
+- **Category**: Architecture
+- **Decision**: Sprint 69 named self-serve WhatsApp connection as one of two disqualifying blockers to operational independence — every business previously shared one global `settings.whatsapp_access_token`/`whatsapp_app_secret`, and connecting a new business's number was a founder-run manual script. Two decisions were escalated and resolved with the founder before implementation:
+  1. **Connection model**: "guided-manual v1" — each business creates its own Meta App/System User on Meta's own site and pastes its Phone Number ID, WABA ID, access token, and app secret into a HIRA form. Rejected: full Embedded Signup (a one-click OAuth-style flow Meta hosts) — that requires Meta Tech Provider approval, which HIRA does not yet have; building toward it now would mean shipping code that can't actually be used until an external approval lands.
+  2. **PR scope**: split Sprint 69 into four independent PRs (Deployment/Reliability, Self-Serve WhatsApp + 24h window, Knowledge Safety, Escalation Queue) rather than the single PR the brief requested, given the size and blast radius of touching webhook auth and message sending.
+  New `WhatsAppCredential` table (`business_id` FK unique, `access_token_encrypted`, `app_secret_encrypted`) mirrors `CalendarCredential` (DEC-032) exactly, and reuses `settings.calendar_encryption_key`/Fernet for encryption rather than introducing a new required env var — same "one key, another use" reasoning DEC-032 already used for its own second purpose (HMAC-signing the OAuth `state` param). The Meta webhook **verify token** (the one-time GET handshake proving endpoint ownership) stays global/shared across all businesses — it is not a per-message trust boundary, so every business is instructed to paste the same HIRA-provided value into their own Meta App's webhook config.
+- **Architecture diagram** — connect flow and the inbound webhook flow it enables, both per-business from here on:
+
+```mermaid
+sequenceDiagram
+    participant Owner as Business owner
+    participant Meta as Meta (their own App)
+    participant FE as HIRA frontend
+    participant API as POST /api/v1/whatsapp/connect
+    participant Graph as Meta Graph API
+    participant DB as WhatsAppCredential (Fernet-encrypted)
+
+    Owner->>Meta: Create Meta App + System User (on Meta's own site)
+    Owner->>FE: Paste Phone Number ID, WABA ID, access token, app secret
+    FE->>API: POST /connect {phone_number_id, waba_id, access_token, app_secret}
+    API->>Graph: Test call using the submitted access_token
+    alt credentials invalid
+        Graph-->>API: 401 / 404
+        API-->>FE: 422 + specific reason (form stays open to retry)
+    else credentials valid
+        Graph-->>API: 200
+        API->>DB: encrypt + store access_token, app_secret
+        API-->>FE: connected (masked phone number)
+    end
+```
+
+```mermaid
+sequenceDiagram
+    participant Meta as Meta (customer's WhatsApp)
+    participant WH as POST /webhooks/whatsapp
+    participant BizLookup as Business + WhatsAppCredential lookup
+    participant DB as WhatsAppCredential (decrypt app_secret)
+    participant Pipeline as generate_reply() / send_text()
+
+    Meta->>WH: inbound message (HMAC-signed with THIS business's app_secret)
+    WH->>WH: parse JSON, extract phone_number_id (untrusted so far)
+    WH->>BizLookup: find Business + WhatsAppCredential by phone_number_id
+    BizLookup->>DB: decrypt this business's own app_secret
+    WH->>WH: verify HMAC signature against that decrypted secret
+    alt signature invalid or no credential found
+        WH-->>Meta: 403
+    else signature valid
+        WH->>Pipeline: persist + process (grounded reply, 24h window checked before send)
+        Pipeline->>Meta: send_text(..., access_token=this business's own token)
+    end
+```
+
+- **Context**: `app/onboarding/whatsapp.py::connect_phone_number()` was a manual script-run utility and the dashboard's "Connect WhatsApp" wizard had no backend endpoint at all — it only built a copy-pasteable message for the owner to send the founder. That workflow does not scale past the founder's personal attention and was called out explicitly in the Sprint 69 proposal as one of two blockers to "a business can use HIRA for an entire workday without the founder."
+- **Concrete implementation shape** (ordinary engineering choices within the decisions above, not separately escalated):
+  - **Webhook signature verification reordered.** `app/webhooks/whatsapp.py::receive()` previously verified the inbound HMAC signature against one global secret *before* parsing the payload. It now parses the untrusted JSON first (safe — nothing is trusted or persisted from it yet) to extract `phone_number_id`, looks up the `Business` and its `WhatsAppCredential`, decrypts that business's own `app_secret`, and only then verifies the signature against it — a real security-sensitive reordering, not cosmetic. Any failure at any step (unparseable body, unknown `phone_number_id`, no stored credential, signature mismatch) rejects with 403, collapsing what used to be one failure mode into several without changing the response the caller sees.
+  - **`send_text` requires `access_token` as a keyword-only parameter, no default.** This forces every caller through the per-business credential lookup rather than allowing a silent fallback to a shared token that no longer conceptually exists.
+  - **24-hour service window enforcement.** `Conversation.window_expires_at` was already written on every inbound message but never read before sending. Both `approve_and_send` (Assisted Mode) and `_auto_send` (Autonomous Mode) now check it, and check for a stored credential at all, immediately after claiming the message but before any tool call or send — marking the message `failed` with a specific `ai_meta.failure_reason` (`"whatsapp_not_connected"` / `"whatsapp_window_expired"`) instead of attempting a doomed or rule-violating send. This reuses the existing failure/escalation path (REL-2) rather than inventing a new one.
+  - **New `POST /api/v1/whatsapp/connect`** makes one live Graph API call to validate the submitted credentials *before* storing anything, so a bad token/secret fails immediately with a specific reason (`WhatsAppCredentialInvalidError`) rather than silently "connecting" and failing later on the first real message. `GET /status` and `POST /disconnect` complete the set; disconnect clears both the encrypted credential and `Business.whatsapp_phone_number_id`/`whatsapp_business_account_id`/`whatsapp_connection_status`, resetting to a clean "never connected" state rather than leaving a stale phone number that would cause future inbound webhooks for that number to silently 403.
+- **Alternatives Considered**: Full Embedded Signup (rejected — needs unapproved Meta Tech Provider status, not buildable today); a per-business webhook verify token (rejected — the verify token is a one-time ownership handshake, not a per-message trust boundary, so per-business tokens would add configuration surface without closing any real gap); a dedicated WhatsApp encryption key separate from `calendar_encryption_key` (rejected — no second-key need exists yet at MVP scale, matching DEC-032's own reasoning for its two uses of one key); leaving stale `Business.whatsapp_phone_number_id` in place after disconnect (rejected — would make a disconnected number indistinguishable from an unrelated unknown one at the webhook, an honesty regression).
+- **Reasoning**: Every piece reuses an already-accepted pattern — `CalendarCredential`'s encrypted-storage shape (DEC-032), the existing Sentry-backed monitoring hook, and the existing message-failure/escalation path (REL-2) — rather than introducing a parallel mechanism, keeping the sprint's largest security-sensitive change (webhook auth reordering) additive to code that was already being exercised by tests, not a rewrite.
+- **Trade-offs**: "Guided-manual v1" still asks a business owner to go create a Meta App/System User themselves — real friction that only Embedded Signup removes, and that gap is intentionally deferred, not solved, by this decision. The webhook now does one extra DB lookup (business + credential) per inbound message before it can even check the signature, versus the old single global-secret comparison — an acceptable latency cost given it's what makes per-business secrets possible at all.
+- **Status**: Accepted — backend complete and tested (661 backend tests passing, up from 638 pre-Sprint-69), frontend complete and tested (220 frontend tests passing). Merged as part of Sprint 69's production launch.
+- **Review Date**: Revisit once/if HIRA obtains Meta Tech Provider approval — Embedded Signup would let a business connect in one click instead of copying four values from Meta's own console, and should replace guided-manual v1 as the default path (guided-manual could remain as a fallback for businesses that prefer BYO credentials).
+
+---
+
 ## DEC-039 — Knowledge Safety: a `status` column on `kb_entries`, not a separate drafts table
 
 - **Date**: 2026-07-16
@@ -567,5 +635,5 @@ Each entry uses: Decision ID · Date · Category · Decision · Context · Alter
 - **Alternatives Considered**: Building `ONBOARDING_ARCHITECTURE.md`'s full `kb_entry_drafts` table + confidence-flagging pipeline as originally speculated (rejected — that design bundles Knowledge Safety with PDF ingestion and LLM-based extraction, neither asked for this sprint; a second table for what a boolean-ish status column already expresses would be schema speculation ahead of need, against CLAUDE.md §14). Auto-publishing after a fixed delay instead of requiring an explicit approve (rejected — defeats the entire point of the safety gate; DEC-039's stated goal is that nothing imported becomes live without a human decision).
 - **Reasoning**: A `status` column reuses every existing `kb_entries` code path (the model, `get_scoped`, tenant scoping, the embedding/chunking pipeline) — the only genuinely new logic is the one-line retrieval filter and two small new endpoints (publish/reject), which is the appropriate size for "close a safety gap," not "build the full future ingestion pipeline."
 - **Trade-offs**: A draft that's edited before publishing goes through the same `update_entry()`/re-embed path as any other entry — there's no separate "edit before approving" review affordance beyond the existing `PATCH /kb/{id}`, which already works on drafts unchanged (no code needed there). PDF ingestion, multi-page crawl, and confidence flagging remain unbuilt — `ONBOARDING_ARCHITECTURE.md` was updated to say so explicitly rather than silently drifting further from what's actually shipped.
-- **Status**: Accepted — backend complete and tested, frontend complete and tested. Not yet merged — held as an open PR per the sprint's "do not merge automatically" instruction.
+- **Status**: Accepted — backend complete and tested, frontend complete and tested. Merged as part of Sprint 69's production launch.
 - **Review Date**: Revisit if PDF ingestion or multi-page website crawl is ever built — confirm the shared `import_batch_id` grouping still makes sense at that scale, or whether the fuller `kb_entry_drafts` design finally earns its cost.
