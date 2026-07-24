@@ -27,10 +27,12 @@ from sqlalchemy.orm import Session
 
 from app.ai.embeddings import EmbeddingProvider, get_embedding_provider
 from app.ai.knowledge_base import (
+    KbEntryAlreadyPublishedError,
     delete_entry,
     index_entry,
     list_drafts,
     publish_entry,
+    reject_entry,
     update_entry,
 )
 from app.ai.web_import import WebImportError, fetch_page
@@ -221,7 +223,10 @@ def reject(
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> None:
-    deleted = delete_entry(db, principal.business_id, entry_id)
+    try:
+        deleted = reject_entry(db, principal.business_id, entry_id)
+    except KbEntryAlreadyPublishedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     db.commit()

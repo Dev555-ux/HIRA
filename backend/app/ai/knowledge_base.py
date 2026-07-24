@@ -106,14 +106,35 @@ def update_entry(
 
 
 def delete_entry(db: Session, business_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
-    """Delete a KB entry, tenant-scoped. Returns False if it doesn't exist for this business.
+    """Delete a KB entry, tenant-scoped. Returns False if it doesn't exist for this business."""
+    entry = get_scoped(db, KbEntry, business_id, entry_id)
+    if entry is None:
+        return False
+    db.delete(entry)
+    db.flush()
+    return True
 
-    Also used to reject a draft — there's no value in keeping rejected scrape
-    noise around, so a reject is just a delete of a still-draft row.
+
+class KbEntryAlreadyPublishedError(RuntimeError):
+    """Raised by `reject_entry` when the targeted entry exists but is no
+    longer a draft — e.g. a stale tab's Reject button firing after another
+    tab already published the same entry. Rejecting only ever removes
+    still-unreviewed scrape noise; once an entry is live, deleting it is the
+    ordinary (confirmed) DELETE /kb/{id}, not a same-click-as-reject one."""
+
+
+def reject_entry(db: Session, business_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
+    """Delete a still-draft entry, tenant-scoped — the reject action.
+
+    Returns False if it doesn't exist for this business. Raises
+    KbEntryAlreadyPublishedError (without deleting) if it exists but has
+    already been published.
     """
     entry = get_scoped(db, KbEntry, business_id, entry_id)
     if entry is None:
         return False
+    if entry.status != "draft":
+        raise KbEntryAlreadyPublishedError("This entry has already been published")
     db.delete(entry)
     db.flush()
     return True
