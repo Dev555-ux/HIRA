@@ -12,11 +12,24 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Kept as one constant so the production guard below (_reject_insecure_
 # production_secrets) can't silently drift out of sync with the actual
 # dev defaults declared on the fields further down.
-_INSECURE_WHATSAPP_DEFAULTS = {
+_INSECURE_PRODUCTION_DEFAULTS = {
     "whatsapp_verify_token": "dev-verify-token",
     "whatsapp_app_secret": "dev-app-secret",
     "whatsapp_access_token": "dev-access-token",
+    # Sprint 69.5: "mock" returns a canned reply to every real customer with
+    # no error, no crash, and nothing in Sentry — the most severe silent
+    # misconfiguration this guard can catch.
+    "llm_provider": "mock",
 }
+
+# Sprint 69.5: required in production but default to "" so local dev/tests
+# don't need them. CLERK_JWKS_URL/CLERK_ISSUER: no real dashboard
+# authentication is possible without them (app/auth/dependencies.py).
+# CALENDAR_ENCRYPTION_KEY: the Fernet key encrypting both stored Calendar
+# refresh tokens AND, since Sprint 69/DEC-038, every business's WhatsApp
+# credentials — required the moment self-serve WhatsApp connect exists on
+# this deployment, not only when a specific business is using Calendar.
+_REQUIRED_IN_PRODUCTION = ("clerk_jwks_url", "clerk_issuer", "calendar_encryption_key")
 
 
 class Settings(BaseSettings):
@@ -150,20 +163,43 @@ class Settings(BaseSettings):
         `dev-mock-user` with the literal token `dev-mock-token`. Checked here
         rather than as a separate validator so both "insecure with
         ENVIRONMENT=production" checks fail together in one pass.
+
+        Sprint 69.5 (production hardening, following the Sprint 69 Operations
+        Readiness Audit): three more misconfigurations that previously booted
+        successfully and then failed silently or confusingly at runtime
+        instead of at startup — `LLM_PROVIDER=mock` (every real customer gets
+        a canned reply, no error anywhere), and a missing `CLERK_JWKS_URL`/
+        `CLERK_ISSUER`/`CALENDAR_ENCRYPTION_KEY` (dashboard login and/or
+        WhatsApp self-serve connect fail per-request with no indication of
+        why). All fail fast here now, same pattern as the checks above.
         """
         if self.environment != "production":
             return self
         insecure = [
             field
-            for field, default in _INSECURE_WHATSAPP_DEFAULTS.items()
+            for field, default in _INSECURE_PRODUCTION_DEFAULTS.items()
             if getattr(self, field) == default
         ]
         if insecure:
             names = ", ".join(f.upper() for f in insecure)
             raise ValueError(
-                f"{names} still set to its insecure default with ENVIRONMENT=production. "
-                "Set real values in the Railway service's Variables tab — see "
-                "backend/.env.example and documentation/WHATSAPP_INTEGRATION.md."
+                f"{names} still set to its insecure/placeholder default with "
+                "ENVIRONMENT=production. Set real values in the Railway service's "
+                "Variables tab — see backend/.env.example and "
+                "documentation/WHATSAPP_INTEGRATION.md."
+            )
+        missing = [field for field in _REQUIRED_IN_PRODUCTION if not getattr(self, field)]
+        if missing:
+            names = ", ".join(f.upper() for f in missing)
+            raise ValueError(
+                f"{names} required with ENVIRONMENT=production but not set. "
+                "CLERK_JWKS_URL/CLERK_ISSUER are required for real dashboard "
+                "authentication (Clerk). CALENDAR_ENCRYPTION_KEY is required for "
+                "both Google Calendar OAuth token encryption AND per-business "
+                "WhatsApp credential encryption (Sprint 69) — it's needed the moment "
+                "self-serve WhatsApp connect exists on this deployment, not only when "
+                "Calendar is in use. Set real values in the Railway service's "
+                "Variables tab — see backend/.env.example and documentation/DEPLOYMENT.md."
             )
         if self.allow_mock_auth:
             raise ValueError(
