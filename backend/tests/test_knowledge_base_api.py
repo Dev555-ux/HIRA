@@ -219,3 +219,176 @@ def test_cannot_delete_another_businesss_entry(db_session):
     assert resp.status_code == 404
     assert db_session.get(KbEntry, entry_b.id) is not None
     app.dependency_overrides.clear()
+
+
+def test_list_excludes_drafts(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    db_session.add(KbEntry(business_id=biz.id, title="Live", content="Live content"))
+    db_session.add(
+        KbEntry(business_id=biz.id, title="Draft", content="Draft content", status="draft")
+    )
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/kb", headers=_auth())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["data"]) == 1
+    assert body["data"][0]["title"] == "Live"
+    assert body["meta"]["total"] == 1
+    app.dependency_overrides.clear()
+
+
+def test_get_drafts_groups_by_import_batch(db_session):
+    import uuid
+
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    batch_id = uuid.uuid4()
+    db_session.add(
+        KbEntry(
+            business_id=biz.id,
+            title="Hours",
+            content="Chunk 1",
+            status="draft",
+            import_batch_id=batch_id,
+        )
+    )
+    db_session.add(
+        KbEntry(
+            business_id=biz.id,
+            title="Hours",
+            content="Chunk 2",
+            status="draft",
+            import_batch_id=batch_id,
+        )
+    )
+    db_session.add(KbEntry(business_id=biz.id, title="Live", content="Live content"))
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/kb/drafts", headers=_auth())
+
+    assert resp.status_code == 200
+    batches = resp.json()["data"]
+    assert len(batches) == 1
+    assert batches[0]["import_batch_id"] == str(batch_id)
+    assert len(batches[0]["entries"]) == 2
+    app.dependency_overrides.clear()
+
+
+def test_get_drafts_is_tenant_scoped(db_session):
+    biz_a, _ = _seed_business(db_session, "A", "user_a")
+    biz_b, _ = _seed_business(db_session, "B", "user_b")
+    db_session.add(KbEntry(business_id=biz_b.id, title="B draft", content="x", status="draft"))
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/kb/drafts", headers=_auth())
+
+    assert resp.status_code == 200
+    assert resp.json()["data"] == []
+    app.dependency_overrides.clear()
+
+
+def test_publish_moves_a_draft_live(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    entry = KbEntry(business_id=biz.id, title="Draft", content="x", status="draft")
+    db_session.add(entry)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.post(f"/api/v1/kb/{entry.id}/publish", headers=_auth())
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["status"] == "published"
+    db_session.refresh(entry)
+    assert entry.status == "published"
+    app.dependency_overrides.clear()
+
+
+def test_publish_another_businesss_draft_404s(db_session):
+    biz_a, _ = _seed_business(db_session, "A", "user_a")
+    biz_b, _ = _seed_business(db_session, "B", "user_b")
+    entry_b = KbEntry(business_id=biz_b.id, title="Draft", content="x", status="draft")
+    db_session.add(entry_b)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.post(f"/api/v1/kb/{entry_b.id}/publish", headers=_auth())
+
+    assert resp.status_code == 404
+    db_session.refresh(entry_b)
+    assert entry_b.status == "draft"
+    app.dependency_overrides.clear()
+
+
+def test_reject_deletes_the_draft(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    entry = KbEntry(business_id=biz.id, title="Draft", content="x", status="draft")
+    db_session.add(entry)
+    db_session.commit()
+    entry_id = entry.id
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.post(f"/api/v1/kb/{entry_id}/reject", headers=_auth())
+
+    assert resp.status_code == 204
+    assert db_session.get(KbEntry, entry_id) is None
+    app.dependency_overrides.clear()
+
+
+def test_reject_another_businesss_draft_404s(db_session):
+    biz_a, _ = _seed_business(db_session, "A", "user_a")
+    biz_b, _ = _seed_business(db_session, "B", "user_b")
+    entry_b = KbEntry(business_id=biz_b.id, title="Draft", content="x", status="draft")
+    db_session.add(entry_b)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.post(f"/api/v1/kb/{entry_b.id}/reject", headers=_auth())
+
+    assert resp.status_code == 404
+    assert db_session.get(KbEntry, entry_b.id) is not None
+    app.dependency_overrides.clear()
+
+
+def test_reject_an_already_published_entry_409s_without_deleting_it(db_session):
+    """Stale-tab/concurrent scenario, over the real HTTP path: one request
+    publishes a draft, then a second (stale) request tries to reject the same
+    entry_id. It must not delete the now-live entry (release-review H-1)."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    entry = KbEntry(business_id=biz.id, title="Draft", content="x", status="draft")
+    db_session.add(entry)
+    db_session.commit()
+    entry_id = entry.id
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    publish_resp = client.post(f"/api/v1/kb/{entry_id}/publish", headers=_auth())
+    assert publish_resp.status_code == 200
+
+    reject_resp = client.post(f"/api/v1/kb/{entry_id}/reject", headers=_auth())
+
+    assert reject_resp.status_code == 409
+    survivor = db_session.get(KbEntry, entry_id)
+    assert survivor is not None
+    assert survivor.status == "published"
+    app.dependency_overrides.clear()
+
+
+def test_reject_another_businesss_published_entry_404s_not_409s(db_session):
+    """Tenant isolation must win over the status check: rejecting another
+    business's already-published entry looks identical to rejecting a
+    nonexistent one (404), never revealing via a 409 that it exists."""
+    biz_a, _ = _seed_business(db_session, "A", "user_a")
+    biz_b, _ = _seed_business(db_session, "B", "user_b")
+    entry_b = KbEntry(business_id=biz_b.id, title="Live", content="x", status="published")
+    db_session.add(entry_b)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.post(f"/api/v1/kb/{entry_b.id}/reject", headers=_auth())
+
+    assert resp.status_code == 404
+    assert db_session.get(KbEntry, entry_b.id) is not None
+    app.dependency_overrides.clear()

@@ -168,6 +168,15 @@ class KbEntry(Base):
     # 384 = BAAI/bge-small-en-v1.5 (local embeddings). Changing provider to a
     # different dimension requires a migration. See app/ai/embeddings.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
+    # Draft -> Review -> Approve -> Publish (Sprint 69, DEC-039). Manually
+    # typed facts are published immediately (the owner already reviewed their
+    # own text by definition); only website import creates "draft" rows.
+    # Retrieval (app/ai/knowledge_base.py) filters to "published" only — a
+    # draft must never ground a live customer-facing answer.
+    status: Mapped[str] = mapped_column(String(20), default="published", server_default="published")
+    # Shared by every chunk from one website import, so a whole scrape can be
+    # reviewed/approved together. NULL for manually-typed entries.
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
