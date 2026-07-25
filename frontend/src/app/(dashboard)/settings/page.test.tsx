@@ -32,6 +32,7 @@ vi.mock("@/lib/api", () => ({
     getWhatsAppStatus: vi.fn(),
     connectWhatsApp: vi.fn(),
     disconnectWhatsApp: vi.fn(),
+    getWhatsAppWebhookConfig: vi.fn(),
   },
 }));
 
@@ -96,6 +97,18 @@ describe("SettingsPage", () => {
       status: "not_connected",
       phone_number_id_masked: null,
       connected_at: null,
+      last_inbound_at: null,
+    });
+    vi.mocked(api.getWhatsAppWebhookConfig).mockResolvedValue({
+      callback_url: "https://hira-production.up.railway.app/webhooks/whatsapp",
+      verify_token: "test-verify-token",
+    });
+    if (!navigator.clipboard) {
+      Object.defineProperty(navigator, "clipboard", { value: {}, configurable: true });
+    }
+    Object.defineProperty(navigator.clipboard, "writeText", {
+      value: vi.fn().mockResolvedValue(undefined),
+      configurable: true,
     });
   });
 
@@ -197,12 +210,13 @@ describe("SettingsPage", () => {
       expect(screen.getByRole("button", { name: "Connect WhatsApp" })).toBeInTheDocument();
     });
 
-    it("shows the reward, masked number, and a test-message CTA once connected, not a dead badge", async () => {
+    it("shows the reward, masked number, and real connection health once connected, not a dead badge", async () => {
       vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
         connected: true,
         status: "connected",
         phone_number_id_masked: "••••7890",
         connected_at: "2026-07-22T00:00:00Z",
+        last_inbound_at: null,
       });
       renderWithProviders();
 
@@ -210,11 +224,26 @@ describe("SettingsPage", () => {
         await screen.findByText(/customers can message your business through WhatsApp/i),
       ).toBeInTheDocument();
       expect(screen.getByText("••••7890")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Send a test message" })).toHaveAttribute(
-        "href",
-        "/demo",
-      );
+      // Demo Chat is no longer presented as proof of WhatsApp connectivity
+      // (Sprint 71, Task B) — no more "Send a test message" link to /demo.
+      expect(screen.queryByRole("link", { name: "Send a test message" })).not.toBeInTheDocument();
+      expect(screen.getByText("No messages received yet")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Check connection" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /disconnect/i })).toBeInTheDocument();
+    });
+
+    it("shows the real last-inbound timestamp once a real message has arrived", async () => {
+      vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
+        connected: true,
+        status: "connected",
+        phone_number_id_masked: "••••7890",
+        connected_at: "2026-07-22T00:00:00Z",
+        last_inbound_at: new Date().toISOString(),
+      });
+      renderWithProviders();
+
+      expect(await screen.findByText(/last message/i)).toBeInTheDocument();
+      expect(screen.queryByText("No messages received yet")).not.toBeInTheDocument();
     });
 
     it("shows business-language status, not the raw backend enum", async () => {
@@ -223,6 +252,7 @@ describe("SettingsPage", () => {
         status: "pending_verification",
         phone_number_id_masked: null,
         connected_at: null,
+        last_inbound_at: null,
       });
       renderWithProviders();
 
@@ -239,6 +269,7 @@ describe("SettingsPage", () => {
           status: "connected",
           phone_number_id_masked: "••••7890",
           connected_at: "2026-07-22T00:00:00Z",
+          last_inbound_at: null,
         });
         renderWithProviders();
 
@@ -252,13 +283,14 @@ describe("SettingsPage", () => {
     });
 
     describe("connection wizard", () => {
-      it("walks from why-connect to the real form, and submits real credentials", async () => {
+      it("walks from why-connect to the real form, submits real credentials, and lands on webhook setup", async () => {
         const user = userEvent.setup();
         vi.mocked(api.connectWhatsApp).mockResolvedValue({
           connected: true,
           status: "connected",
           phone_number_id_masked: "••••7890",
           connected_at: "2026-07-22T00:00:00Z",
+          last_inbound_at: null,
         });
         renderWithProviders();
 
@@ -290,8 +322,90 @@ describe("SettingsPage", () => {
             app_secret: "real-app-secret",
           }),
         );
-        expect(await screen.findByText("WhatsApp connected")).toBeInTheDocument();
-        expect(screen.queryByRole("heading", { name: /connect whatsapp/i })).not.toBeInTheDocument();
+
+        // Task A: credentials verifying isn't the end — the wizard now shows
+        // the webhook values instead of a premature "connected" toast.
+        expect(await screen.findByRole("heading", { name: "Set up your webhook" })).toBeInTheDocument();
+        expect(screen.queryByText("WhatsApp connected")).not.toBeInTheDocument();
+        expect(
+          screen.getByDisplayValue("https://hira-production.up.railway.app/webhooks/whatsapp"),
+        ).toBeInTheDocument();
+        expect(screen.getByDisplayValue("test-verify-token")).toBeInTheDocument();
+        expect(screen.getByText(/subscribe to the "messages" field/i)).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Copy Callback URL" }));
+        expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+          "https://hira-production.up.railway.app/webhooks/whatsapp",
+        );
+        expect(await screen.findByText("Copied to clipboard")).toBeInTheDocument();
+
+        // Task B: advancing moves to the real verification step, not a close.
+        await user.click(screen.getByRole("button", { name: "Next: Verify connection" }));
+        expect(await screen.findByRole("heading", { name: "Verify your connection" })).toBeInTheDocument();
+        expect(screen.getByText(/waiting for your first whatsapp message/i)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "I'll do this later" })).toBeInTheDocument();
+      });
+
+      it("shows a real success state, not a simulated one, once an inbound message is detected", async () => {
+        // Entered via "Check connection" on an already-connected business —
+        // the wizard's verify step must never infer success from
+        // `connected`/stored credentials alone, only from last_inbound_at.
+        const user = userEvent.setup();
+        vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
+          connected: true,
+          status: "connected",
+          phone_number_id_masked: "••••7890",
+          connected_at: "2026-07-22T00:00:00Z",
+          last_inbound_at: "2026-07-25T12:00:00Z",
+        });
+        renderWithProviders();
+
+        await user.click(await screen.findByRole("button", { name: "Check connection" }));
+
+        expect(await screen.findByRole("heading", { name: "Verify your connection" })).toBeInTheDocument();
+        expect(screen.getByText("✅ WhatsApp Connected")).toBeInTheDocument();
+        expect(screen.getByText(/last message received/i)).toBeInTheDocument();
+        expect(screen.getByText("Webhook: Healthy")).toBeInTheDocument();
+        expect(screen.queryByText(/waiting for your first whatsapp message/i)).not.toBeInTheDocument();
+        expect(await screen.findByText("WhatsApp connected")).toBeInTheDocument(); // success toast
+
+        await user.click(screen.getByRole("button", { name: "Done" }));
+        expect(screen.queryByRole("heading", { name: "Verify your connection" })).not.toBeInTheDocument();
+      });
+
+      it("shows a retryable error instead of a stuck loading state when webhook config fails to load", async () => {
+        // Found during Sprint 71 release verification: without an isError
+        // branch, a failed fetch left two skeletons showing forever.
+        const user = userEvent.setup();
+        vi.mocked(api.connectWhatsApp).mockResolvedValue({
+          connected: true,
+          status: "connected",
+          phone_number_id_masked: "••••7890",
+          connected_at: "2026-07-22T00:00:00Z",
+          last_inbound_at: null,
+        });
+        vi.mocked(api.getWhatsAppWebhookConfig).mockRejectedValue(new Error("Network error"));
+        renderWithProviders();
+
+        await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
+        await user.click(screen.getByRole("button", { name: "I have these ready" }));
+        await user.type(screen.getByLabelText("Phone Number ID"), "9876543210");
+        await user.type(screen.getByLabelText("WhatsApp Business Account ID"), "waba-123");
+        await user.type(screen.getByLabelText("System User access token"), "real-access-token");
+        await user.type(screen.getByLabelText("App Secret"), "real-app-secret");
+        await user.click(screen.getByRole("button", { name: "Connect" }));
+
+        expect(await screen.findByText("Couldn't load your webhook details")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Next: Verify connection" })).not.toBeInTheDocument();
+
+        vi.mocked(api.getWhatsAppWebhookConfig).mockResolvedValue({
+          callback_url: "https://hira-production.up.railway.app/webhooks/whatsapp",
+          verify_token: "test-verify-token",
+        });
+        await user.click(screen.getByRole("button", { name: "Retry" }));
+
+        expect(await screen.findByRole("heading", { name: "Set up your webhook" })).toBeInTheDocument();
+        expect(screen.getByDisplayValue("test-verify-token")).toBeInTheDocument();
       });
 
       it("shows the specific rejection reason from the backend, without closing the form", async () => {

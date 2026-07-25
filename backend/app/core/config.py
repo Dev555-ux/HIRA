@@ -114,6 +114,13 @@ class Settings(BaseSettings):
     # production, or that origin is CORS-blocked.
     frontend_url: str = "http://localhost:3000"
 
+    # Railway auto-injects this for any service with a public domain — read
+    # here (not a new required var, nothing to configure) so the WhatsApp
+    # connect wizard can show the real Callback URL instead of a hardcoded
+    # one (Sprint 71, Task A). Empty in local dev; app/api/whatsapp.py falls
+    # back to the incoming request's own host in that case.
+    railway_public_domain: str = ""
+
     # Error monitoring (Sprint 52B, Task 3). Empty by default — the Sentry
     # SDK's own public API (capture_exception, set_tag, etc.) is a documented
     # no-op when sentry_sdk.init() was never called, so nothing needs an

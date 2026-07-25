@@ -6,6 +6,7 @@ import {
   BookOpen,
   Building2,
   CalendarClock,
+  Copy,
   ExternalLink,
   Globe,
   MessageCircle,
@@ -39,11 +40,22 @@ import { useCalendarStatus } from "@/hooks/use-calendar";
 import { useKbEntries } from "@/hooks/use-knowledge-base";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
-import { useConnectWhatsApp, useDisconnectWhatsApp, useWhatsAppStatus } from "@/hooks/use-whatsapp";
+import {
+  useConnectWhatsApp,
+  useDisconnectWhatsApp,
+  useWhatsAppStatus,
+  useWhatsAppWebhookConfig,
+} from "@/hooks/use-whatsapp";
 import { ApiError } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
 import type { AiReplyMode, Business } from "@/lib/types";
-import { cn, describeWhatsAppConnection } from "@/lib/utils";
+import { cn, describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
+
+// Verify-step polling (Sprint 71, Task B) — faster than the app-wide
+// POLL_INTERVAL_MS (15s, meant for passive background dashboard refresh)
+// because this is an active, attended waiting state: the owner is staring
+// at the dialog after sending themselves a WhatsApp message.
+const VERIFY_POLL_INTERVAL_MS = 3_000;
 
 // Shared, restrained hover treatment (Sprint 46's dashboard pattern, reused
 // here rather than forked into a shared component — it's a plain Tailwind
@@ -58,12 +70,18 @@ export default function SettingsPage() {
   const { data: calendarStatus } = useCalendarStatus();
   const { data: whatsappStatus } = useWhatsAppStatus();
   const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false);
+  const [wizardStartStep, setWizardStartStep] = useState<WhatsAppWizardStep>("intro");
   const [confirmDisconnectWhatsApp, setConfirmDisconnectWhatsApp] = useState(false);
   const disconnectWhatsApp = useDisconnectWhatsApp();
   const { toast } = useToast();
   const whatsapp = describeWhatsAppConnection(whatsappStatus?.status);
   const business = onboarding?.business;
   const whatsappConnected = whatsappStatus?.connected ?? false;
+
+  function openWhatsAppWizard(step: WhatsAppWizardStep) {
+    setWizardStartStep(step);
+    setIsWhatsAppWizardOpen(true);
+  }
 
   async function handleDisconnectWhatsApp() {
     try {
@@ -82,7 +100,7 @@ export default function SettingsPage() {
   return (
     <>
       <Suspense fallback={null}>
-        <WhatsAppWizardAutoOpen onOpen={() => setIsWhatsAppWizardOpen(true)} />
+        <WhatsAppWizardAutoOpen onOpen={() => openWhatsAppWizard("intro")} />
       </Suspense>
       <PageHeader
         title="Settings"
@@ -215,9 +233,28 @@ export default function SettingsPage() {
                   — customers can message your business through WhatsApp right now, and HIRA
                   replies from that same number automatically.
                 </p>
+                <Row
+                  label="Connection health"
+                  value={
+                    // Real signal (last actual inbound Message), never
+                    // inferred from stored credentials — Demo Chat is no
+                    // longer presented as proof this works (Sprint 71, Task B).
+                    whatsappStatus?.last_inbound_at ? (
+                      <span className="text-foreground">
+                        Last message {formatRelativeTime(whatsappStatus.last_inbound_at)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">No messages received yet</span>
+                    )
+                  }
+                />
                 <div className="flex flex-wrap gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/demo">Send a test message</Link>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openWhatsAppWizard("verify")}
+                  >
+                    Check connection
                   </Button>
                   <Button
                     size="sm"
@@ -236,7 +273,7 @@ export default function SettingsPage() {
                     ? "We're finishing your WhatsApp connection. If we need anything else from you, we'll ask for it here."
                     : "Connecting your WhatsApp Business number is what lets HIRA read customer messages and reply from your business's own number — customers keep messaging the number they already know."}
                 </p>
-                <Button size="sm" variant="outline" onClick={() => setIsWhatsAppWizardOpen(true)}>
+                <Button size="sm" variant="outline" onClick={() => openWhatsAppWizard("intro")}>
                   <ExternalLink />{" "}
                   {whatsapp.label === "Needs attention" ? "Continue setup" : "Connect WhatsApp"}
                 </Button>
@@ -259,6 +296,7 @@ export default function SettingsPage() {
           open={isWhatsAppWizardOpen}
           onOpenChange={setIsWhatsAppWizardOpen}
           businessName={business?.name ?? "your business"}
+          startStep={wizardStartStep}
         />
       </Section>
 
@@ -555,7 +593,7 @@ function WhatsAppWizardAutoOpen({ onOpen }: { onOpen: () => void }) {
   return null;
 }
 
-type WhatsAppWizardStep = "intro" | "form";
+type WhatsAppWizardStep = "intro" | "form" | "webhook" | "verify";
 
 /** Real self-serve connection (Sprint 69, ONBOARD-D "guided-manual v1") —
  * no Embedded Signup (that needs Meta's Tech Provider approval, not yet
@@ -565,24 +603,41 @@ type WhatsAppWizardStep = "intro" | "form";
  * values here. HIRA verifies them against Meta's API before storing
  * anything (POST /api/v1/whatsapp/connect), so a typo'd token fails
  * immediately with a specific reason instead of on the first real customer
- * message. Submitting again (reconnect) just replaces what's stored. */
+ * message. Submitting again (reconnect) just replaces what's stored.
+ *
+ * Sprint 71: credential verification alone doesn't prove real messages can
+ * arrive — the business's own Meta App also needs the Callback URL/Verify
+ * Token pasted into its webhook config (DEC-038), a step Meta doesn't expose
+ * any way to automate here. So a successful connect now moves to a
+ * "webhook" step (Task A) showing those exact values, then a "verify" step
+ * (Task B) that polls for a real inbound message instead of just trusting
+ * the stored credentials. */
 function WhatsAppConnectWizard({
   open,
   onOpenChange,
   businessName,
+  startStep,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   businessName: string;
+  startStep: WhatsAppWizardStep;
 }) {
-  const [step, setStep] = useState<WhatsAppWizardStep>("intro");
+  const [step, setStep] = useState<WhatsAppWizardStep>(startStep);
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [wabaId, setWabaId] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [appSecret, setAppSecret] = useState("");
   const [error, setError] = useState<string | null>(null);
   const connectWhatsApp = useConnectWhatsApp();
-  const { toast } = useToast();
+
+  // The dialog stays mounted across open/close (only its content is
+  // conditionally rendered below), so re-opening needs an explicit sync to
+  // whatever step the caller asked for — e.g. Settings' "Check connection"
+  // button reopens straight at "verify", not back at "intro".
+  useEffect(() => {
+    if (open) setStep(startStep);
+  }, [open, startStep]);
 
   function close(open: boolean) {
     if (connectWhatsApp.isPending) return;
@@ -606,8 +661,9 @@ function WhatsAppConnectWizard({
         access_token: accessToken.trim(),
         app_secret: appSecret.trim(),
       });
-      toast({ title: "WhatsApp connected", variant: "success" });
-      close(false);
+      // Not "connected" yet as far as the owner should believe — the
+      // webhook and verify steps below are what actually prove it (Task B).
+      setStep("webhook");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong — please try again.");
     }
@@ -726,6 +782,168 @@ function WhatsAppConnectWizard({
           </DialogFooter>
         </DialogContent>
       )}
+      {open && step === "webhook" && (
+        <DialogContent>
+          <WebhookConfigStep onNext={() => setStep("verify")} />
+        </DialogContent>
+      )}
+      {open && step === "verify" && (
+        <DialogContent>
+          <VerifyConnectionStep onDone={() => close(false)} />
+        </DialogContent>
+      )}
     </Dialog>
+  );
+}
+
+// Sprint 71, Task A: the values every business must paste into their own
+// Meta App (App → WhatsApp → Configuration → Webhooks) — shown directly
+// instead of only pointed at developer docs. Both come from the backend
+// (GET /api/v1/whatsapp/webhook-config): the callback URL is derived from
+// real deployment config (RAILWAY_PUBLIC_DOMAIN), never hardcoded here, and
+// the verify token is intentionally shared/non-secret (DEC-038).
+function WebhookConfigStep({ onNext }: { onNext: () => void }) {
+  const { data, isLoading, isError, refetch } = useWhatsAppWebhookConfig();
+  const { toast } = useToast();
+
+  function copy(value: string) {
+    void navigator.clipboard.writeText(value);
+    toast({ title: "Copied to clipboard" });
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Set up your webhook</DialogTitle>
+        <DialogDescription>
+          One more step in your Meta App before real messages can reach HIRA.
+        </DialogDescription>
+      </DialogHeader>
+      {isError ? (
+        // Found during Sprint 71 release verification: without this branch,
+        // a failed fetch left the loading skeleton showing forever with no
+        // way out — the wizard's only genuine "stuck" state.
+        <EmptyState
+          icon={AlertTriangle}
+          title="Couldn't load your webhook details"
+          description="Something went wrong — please try again."
+          action={
+            <Button size="sm" onClick={() => refetch()}>
+              Retry
+            </Button>
+          }
+          className="border-0 py-6"
+        />
+      ) : (
+        <>
+          <div className="space-y-3">
+            {isLoading || !data ? (
+              <>
+                <Skeleton className="h-14 w-full" />
+                <Skeleton className="h-14 w-full" />
+              </>
+            ) : (
+              <>
+                <CopyableField label="Callback URL" value={data.callback_url} onCopy={copy} />
+                <CopyableField label="Verify Token" value={data.verify_token} onCopy={copy} />
+              </>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Paste these values into your Meta App:
+            <br />
+            Meta App → WhatsApp → Configuration → Webhooks
+            <br />
+            Then subscribe to the &quot;messages&quot; field.
+          </p>
+        </>
+      )}
+      {!isError && (
+        <DialogFooter>
+          <Button onClick={onNext} disabled={isLoading || !data}>
+            Next: Verify connection
+          </Button>
+        </DialogFooter>
+      )}
+    </>
+  );
+}
+
+function CopyableField({
+  label,
+  value,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  onCopy: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <span className="text-sm font-medium">{label}</span>
+      <div className="flex items-center gap-2">
+        <Input readOnly value={value} onFocus={(e) => e.target.select()} className="font-mono text-xs" />
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          aria-label={`Copy ${label}`}
+          onClick={() => onCopy(value)}
+        >
+          <Copy />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Sprint 71, Task B: replaces the old "Send a test message" link to Demo
+// Chat, which proved nothing about the real WhatsApp connection (Demo Chat
+// works identically whether or not the webhook is configured). This polls
+// the one real production signal — an actual persisted inbound Message
+// (GET /api/v1/whatsapp/status's last_inbound_at) — and never simulates or
+// infers success from stored credentials alone.
+function VerifyConnectionStep({ onDone }: { onDone: () => void }) {
+  const { data } = useWhatsAppStatus({ refetchInterval: VERIFY_POLL_INTERVAL_MS });
+  const { toast } = useToast();
+  const [announced, setAnnounced] = useState(false);
+  const verified = Boolean(data?.last_inbound_at);
+
+  useEffect(() => {
+    if (verified && !announced) {
+      toast({ title: "WhatsApp connected", variant: "success" });
+      setAnnounced(true);
+    }
+  }, [verified, announced, toast]);
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Verify your connection</DialogTitle>
+        <DialogDescription>
+          Send a WhatsApp message from your phone to your connected business number.
+        </DialogDescription>
+      </DialogHeader>
+      <p className="text-sm text-muted-foreground">
+        For example: <span className="font-medium text-foreground">&quot;Hello&quot;</span> or{" "}
+        <span className="font-medium text-foreground">&quot;Testing HIRA&quot;</span>
+      </p>
+      {verified ? (
+        <div className="space-y-1 rounded-md bg-success/10 p-3 text-sm" role="status">
+          <p className="font-medium text-success">✅ WhatsApp Connected</p>
+          <p className="text-muted-foreground">
+            Last message received: {formatRelativeTime(data!.last_inbound_at!)}
+          </p>
+          <p className="text-muted-foreground">Webhook: Healthy</p>
+        </div>
+      ) : (
+        <div className="rounded-md bg-muted p-3 text-sm" role="status">
+          ⏳ Waiting for your first WhatsApp message…
+        </div>
+      )}
+      <DialogFooter>
+        <Button onClick={onDone}>{verified ? "Done" : "I'll do this later"}</Button>
+      </DialogFooter>
+    </>
   );
 }

@@ -55,6 +55,12 @@ Against the founder's stated optimization targets:
 
 ## Operational integration (implemented)
 
+### Self-serve connect (Sprint 69 guided-manual v1, hardened Sprint 71)
+
+Everything below this point (env vars, Meta app setup, curl testing) describes the underlying platform mechanics. In production, an individual business does **not** set any of this via `.env`/Railway variables — each business brings its own Meta App and connects through the dashboard's Settings → WhatsApp wizard (`POST /api/v1/whatsapp/connect`), per DEC-038.
+
+That wizard now also solves the step this doc's own instructions below leave implicit: after credentials verify, it shows a **Webhook Configuration** step with the exact Callback URL and Verify Token to paste into the business's own Meta App (App → WhatsApp → Configuration → Webhooks → subscribe to `messages`) — sourced from `GET /api/v1/whatsapp/webhook-config`, not hardcoded. It then verifies the connection for real: a **verify** step polls `GET /api/v1/whatsapp/status`'s `last_inbound_at` until an actual inbound message has been processed, rather than treating "credentials verified" as proof the webhook is receiving traffic. See DEC-041.
+
 ### The autonomous loop (no manual intervention)
 
 ```

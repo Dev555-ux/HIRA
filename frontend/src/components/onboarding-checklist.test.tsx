@@ -95,7 +95,7 @@ describe("OnboardingChecklist", () => {
     );
   });
 
-  it("shows Enable AI once prerequisites are met, and it's a real toast, not a fake success", async () => {
+  it("shows Enable AI once prerequisites are met, and it's a real toast with a concrete process and timeline, not vague or a fake success", async () => {
     const user = userEvent.setup();
     vi.mocked(api.listKbEntries).mockResolvedValue([
       { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
@@ -105,7 +105,23 @@ describe("OnboardingChecklist", () => {
     const enableButton = await screen.findByRole("button", { name: "Enable AI" });
     await user.click(enableButton);
 
-    expect(await screen.findByText("We'll take it from here")).toBeInTheDocument();
+    expect(await screen.findByText("Setup looks complete")).toBeInTheDocument();
+    expect(screen.queryByText(/reach out and we'll enable/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/within 1 business day/i)).toBeInTheDocument();
+  });
+
+  it("names the real contact email the owner already gave us, instead of an invented support channel", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.listKbEntries).mockResolvedValue([
+      { id: "1", title: "Hours", content: "9-5", status: "published", import_batch_id: null, created_at: "", updated_at: "" },
+    ]);
+    renderChecklist(
+      business({ whatsapp_connection_status: "connected", contact_email: "owner@acmeclinic.test" }),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Enable AI" }));
+
+    expect(await screen.findByText(/owner@acmeclinic\.test/)).toBeInTheDocument();
   });
 
   it("marks WhatsApp Connection Connected and Go Live Live from real business fields", async () => {

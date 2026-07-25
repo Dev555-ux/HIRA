@@ -14,15 +14,16 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_current_principal
+from app.core.config import settings
 from app.db.session import get_db
-from app.models import Business
+from app.models import Business, Message
 from app.whatsapp import credentials as whatsapp_credentials
 from app.whatsapp.errors import WhatsAppCredentialInvalidError, WhatsAppNotConfiguredError
 
@@ -56,13 +57,45 @@ def _mask(phone_number_id: str | None) -> str | None:
     return f"••••{phone_number_id[-4:]}"
 
 
-def _serialize_status(business: Business, stored) -> dict:
+def _latest_inbound_at(db: Session, business_id, *, since) -> str | None:
+    """The real production signal Task B needs: the most recent *inbound*
+    Message actually persisted for this business, which only exists once
+    `app/webhooks/whatsapp.py::_persist_inbound` has processed a real,
+    signature-verified webhook delivery. Deliberately not inferred from
+    stored credentials or `whatsapp_connection_status` — those only prove
+    the token was valid, not that a message has ever arrived.
+
+    `since` (the current credential's `connected_at`) scopes this to *this*
+    connection: without it, a business that disconnects and reconnects (e.g.
+    swapping to a different number) would see the wizard's verify step
+    immediately report success using a message from the *previous*
+    connection — found live against real local dev data during Sprint 71
+    release verification, not caught by unit tests seeded with fresh rows."""
+    query = select(Message.created_at).where(
+        Message.business_id == business_id, Message.direction == "inbound"
+    )
+    if since is not None:
+        query = query.where(Message.created_at >= since)
+    latest = db.scalars(query.order_by(Message.created_at.desc()).limit(1)).first()
+    return latest.isoformat() if latest else None
+
+
+def _serialize_status(business: Business, stored, db: Session) -> dict:
     return {
         "connected": stored is not None,
         "status": business.whatsapp_connection_status,
         "phone_number_id_masked": _mask(business.whatsapp_phone_number_id),
         "connected_at": stored.created_at.isoformat() if stored else None,
+        "last_inbound_at": _latest_inbound_at(
+            db, business.id, since=stored.created_at if stored else None
+        ),
     }
+
+
+def _callback_url(request: Request) -> str:
+    if settings.railway_public_domain:
+        return f"https://{settings.railway_public_domain}/webhooks/whatsapp"
+    return str(request.base_url).rstrip("/") + "/webhooks/whatsapp"
 
 
 @router.get("/status")
@@ -72,7 +105,25 @@ def get_whatsapp_status(
 ) -> dict:
     business = db.get(Business, principal.business_id)
     stored = whatsapp_credentials.get_stored_credential(db, principal.business_id)
-    return {"data": _serialize_status(business, stored)}
+    return {"data": _serialize_status(business, stored, db)}
+
+
+@router.get("/webhook-config")
+def get_webhook_config(
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+) -> dict:
+    """Static values every business must paste into their own Meta App's
+    webhook configuration (Callback URL + Verify Token) — surfaced here
+    (Sprint 71, Task A) so the connect wizard can show them directly instead
+    of only pointing at developer docs. Identical for every business: the
+    verify token is intentionally shared, not a secret (DEC-038)."""
+    return {
+        "data": {
+            "callback_url": _callback_url(request),
+            "verify_token": settings.whatsapp_verify_token,
+        }
+    }
 
 
 @router.post("/connect")
@@ -144,7 +195,7 @@ def connect_whatsapp(
         ) from exc
 
     stored = whatsapp_credentials.get_stored_credential(db, principal.business_id)
-    return {"data": _serialize_status(business, stored)}
+    return {"data": _serialize_status(business, stored, db)}
 
 
 @router.post("/disconnect", status_code=status.HTTP_204_NO_CONTENT)

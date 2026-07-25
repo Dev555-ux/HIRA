@@ -44,6 +44,7 @@ import type {
   UpdateKbEntryPayload,
   UpdateLeadPayload,
   WhatsAppStatus,
+  WhatsAppWebhookConfig,
 } from "./types";
 
 export class ApiError extends Error {
@@ -362,6 +363,11 @@ export const api = {
 
   disconnectWhatsApp: (getToken: GetToken) =>
     apiFetch<void>("/api/v1/whatsapp/disconnect", getToken, { method: "POST" }),
+
+  getWhatsAppWebhookConfig: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<WhatsAppWebhookConfig>>("/api/v1/whatsapp/webhook-config", getToken).then(
+      (r) => r.data,
+    ),
 
   getAvailability: (getToken: GetToken, params: { starts_at: string; ends_at: string }) =>
     apiFetch<ApiEnvelope<AvailabilitySlot[]>>(

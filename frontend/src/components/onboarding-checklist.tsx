@@ -44,10 +44,17 @@ export function OnboardingChecklist({ business }: { business: Business }) {
   const prerequisitesMet = knowledgeImportDone && whatsappConnected;
 
   function handleEnableAI() {
+    // Sprint 71, Task C: concrete process + timeline instead of an
+    // open-ended "reach out" — the founder personally reviews every
+    // business before real customer traffic goes live (SEC-3, the
+    // prompt-injection guardrail, isn't built yet — see IMPLEMENTATION_PLAN.md),
+    // and we already have a channel to reach them: the contact email they
+    // gave us at signup, not an invented support address.
     toast({
-      title: "We'll take it from here",
-      description:
-        "Going live isn't self-serve yet — reach out and we'll enable real customer conversations for you.",
+      title: "Setup looks complete",
+      description: business.contact_email
+        ? `We review every business personally before enabling real customer conversations. We'll email ${business.contact_email} within 1 business day.`
+        : "We review every business personally before enabling real customer conversations. We'll reach out within 1 business day.",
     });
   }
 

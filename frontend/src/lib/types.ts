@@ -308,6 +308,10 @@ export interface WhatsAppStatus {
   status: "not_connected" | "pending_verification" | "connected";
   phone_number_id_masked: string | null;
   connected_at: string | null;
+  // Sprint 71: the most recent real inbound Message's timestamp, or null if
+  // none has ever arrived — the only honest signal that the webhook is
+  // actually receiving traffic (credentials verifying is not proof of that).
+  last_inbound_at: string | null;
 }
 
 export interface ConnectWhatsAppPayload {
@@ -315,6 +319,14 @@ export interface ConnectWhatsAppPayload {
   whatsapp_business_account_id: string;
   access_token: string;
   app_secret: string;
+}
+
+// Sprint 71, Task A: static values every business pastes into their own
+// Meta App's webhook configuration. Same for every business — the verify
+// token is intentionally shared, not a secret (DEC-038).
+export interface WhatsAppWebhookConfig {
+  callback_url: string;
+  verify_token: string;
 }
 
 export interface AvailabilitySlot {
