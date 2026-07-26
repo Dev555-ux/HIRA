@@ -33,7 +33,7 @@ export default function LeadsPage() {
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const debouncedQuery = useDebouncedValue(query);
 
-  const { data, isLoading, isError, error, isFetching, refetch } = useLeads({
+  const { data, isPending, isError, error, isFetching, refetch } = useLeads({
     search: debouncedQuery || undefined,
     stage,
     limit: PAGE_SIZE,
@@ -102,7 +102,7 @@ export default function LeadsPage() {
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <LeadList
           leads={leads}
-          isLoading={isLoading}
+          isPending={isPending}
           isError={isError}
           error={error}
           onRetry={refetch}
@@ -131,7 +131,7 @@ export default function LeadsPage() {
 
 function LeadList({
   leads,
-  isLoading,
+  isPending,
   isError,
   error,
   onRetry,
@@ -144,7 +144,7 @@ function LeadList({
   onNewLead,
 }: {
   leads: Lead[];
-  isLoading: boolean;
+  isPending: boolean;
   isError: boolean;
   error: unknown;
   onRetry: () => void;
@@ -164,7 +164,7 @@ function LeadList({
       )}
     >
       <CardContent className="flex-1 p-0">
-        {isLoading && (
+        {isPending && (
           <div className="space-y-3 p-4">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-16 w-full" />
@@ -186,7 +186,7 @@ function LeadList({
           />
         )}
 
-        {!isLoading && !isError && leads.length === 0 && (
+        {!isPending && !isError && leads.length === 0 && (
           <EmptyState
             icon={Target}
             title={hasQuery ? "No matches" : "No leads yet"}
@@ -206,7 +206,7 @@ function LeadList({
           />
         )}
 
-        {!isLoading && !isError && leads.length > 0 && (
+        {!isPending && !isError && leads.length > 0 && (
           <ul className="divide-y">
             {leads.map((lead) => (
               <li key={lead.id}>

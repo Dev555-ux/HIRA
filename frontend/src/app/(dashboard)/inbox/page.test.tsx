@@ -174,6 +174,34 @@ describe("InboxPage", () => {
     expect(screen.getAllByText("WhatsApp")).toHaveLength(2);
   });
 
+  it("shows a badge for escalated, rejected, and sending outbound messages, not a bare bubble", async () => {
+    // Sprint 77, Objective D: Message["status"] had no badge mapping for
+    // these three, so the honest-fallback/escalation messages Objective A/D
+    // now create rendered with no visible signal anything went wrong.
+    vi.mocked(api.listConversations).mockResolvedValue({
+      data: [conversation()],
+      meta: { total: 1, limit: 20, offset: 0 },
+    });
+    vi.mocked(api.getConversation).mockResolvedValue(conversation());
+    vi.mocked(api.listMessages).mockResolvedValue({
+      data: [
+        message({ id: "m1", direction: "outbound", body: "Flagged for follow-up.", status: "escalated" }),
+        message({ id: "m2", direction: "outbound", body: "Rejected draft.", status: "rejected" }),
+        message({ id: "m3", direction: "outbound", body: "Sending now…", status: "sending" }),
+      ],
+      meta: { total: 3, limit: 50, offset: 0 },
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<InboxPage />);
+    await user.click(await screen.findByText("Alice Smith"));
+
+    await screen.findByText("Flagged for follow-up.");
+    expect(screen.getByText("Escalated")).toBeInTheDocument();
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
+    expect(screen.getByText("Sending…")).toBeInTheDocument();
+  });
+
   it("returns to the conversation list from the back button", async () => {
     vi.mocked(api.listConversations).mockResolvedValue({
       data: [conversation()],

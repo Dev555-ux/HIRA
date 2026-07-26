@@ -353,8 +353,10 @@ def test_list_appointments_filters_by_date_range(db_session, monkeypatch):
     data = body["data"]
     assert len(data) == 1
     # starts_at is a naive TIMESTAMP column (matches the rest of the schema —
-    # see test_appointment_service.py), so the tzinfo suffix is dropped.
-    assert data[0]["starts_at"] == NOW.isoformat().replace("+00:00", "")
+    # see test_appointment_service.py) — Sprint 77: serialized via
+    # to_iso_utc, which re-marks that naive-but-UTC value with an explicit
+    # "Z" rather than leaving it ambiguous.
+    assert data[0]["starts_at"] == NOW.isoformat().replace("+00:00", "Z")
     assert body["meta"] == {"total": 1, "limit": 200, "offset": 0}
     app.dependency_overrides.clear()
 

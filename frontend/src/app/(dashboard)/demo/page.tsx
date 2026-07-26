@@ -180,14 +180,14 @@ function UpgradeCard() {
 }
 
 export default function DemoChatPage() {
-  const { data: history, isLoading: historyLoading } = usePlaygroundHistory();
+  const { data: history, isPending: historyLoading } = usePlaygroundHistory();
   // Sprint 56: Demo Mode is detected purely on the frontend by reusing the
   // existing Business Knowledge list (already fetched on the Knowledge Base
   // page) — no backend change, no new endpoint. "No Business Knowledge
   // uploaded yet" is exactly the condition app/ai/orchestrator.py's Demo
   // Mode (Sprint 55) branches on, so this mirrors that same fact rather than
   // guessing at it independently.
-  const { data: kbEntries, isLoading: kbLoading } = useKbEntries();
+  const { data: kbEntries, isPending: kbLoading } = useKbEntries();
   const isDemoMode = !kbLoading && (kbEntries?.length ?? 0) === 0;
   const sendMessage = useSendPlaygroundMessage();
   const [draft, setDraft] = useState("");

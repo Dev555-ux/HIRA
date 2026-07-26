@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.playground import PLAYGROUND_PHONE
 from app.auth.dependencies import Principal, get_current_principal
+from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import get_scoped
 from app.models import Conversation, Customer, Message
@@ -85,12 +86,10 @@ def _serialize_summary(
             "display_name": customer.display_name,
             "wa_phone": customer.wa_phone,
         },
-        "last_message_at": (
-            conversation.last_message_at.isoformat() if conversation.last_message_at else None
-        ),
+        "last_message_at": to_iso_utc(conversation.last_message_at),
         "preview": preview,
         "has_pending_approval": has_pending,
-        "created_at": conversation.created_at.isoformat(),
+        "created_at": to_iso_utc(conversation.created_at),
     }
 
 
@@ -101,7 +100,7 @@ def _serialize_message(message: Message) -> dict:
         "body": message.body,
         "type": message.type,
         "status": message.status,
-        "created_at": message.created_at.isoformat(),
+        "created_at": to_iso_utc(message.created_at),
     }
 
 

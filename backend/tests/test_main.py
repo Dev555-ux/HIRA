@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from app.auth.dependencies import get_token_verifier
 from app.core.config import settings
 from app.db.session import get_db
-from app.main import app
+from app.main import _warn_if_clerk_looks_like_a_dev_instance, app
 
 
 def test_frontend_url_is_an_allowed_cors_origin():
@@ -237,3 +237,45 @@ def test_http_exceptions_are_unaffected_by_the_global_handler(db_session):
     assert resp.status_code == 401
     assert resp.json()["detail"] == "Missing bearer token"
     app.dependency_overrides.clear()
+
+
+# --- Sprint 77 (RC-1 finding): warn, not fail, on a Clerk dev instance in production ----
+
+
+def test_warns_when_a_clerk_dev_domain_is_used_in_production(monkeypatch, caplog):
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(
+        settings,
+        "clerk_jwks_url",
+        "https://sweet-arachnid-76.clerk.accounts.dev/.well-known/jwks.json",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        _warn_if_clerk_looks_like_a_dev_instance()
+
+    assert any("clerk.accounts.dev" in record.message for record in caplog.records)
+    assert any("development instance" in record.message for record in caplog.records)
+
+
+def test_does_not_warn_for_a_production_looking_clerk_domain(monkeypatch, caplog):
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "clerk_jwks_url", "https://clerk.hira.app/.well-known/jwks.json")
+
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        _warn_if_clerk_looks_like_a_dev_instance()
+
+    assert caplog.records == []
+
+
+def test_does_not_warn_outside_production_even_with_a_dev_domain(monkeypatch, caplog):
+    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(
+        settings,
+        "clerk_jwks_url",
+        "https://sweet-arachnid-76.clerk.accounts.dev/.well-known/jwks.json",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        _warn_if_clerk_looks_like_a_dev_instance()
+
+    assert caplog.records == []

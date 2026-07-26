@@ -40,7 +40,7 @@ export default function FounderTracesPage() {
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const { data, isLoading, isError, refetch } = useFounderTraces({
+  const { data, isPending, isError, refetch } = useFounderTraces({
     limit: PAGE_SIZE,
     offset,
   });
@@ -64,7 +64,7 @@ export default function FounderTracesPage() {
       <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
         <TraceList
           traces={traces}
-          isLoading={isLoading}
+          isPending={isPending}
           isError={isError}
           onRetry={refetch}
           selectedId={selectedId}
@@ -81,7 +81,7 @@ export default function FounderTracesPage() {
 
 function TraceList({
   traces,
-  isLoading,
+  isPending,
   isError,
   onRetry,
   selectedId,
@@ -91,7 +91,7 @@ function TraceList({
   onOffsetChange,
 }: {
   traces: FounderTraceRow[];
-  isLoading: boolean;
+  isPending: boolean;
   isError: boolean;
   onRetry: () => void;
   selectedId: string | null;
@@ -105,7 +105,7 @@ function TraceList({
       className={cn("flex min-h-[420px] flex-col", selectedId !== null ? "hidden lg:flex" : "flex")}
     >
       <CardContent className="flex-1 p-0">
-        {isLoading && (
+        {isPending && (
           <div className="space-y-3 p-4">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-16 w-full" />
@@ -126,7 +126,7 @@ function TraceList({
           />
         )}
 
-        {!isLoading && !isError && traces.length === 0 && (
+        {!isPending && !isError && traces.length === 0 && (
           <EmptyState
             icon={ListTree}
             title="No executions yet"
@@ -135,7 +135,7 @@ function TraceList({
           />
         )}
 
-        {!isLoading && !isError && traces.length > 0 && (
+        {!isPending && !isError && traces.length > 0 && (
           <ul className="divide-y">
             {traces.map((trace) => (
               <li key={trace.id}>

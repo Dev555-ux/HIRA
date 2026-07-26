@@ -44,6 +44,17 @@ NON_TEXT_FALLBACK_TEXT = (
     "Thanks for your message! I can currently only read text — could you type that out for me?"
 )
 
+# Sprint 77: Autonomous Mode previously left the customer with total silence
+# when a proposed action (e.g. a calendar booking) failed to execute — see
+# _auto_send's tool-call-failure branch. This replaces that silence with an
+# honest, non-technical acknowledgment — never the tool's own internal
+# failure reason (e.g. "This business has not connected a Google Calendar"),
+# which is an operational detail for the founder, not the customer.
+AUTONOMOUS_TOOL_FAILURE_TEXT = (
+    "I wasn't able to complete that automatically, so I've flagged it for the team — "
+    "they'll follow up with you shortly."
+)
+
 
 def generate_and_store_reply(
     conversation_id: uuid.UUID,
@@ -133,7 +144,7 @@ def generate_and_store_reply(
                 on_commit_failure = _auto_send(db, business, conversation, message, sender)
                 if on_commit_failure is not None:
                     on_commit_failures.append(on_commit_failure)
-                if message.status == "failed":
+                if message.ai_meta.get("failure_reason"):
                     # Sprint 75, Objective D: stop execution — a later
                     # planned action may have been proposed on the
                     # assumption this one succeeded (e.g. "reschedule to
@@ -144,6 +155,13 @@ def generate_and_store_reply(
                     # the safe partial response; the failed step is marked
                     # and fully auditable, same as a single-action failure
                     # always was — just no longer followed by more actions.
+                    #
+                    # Sprint 77: checked via ai_meta["failure_reason"], not
+                    # message.status — a failed action can still end with
+                    # status == "sent" once its honest fallback text goes
+                    # out (see _auto_send), so status alone no longer says
+                    # whether the turn's actual request succeeded.
+                    _escalate_automation_failure(db, conversation)
                     break
 
         # Sprint 76: recorded defensively — a tracing bug must never break
@@ -186,8 +204,23 @@ def generate_and_store_reply(
             last_message.status if last_message else None,
         )
     except Exception:
+        # Sprint 77, Objective D: previously stopped at rollback — a failure
+        # here (most realistically the final db.commit() above, e.g. a
+        # transient DB blip) left the same silent-customer/invisible-to-
+        # founder gap Objective A closed for Autonomous Mode tool failures,
+        # just one step later in the pipeline. Reuses REL-2's existing,
+        # already-tested escalation helper rather than duplicating it — it
+        # only needs a conversation_id and a fresh transaction, both true
+        # here same as at its original call site above.
         logger.exception("Failed to generate reply for conversation %s", conversation_id)
         db.rollback()
+        try:
+            _store_failure_escalation(db, conversation_id)
+        except Exception:
+            logger.exception(
+                "Failed to record fallback escalation for conversation %s", conversation_id
+            )
+            db.rollback()
     finally:
         db.close()
 
@@ -230,6 +263,29 @@ def _store_failure_escalation(db, conversation_id: uuid.UUID) -> None:
     db.commit()
 
 
+def _escalate_automation_failure(db, conversation: Conversation) -> None:
+    """Sprint 77: an Autonomous Mode action failed for a reason the customer
+    re-messaging can't fix (a missing setup step, an exhausted send retry,
+    an expired service window...) — flags the conversation exactly like a
+    human clicking Escalate would (app/services/replies.py::escalate_reply),
+    so there's never a silent gap between "the customer got an honest
+    fallback text, if one could be sent at all" and "someone at the business
+    actually follows up." Unlike _store_failure_escalation, this doesn't
+    commit on its own — it rides along in the caller's single outer commit,
+    since (unlike a total generation failure) real work already happened
+    this turn that needs to land atomically with it.
+    """
+    conversation.status = "escalated"
+    db.add(
+        Escalation(
+            business_id=conversation.business_id,
+            conversation_id=conversation.id,
+            reason="automation_failed",
+            status="open",
+        )
+    )
+
+
 def _auto_send(
     db,
     business: Business,
@@ -252,6 +308,15 @@ def _auto_send(
     service window both mean there's no way to notify the customer, so
     nothing here should proceed far enough to need reverting. Mirrors
     app/services/replies.py::approve_and_send's identical up-front checks.
+
+    Sprint 77: every failure branch sets message.ai_meta["failure_reason"] —
+    the caller uses its *presence*, not message.status, as the "did the
+    underlying action fail" signal. That distinction matters now: a failed
+    tool call still ends with message.status == "sent" once its honest
+    fallback text goes out (see the tool_call branch below), so status alone
+    can no longer answer "did this turn's request actually succeed."
+    message.status keeps meaning exactly what it always has — the delivery
+    outcome of whatever body this row ends with.
     """
     customer = db.get(Customer, conversation.customer_id)
     credential = get_stored_credential(db, business.id)
@@ -290,22 +355,34 @@ def _auto_send(
             conversation_id=conversation.id,
             commit=False,
         )
-        if not result.success:
-            message.status = "failed"
+        if result.success:
+            message.ai_meta = {**message.ai_meta, "tool_result": result.message}
+            # Section A1 fix: message.body up to this point is still
+            # preview_tool_call()'s internal, dashboard-editable text (set at
+            # creation in response_to_message_fields). Autonomous Mode has no
+            # human to edit it before send, so it must never go out as-is.
+            message.body = confirmation_message_for(tool_call, result)
+            on_commit_failure = result.on_commit_failure
+        else:
+            # Sprint 77: previously returned here with no send attempted at
+            # all — the customer got silence while a proposed action (e.g. a
+            # calendar booking) silently failed. The WhatsApp channel itself
+            # is fine here (unlike the two branches above), so there's no
+            # reason not to tell the customer *something* happened — just
+            # never the internal reason why: result.message can read like
+            # "This business has not connected a Google Calendar", an
+            # operational detail for the founder, not something a customer
+            # should see. The real reason is preserved in ai_meta below for
+            # the founder (and drives the escalation the caller creates).
             logger.warning(
                 "Autonomous tool call %s failed for conversation %s: %s",
                 tool_call.name,
                 conversation.id,
                 result.message,
             )
-            return None
-        message.ai_meta = {**message.ai_meta, "tool_result": result.message}
-        # Section A1 fix: message.body up to this point is still
-        # preview_tool_call()'s internal, dashboard-editable text (set at
-        # creation in response_to_message_fields). Autonomous Mode has no
-        # human to edit it before send, so it must never go out as-is.
-        message.body = confirmation_message_for(tool_call, result)
-        on_commit_failure = result.on_commit_failure
+            message.ai_meta = {**message.ai_meta, "failure_reason": result.message}
+            message.body = AUTONOMOUS_TOOL_FAILURE_TEXT
+            on_commit_failure = None
     else:
         on_commit_failure = None
 
@@ -320,7 +397,13 @@ def _auto_send(
         message.wa_message_id = wa_message_id
         logger.info("Autonomously sent reply for conversation %s", conversation.id)
     except WhatsAppSendError:
+        # Sprint 77: whatever this row's body was (a real confirmation, or
+        # the honest fallback text above) never reached the customer either
+        # way — escalate like any other failure. Preserves an existing
+        # tool-failure reason if one's already set, rather than overwriting
+        # it with the send failure and losing why the turn actually failed.
         message.status = "failed"
+        message.ai_meta = {"failure_reason": "whatsapp_send_failed", **(message.ai_meta or {})}
         logger.exception("Autonomous send failed for conversation %s", conversation.id)
 
     return on_commit_failure

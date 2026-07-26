@@ -55,9 +55,9 @@ function relativeOrNever(iso: string | null): string {
 }
 
 export default function FounderOpsPage() {
-  const { data, isLoading, isError, error, refetch, isFetching } = useFounderOverview();
+  const { data, isPending, isError, error, refetch, isFetching } = useFounderOverview();
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-9 w-64" />
@@ -100,7 +100,7 @@ export default function FounderOpsPage() {
     );
   }
 
-  if (!data) return null; // unreachable once isLoading/isError are both false — narrows the type
+  if (!data) return null; // unreachable once isPending/isError are both false — narrows the type
 
   const { summary, businesses } = data;
   const flagged = businesses.filter((b) => b.alerts.length > 0);
@@ -282,7 +282,7 @@ function roleLabel(role: string): string {
 // problem computing AI metrics can never take down the rest of the
 // dashboard, which has nothing to do with it.
 function AiMetricsSection() {
-  const { data, isLoading, isError } = useFounderAiMetrics();
+  const { data, isPending, isError } = useFounderAiMetrics();
 
   return (
     <Card className="mb-6">
@@ -298,7 +298,7 @@ function AiMetricsSection() {
       <CardContent>
         {isError ? (
           <p className="text-sm text-muted-foreground">Couldn&apos;t load AI metrics.</p>
-        ) : isLoading || !data ? (
+        ) : isPending || !data ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-20 w-full" />

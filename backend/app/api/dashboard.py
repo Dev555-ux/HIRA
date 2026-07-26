@@ -19,6 +19,7 @@ from app.ai.llm import LLMError
 from app.api.calendar import map_calendar_error
 from app.auth.dependencies import Principal, get_current_principal
 from app.calendar.providers.base import CalendarError
+from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import tenant_query
 from app.models import Conversation, Customer, Message
@@ -117,7 +118,7 @@ def list_pending(
                 "id": str(m.id),
                 "conversation_id": str(m.conversation_id),
                 "body": m.body,
-                "created_at": m.created_at.isoformat(),
+                "created_at": to_iso_utc(m.created_at),
                 "customer": _serialize_customer(customers.get(m.conversation_id)),
                 "conversation_preview": previews.get(m.conversation_id),
             }
@@ -228,7 +229,7 @@ def escalate_message(
                 "conversation_id": str(escalation.conversation_id),
                 "reason": escalation.reason,
                 "status": escalation.status,
-                "created_at": escalation.created_at.isoformat(),
+                "created_at": to_iso_utc(escalation.created_at),
             },
         }
     }

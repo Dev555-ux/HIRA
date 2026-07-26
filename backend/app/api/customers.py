@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.playground import PLAYGROUND_PHONE
 from app.auth.dependencies import Principal, get_current_principal
+from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import get_scoped, tenant_query
 from app.models import Conversation, Customer, Lead
@@ -112,12 +113,10 @@ def _serialize_lead_full(lead: Lead | None) -> dict | None:
             float(lead.estimated_value) if lead.estimated_value is not None else None
         ),
         "notes": lead.notes,
-        "next_follow_up_at": (
-            lead.next_follow_up_at.isoformat() if lead.next_follow_up_at else None
-        ),
+        "next_follow_up_at": to_iso_utc(lead.next_follow_up_at),
         "assigned_to": str(lead.assigned_to) if lead.assigned_to else None,
-        "created_at": lead.created_at.isoformat(),
-        "updated_at": lead.updated_at.isoformat(),
+        "created_at": to_iso_utc(lead.created_at),
+        "updated_at": to_iso_utc(lead.updated_at),
     }
 
 
@@ -135,9 +134,9 @@ def _serialize_customer_summary(
         "wa_phone": customer.wa_phone,
         "email": customer.email,
         "notes": customer.notes,
-        "created_at": customer.created_at.isoformat(),
+        "created_at": to_iso_utc(customer.created_at),
         "conversation_count": conversation_count,
-        "last_message_at": last_message_at.isoformat() if last_message_at else None,
+        "last_message_at": to_iso_utc(last_message_at),
         "lead": _serialize_lead_summary(lead),
     }
 

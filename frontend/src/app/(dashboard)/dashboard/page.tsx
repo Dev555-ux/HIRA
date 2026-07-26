@@ -59,7 +59,7 @@ export default function DashboardPage() {
   const { user } = useAuthContext();
   const {
     data: pending,
-    isLoading: isLoadingPending,
+    isPending: isLoadingPending,
     isFetching: isFetchingPending,
     isError: isPendingError,
     refetch: refetchPending,
@@ -68,7 +68,7 @@ export default function DashboardPage() {
   // limit: 1 — only meta.total is needed here, not the rows themselves.
   const {
     data: conversationTotals,
-    isLoading: isLoadingConversationTotals,
+    isPending: isLoadingConversationTotals,
     isError: isConversationTotalsError,
   } = useConversations({ limit: 1 });
   const {
@@ -79,7 +79,7 @@ export default function DashboardPage() {
   } = useConversations({ limit: PREVIEW_ROWS });
   const {
     data: customers,
-    isLoading: isLoadingCustomers,
+    isPending: isLoadingCustomers,
     isError: isCustomersError,
   } = useCustomers({ limit: 1 });
   // Computed once per mount (matches the Appointments page's own convention)
@@ -88,7 +88,7 @@ export default function DashboardPage() {
   const now = useMemo(() => new Date().toISOString(), []);
   const {
     data: upcomingAppointmentsResult,
-    isLoading: isLoadingAppointments,
+    isPending: isLoadingAppointments,
     isFetching: isFetchingAppointments,
     isError: isAppointmentsError,
     refetch: refetchAppointments,

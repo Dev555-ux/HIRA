@@ -80,7 +80,7 @@ export default function KnowledgeBasePage() {
   const [approvingBatchId, setApprovingBatchId] = useState<string | null>(null);
 
   const { toast } = useToast();
-  const { data: entries, isLoading, isError, error, refetch } = useKbEntries();
+  const { data: entries, isPending, isError, error, refetch } = useKbEntries();
   const { data: draftBatches } = useKbDrafts();
   const createEntry = useCreateKbEntry();
   const updateEntry = useUpdateKbEntry();
@@ -100,8 +100,16 @@ export default function KnowledgeBasePage() {
 
   async function handleConfirmDelete() {
     if (!deleteTarget) return;
-    await deleteEntry.mutateAsync(deleteTarget.id);
-    toast({ title: "Removed — HIRA won't reference this anymore." });
+    try {
+      await deleteEntry.mutateAsync(deleteTarget.id);
+      toast({ title: "Removed — HIRA won't reference this anymore." });
+    } catch (err) {
+      toast({
+        title: "Couldn't remove this fact",
+        description: err instanceof ApiError ? err.message : "Something went wrong — please try again.",
+        variant: "destructive",
+      });
+    }
     setDeleteTarget(null);
   }
 
@@ -202,7 +210,7 @@ export default function KnowledgeBasePage() {
             <span />
           </div>
 
-          {isLoading && (
+          {isPending && (
             <div className="space-y-3 p-5">
               <Skeleton className="h-5 w-full" />
               <Skeleton className="h-5 w-full" />
@@ -224,7 +232,7 @@ export default function KnowledgeBasePage() {
             />
           )}
 
-          {!isLoading && !isError && filtered.length === 0 && (
+          {!isPending && !isError && filtered.length === 0 && (
             <EmptyState
               icon={Sparkles}
               title={entries?.length ? "No matches" : "HIRA doesn't know this yet"}
@@ -244,7 +252,7 @@ export default function KnowledgeBasePage() {
             />
           )}
 
-          {!isLoading &&
+          {!isPending &&
             !isError &&
             filtered.map((entry) => (
               <div

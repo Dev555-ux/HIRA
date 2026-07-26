@@ -202,7 +202,10 @@ def test_update_lead_follow_up_logs_follow_up_set_event(db_session):
         .one()
     )
     assert event.from_value is None
-    assert event.to_value == new_follow_up.isoformat()
+    # Sprint 77: _stringify() now goes through to_iso_utc, so the timeline's
+    # own `new Date(item.to_value)` (frontend/src/components/customer-
+    # detail.tsx) can't misread this as local time in a non-UTC browser.
+    assert event.to_value == new_follow_up.isoformat() + "Z"
 
 
 def test_update_lead_assigned_to_logs_assigned_event(db_session):

@@ -27,7 +27,7 @@ export default function CustomersPage() {
   const [dialogTarget, setDialogTarget] = useState<CustomerDialogTarget>(null);
   const debouncedQuery = useDebouncedValue(query);
 
-  const { data, isLoading, isError, error, isFetching, refetch } = useCustomers({
+  const { data, isPending, isError, error, isFetching, refetch } = useCustomers({
     search: debouncedQuery || undefined,
     limit: PAGE_SIZE,
     offset,
@@ -71,7 +71,7 @@ export default function CustomersPage() {
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <CustomerList
           customers={customers}
-          isLoading={isLoading}
+          isPending={isPending}
           isError={isError}
           error={error}
           onRetry={refetch}
@@ -96,7 +96,7 @@ export default function CustomersPage() {
 
 function CustomerList({
   customers,
-  isLoading,
+  isPending,
   isError,
   error,
   onRetry,
@@ -109,7 +109,7 @@ function CustomerList({
   onAddCustomer,
 }: {
   customers: Customer[];
-  isLoading: boolean;
+  isPending: boolean;
   isError: boolean;
   error: unknown;
   onRetry: () => void;
@@ -126,7 +126,7 @@ function CustomerList({
       className={cn("flex min-h-[420px] flex-col", selectedId !== null ? "hidden lg:flex" : "flex")}
     >
       <CardContent className="flex-1 p-0">
-        {isLoading && (
+        {isPending && (
           <div className="space-y-3 p-4">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-16 w-full" />
@@ -148,7 +148,7 @@ function CustomerList({
           />
         )}
 
-        {!isLoading && !isError && customers.length === 0 && (
+        {!isPending && !isError && customers.length === 0 && (
           <EmptyState
             icon={Users}
             title={hasQuery ? "No matches" : "No customers yet"}
@@ -168,7 +168,7 @@ function CustomerList({
           />
         )}
 
-        {!isLoading && !isError && customers.length > 0 && (
+        {!isPending && !isError && customers.length > 0 && (
           <ul className="divide-y">
             {customers.map((customer) => (
               <li key={customer.id}>

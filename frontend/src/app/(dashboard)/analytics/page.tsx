@@ -9,11 +9,11 @@ import { useConversations } from "@/hooks/use-conversations";
 import { usePending } from "@/hooks/use-pending";
 
 export default function AnalyticsPage() {
-  const { data: pending, isLoading, isError: isPendingError } = usePending();
+  const { data: pending, isPending, isError: isPendingError } = usePending();
   // limit: 1 — only meta.total is needed here, not the rows themselves. Same
   // data /dashboard already shows live (Sprint 32) — this tile showed a fake
   // "Coming soon" for it too until Sprint 35's audit caught the inconsistency.
-  const { data: conversations, isLoading: isLoadingConversations, isError: isConversationsError } =
+  const { data: conversations, isPending: isPendingConversations, isError: isConversationsError } =
     useConversations({ limit: 1 });
 
   return (
@@ -25,7 +25,7 @@ export default function AnalyticsPage() {
           label="Total conversations"
           value={isConversationsError ? "—" : (conversations?.meta.total ?? 0)}
           icon={MessageSquare}
-          loading={isLoadingConversations}
+          loading={isPendingConversations}
           hint={isConversationsError ? "Couldn't load" : undefined}
         />
         <StatCard label="Messages today" value="—" icon={BarChart3} hint="Coming soon" />
@@ -33,7 +33,7 @@ export default function AnalyticsPage() {
           label="Pending approvals"
           value={isPendingError ? "—" : (pending?.length ?? 0)}
           icon={CheckCheck}
-          loading={isLoading}
+          loading={isPending}
           hint={isPendingError ? "Couldn't load" : undefined}
         />
         <StatCard label="Avg response time" value="—" icon={Clock} hint="Coming soon" />

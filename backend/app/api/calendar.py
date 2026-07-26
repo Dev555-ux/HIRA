@@ -25,6 +25,7 @@ from app.calendar import credentials as calendar_credentials
 from app.calendar import oauth
 from app.calendar.factory import get_appointment_service
 from app.calendar.oauth import OAuthStateError
+from app.core.time import to_iso_utc
 from app.core.timezones import validate_timezone
 from app.calendar.providers.base import (
     CalendarAuthError,
@@ -258,6 +259,6 @@ def get_availability(
 
     return {
         "data": [
-            {"starts_at": s.starts_at.isoformat(), "ends_at": s.ends_at.isoformat()} for s in slots
+            {"starts_at": to_iso_utc(s.starts_at), "ends_at": to_iso_utc(s.ends_at)} for s in slots
         ]
     }

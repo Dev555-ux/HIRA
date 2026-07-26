@@ -29,6 +29,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_current_principal
+from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import get_scoped
 from app.models import Customer, Lead
@@ -101,12 +102,10 @@ def _serialize_lead(lead: Lead, customer: Customer) -> dict:
             float(lead.estimated_value) if lead.estimated_value is not None else None
         ),
         "notes": lead.notes,
-        "next_follow_up_at": (
-            lead.next_follow_up_at.isoformat() if lead.next_follow_up_at else None
-        ),
+        "next_follow_up_at": to_iso_utc(lead.next_follow_up_at),
         "assigned_to": str(lead.assigned_to) if lead.assigned_to else None,
-        "created_at": lead.created_at.isoformat(),
-        "updated_at": lead.updated_at.isoformat(),
+        "created_at": to_iso_utc(lead.created_at),
+        "updated_at": to_iso_utc(lead.updated_at),
     }
 
 

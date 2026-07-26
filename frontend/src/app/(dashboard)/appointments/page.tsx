@@ -46,7 +46,7 @@ export default function AppointmentsPage() {
     };
   }, []);
 
-  const { data: appointments, isLoading, isError, error, isFetching, refetch } = useAppointments({
+  const { data: appointments, isPending, isError, error, isFetching, refetch } = useAppointments({
     from,
     to,
   });
@@ -69,7 +69,7 @@ export default function AppointmentsPage() {
         }
       />
 
-      {isLoading && (
+      {isPending && (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-20 w-full" />
@@ -90,7 +90,7 @@ export default function AppointmentsPage() {
         />
       )}
 
-      {!isLoading && !isError && appointments && appointments.length === 0 && (
+      {!isPending && !isError && appointments && appointments.length === 0 && (
         <EmptyState
           icon={CalendarClock}
           title="No upcoming appointments"
@@ -103,7 +103,7 @@ export default function AppointmentsPage() {
         />
       )}
 
-      {!isLoading && !isError && appointments && appointments.length > 0 && (
+      {!isPending && !isError && appointments && appointments.length > 0 && (
         <div className="space-y-3">
           {appointments.map((appointment) => (
             <AppointmentRow key={appointment.id} appointment={appointment} />

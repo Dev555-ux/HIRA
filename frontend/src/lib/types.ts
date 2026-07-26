@@ -77,6 +77,7 @@ export type EscalationReason =
   | "low_confidence"
   | "customer_request"
   | "external_failure"
+  | "automation_failed"
   | "other";
 export type EscalationStatusFilter = "open" | "resolved";
 export type EscalationAssignedFilter = "mine" | "unassigned";
@@ -125,7 +126,7 @@ export interface Message {
   direction: "inbound" | "outbound";
   body: string;
   type: string;
-  status: "received" | "pending_approval" | "sent" | "failed" | "rejected" | "escalated";
+  status: "received" | "pending_approval" | "sending" | "sent" | "failed" | "rejected" | "escalated";
   created_at: string;
 }
 

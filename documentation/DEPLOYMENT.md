@@ -48,7 +48,7 @@ In the Railway service's **Variables** tab, set every one of these (see `backend
 | `WHATSAPP_APP_SECRET` | from your Meta App |
 | `WHATSAPP_ACCESS_TOKEN` | your System User token |
 | `LLM_PROVIDER` | `groq` or `claude` (not `mock` — the backend now refuses to boot in production with `LLM_PROVIDER=mock`) + the matching `GROQ_API_KEY`/`ANTHROPIC_API_KEY` |
-| `CLERK_JWKS_URL`, `CLERK_ISSUER` | from the Clerk dashboard — **required**; the backend refuses to boot in production without both |
+| `CLERK_JWKS_URL`, `CLERK_ISSUER` | from the Clerk dashboard — **required**; the backend refuses to boot in production without both. **Make sure these come from a Clerk *production* instance, not the default Development instance** — Clerk creates every app in Development mode first, and its API keys/URLs are real and functional, so nothing fails at signup or at this guard if you copy them by mistake (found live in production during RC-1). Development instances are served from a shared `*.clerk.accounts.dev` domain and have strict request-rate limits not meant for real traffic; a production instance needs its own domain (Clerk dashboard → your app → toggle "Production" / add a production instance). The backend logs a warning at startup (`app/main.py::_warn_if_clerk_looks_like_a_dev_instance`) if `CLERK_JWKS_URL` still looks like a `*.clerk.accounts.dev` domain with `ENVIRONMENT=production` — check Railway's logs after first deploy. |
 | `ALLOW_MOCK_AUTH` | `false` (or leave unset) |
 | `CALENDAR_ENCRYPTION_KEY` | **required**, regardless of whether Calendar is used for the pilot business — this key encrypts both Google Calendar OAuth refresh tokens *and*, since Sprint 69, every business's self-serve WhatsApp credentials (`app/whatsapp/security.py` reuses it). Generate once with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. The backend refuses to boot in production without it. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI` | only if Calendar is being connected for the pilot business now; can be added later (unlike `CALENDAR_ENCRYPTION_KEY` above, these three are genuinely calendar-only) |
@@ -101,8 +101,8 @@ Not yet implemented in code (`DEPLOY-4` in `IMPLEMENTATION_PLAN.md`, Medium prio
 | Variable | Value |
 |---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | the Railway backend URL from step 3 |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | from Clerk |
-| `CLERK_SECRET_KEY` | from Clerk |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | from Clerk — **must start with `pk_live_`, not `pk_test_`** (see the `CLERK_JWKS_URL` note in step 2; `pk_test_` is Clerk's Development-instance prefix). The frontend logs a console warning at load if a `pk_test_` key reaches a production build (`frontend/src/components/providers.tsx`). |
+| `CLERK_SECRET_KEY` | from Clerk — same instance as the publishable key above (`sk_live_`, not `sk_test_`) |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | `/sign-in` |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | `/sign-up` |
 
@@ -112,6 +112,7 @@ Not yet implemented in code (`DEPLOY-4` in `IMPLEMENTATION_PLAN.md`, Medium prio
 
 - `/health` and `/health/whatsapp` both return 200 against the real Railway URL.
 - Sign up a real test business through the deployed frontend → Clerk auth round-trips correctly.
+- Check Railway's logs and the browser console for the Clerk-development-instance warning (`_warn_if_clerk_looks_like_a_dev_instance` / `providers.tsx`) — if either fires, the Clerk keys above are from the wrong instance even though sign-in still worked.
 - Send a real WhatsApp message to the connected test number → confirm it's received (check `/health/whatsapp`'s `last_inbound_at`) and a reply is generated/sent.
 - Trigger a real error (e.g. temporarily misconfigure something) and confirm it shows up in Sentry.
 - Update `MEMORY.md`'s "Current Deployment" section and `IMPLEMENTATION_PLAN.md`'s Milestone 1 rows to reflect what's actually now live — **only after** this verification, not before.

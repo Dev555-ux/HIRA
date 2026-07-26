@@ -250,6 +250,21 @@ describe("KnowledgeBasePage — delete confirmation", () => {
     expect(await screen.findByText("Removed — HIRA won't reference this anymore.")).toBeInTheDocument();
   });
 
+  it("shows an error toast instead of a false success when deletion fails", async () => {
+    vi.mocked(api.deleteKbEntry).mockRejectedValue(new Error("Network error"));
+    const user = userEvent.setup();
+    renderWithProviders(<KnowledgeBasePage />);
+
+    await user.click(await screen.findByRole("button", { name: /delete entry/i }));
+    await screen.findByText('Delete "Office hours"?');
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+
+    expect(await screen.findByText("Couldn't remove this fact")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Removed — HIRA won't reference this anymore."),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not delete when the dialog is cancelled", async () => {
     const user = userEvent.setup();
     renderWithProviders(<KnowledgeBasePage />);

@@ -37,11 +37,21 @@ const FILTERS: { label: string; value: ConversationStatusFilter | undefined }[] 
 ];
 
 const MESSAGE_STATUS_BADGE: Partial<
-  Record<Message["status"], { label: string; variant: "warning" | "success" | "destructive" }>
+  Record<
+    Message["status"],
+    { label: string; variant: "warning" | "success" | "destructive" | "secondary" | "outline" }
+  >
 > = {
   pending_approval: { label: "Pending approval", variant: "warning" },
+  sending: { label: "Sending…", variant: "secondary" },
   sent: { label: "Sent", variant: "success" },
   failed: { label: "Failed", variant: "destructive" },
+  rejected: { label: "Rejected", variant: "outline" },
+  // Matches CONVERSATION_STATUS_BADGE's "escalated" (lib/conversations.ts) —
+  // Sprint 77: without this, the honest-fallback/escalation Messages that
+  // Objective A/D now create (app/ai/processing.py) rendered as a plain
+  // bubble with no visual signal anything went wrong.
+  escalated: { label: "Escalated", variant: "warning" },
 };
 
 export default function InboxPage() {
@@ -50,7 +60,7 @@ export default function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const debouncedQuery = useDebouncedValue(query);
 
-  const { data, isLoading, isError, error, isFetching, refetch } = useConversations({
+  const { data, isPending, isError, error, isFetching, refetch } = useConversations({
     search: debouncedQuery || undefined,
     status: filter,
   });
@@ -99,7 +109,7 @@ export default function InboxPage() {
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
         <ConversationList
           conversations={conversations}
-          isLoading={isLoading}
+          isPending={isPending}
           isError={isError}
           error={error}
           onRetry={refetch}
@@ -129,7 +139,7 @@ function ConversationDeepLink({ onSelect }: { onSelect: (id: string) => void }) 
 
 function ConversationList({
   conversations,
-  isLoading,
+  isPending,
   isError,
   error,
   onRetry,
@@ -138,7 +148,7 @@ function ConversationList({
   hasQuery,
 }: {
   conversations: Conversation[];
-  isLoading: boolean;
+  isPending: boolean;
   isError: boolean;
   error: unknown;
   onRetry: () => void;
@@ -149,7 +159,7 @@ function ConversationList({
   return (
     <Card className={cn("min-h-[420px]", selectedId !== null ? "hidden lg:block" : "block")}>
       <CardContent className="p-0">
-        {isLoading && (
+        {isPending && (
           <div className="space-y-3 p-4">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-16 w-full" />
@@ -171,7 +181,7 @@ function ConversationList({
           />
         )}
 
-        {!isLoading && !isError && conversations.length === 0 && (
+        {!isPending && !isError && conversations.length === 0 && (
           <EmptyState
             icon={InboxIcon}
             title={hasQuery ? "No matches" : "No conversations yet"}
@@ -191,7 +201,7 @@ function ConversationList({
           />
         )}
 
-        {!isLoading && !isError && conversations.length > 0 && (
+        {!isPending && !isError && conversations.length > 0 && (
           <ul className="divide-y">
             {conversations.map((conv) => {
               const statusBadge = CONVERSATION_STATUS_BADGE[conv.status];
@@ -240,11 +250,11 @@ function ConversationDetail({
   conversationId: string | null;
   onBack: () => void;
 }) {
-  const { data: conversation, isLoading: isLoadingConversation } =
+  const { data: conversation, isPending: isPendingConversation } =
     useConversation(conversationId);
   const {
     data: messagesData,
-    isLoading: isLoadingMessages,
+    isPending: isPendingMessages,
     isError,
     error,
     refetch,
@@ -280,7 +290,7 @@ function ConversationDetail({
         >
           <ArrowLeft />
         </Button>
-        {isLoadingConversation ? (
+        {isPendingConversation ? (
           <Skeleton className="h-5 w-32" />
         ) : (
           <div className="min-w-0 flex-1">
@@ -296,7 +306,7 @@ function ConversationDetail({
       </div>
 
       <CardContent className="flex-1 space-y-3 overflow-y-auto p-4">
-        {isLoadingMessages && (
+        {isPendingMessages && (
           <div className="space-y-3">
             <Skeleton className="h-10 w-2/3" />
             <Skeleton className="ml-auto h-10 w-2/3" />
@@ -318,7 +328,7 @@ function ConversationDetail({
           />
         )}
 
-        {!isLoadingMessages && !isError && messages.length === 0 && (
+        {!isPendingMessages && !isError && messages.length === 0 && (
           <EmptyState
             icon={MessageSquare}
             title="No messages yet"
@@ -327,7 +337,7 @@ function ConversationDetail({
           />
         )}
 
-        {!isLoadingMessages &&
+        {!isPendingMessages &&
           !isError &&
           messages.map((message) => <MessageBubble key={message.id} message={message} />)}
       </CardContent>

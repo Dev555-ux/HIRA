@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_current_principal
 from app.core.config import settings
+from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.models import Business, Message
 from app.whatsapp import credentials as whatsapp_credentials
@@ -77,7 +78,7 @@ def _latest_inbound_at(db: Session, business_id, *, since) -> str | None:
     if since is not None:
         query = query.where(Message.created_at >= since)
     latest = db.scalars(query.order_by(Message.created_at.desc()).limit(1)).first()
-    return latest.isoformat() if latest else None
+    return to_iso_utc(latest)
 
 
 def _serialize_status(business: Business, stored, db: Session) -> dict:
@@ -89,7 +90,7 @@ def _serialize_status(business: Business, stored, db: Session) -> dict:
         # the real dialable number the wizard tells the owner to text, not a
         # Meta-internal identifier, so masking it would defeat the purpose.
         "display_phone_number": business.whatsapp_display_phone_number,
-        "connected_at": stored.created_at.isoformat() if stored else None,
+        "connected_at": to_iso_utc(stored.created_at) if stored else None,
         "last_inbound_at": _latest_inbound_at(
             db, business.id, since=stored.created_at if stored else None
         ),

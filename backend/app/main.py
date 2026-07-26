@@ -32,6 +32,7 @@ from app.core.config import settings
 from app.core.monitoring import capture_exception, capture_message, init_sentry
 from app.core.rate_limit import init_rate_limiting
 from app.core.request_logging import RequestLoggingMiddleware
+from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.models import Message
 from app.webhooks.whatsapp import router as whatsapp_router
@@ -70,8 +71,37 @@ def _configure_app_logging() -> None:
     app_logger.propagate = False
 
 
+def _warn_if_clerk_looks_like_a_dev_instance() -> None:
+    """Sprint 77 (RC-1 finding): _reject_insecure_production_secrets already
+    fails fast if CLERK_JWKS_URL/CLERK_ISSUER are simply unset in production
+    — it can't catch them being *set*, but pointed at a Clerk development
+    instance rather than a production one, since a dev instance has its own
+    real, well-formed JWKS URL. Clerk's development instances are served
+    from a shared `*.clerk.accounts.dev` domain (Clerk's own documented
+    convention); production instances get their own dedicated domain. This
+    is a heuristic on the domain shape, not a hard guarantee, so it only
+    warns (loudly, in the one place a founder would see it — Railway's
+    logs) rather than failing startup — getting the pattern wrong should
+    never be able to block a legitimate deploy. The frontend has the same
+    check against its own publishable key's pk_test_/pk_live_ prefix
+    (frontend/src/components/providers.tsx), a more reliable signal Clerk
+    documents explicitly, but not one this backend has access to.
+    """
+    if settings.environment != "production":
+        return
+    if ".clerk.accounts.dev" in settings.clerk_jwks_url:
+        logger.warning(
+            "CLERK_JWKS_URL (%s) looks like a Clerk development instance's shared domain "
+            "(*.clerk.accounts.dev) running with ENVIRONMENT=production. Development "
+            "instances have strict usage limits and should not serve real users — verify "
+            "this is intentional, or switch to a production Clerk instance's own domain.",
+            settings.clerk_jwks_url,
+        )
+
+
 _configure_app_logging()
 init_sentry()
+_warn_if_clerk_looks_like_a_dev_instance()
 
 app = FastAPI(title="HIRA Backend", version="0.1.0")
 
@@ -223,8 +253,8 @@ def health_whatsapp(db: Session = Depends(get_db)) -> JSONResponse:
         )
         return JSONResponse(
             status_code=503,
-            content={"status": "stale", "last_inbound_at": latest.isoformat()},
+            content={"status": "stale", "last_inbound_at": to_iso_utc(latest)},
         )
     return JSONResponse(
-        status_code=200, content={"status": "ok", "last_inbound_at": latest.isoformat()}
+        status_code=200, content={"status": "ok", "last_inbound_at": to_iso_utc(latest)}
     )

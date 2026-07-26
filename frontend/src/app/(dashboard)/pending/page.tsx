@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePending } from "@/hooks/use-pending";
 
 export default function PendingPage() {
-  const { data, isLoading, isError, error, isFetching, refetch } = usePending();
+  const { data, isPending, isError, error, isFetching, refetch } = usePending();
 
   return (
     <>
@@ -24,7 +24,7 @@ export default function PendingPage() {
         }
       />
 
-      {isLoading && (
+      {isPending && (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-28 w-full" />
@@ -45,7 +45,7 @@ export default function PendingPage() {
         />
       )}
 
-      {!isLoading && !isError && data && data.length === 0 && (
+      {!isPending && !isError && data && data.length === 0 && (
         <EmptyState
           icon={CheckCheck}
           title="All caught up"
@@ -53,7 +53,7 @@ export default function PendingPage() {
         />
       )}
 
-      {!isLoading && !isError && data && data.length > 0 && (
+      {!isPending && !isError && data && data.length > 0 && (
         <div className="space-y-3">
           {data.map((reply) => (
             <PendingReplyCard key={reply.id} reply={reply} />

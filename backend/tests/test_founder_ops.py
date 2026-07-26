@@ -358,9 +358,10 @@ class TestFounderOverviewAggregates:
         resp = client.get("/api/v1/founder/overview", headers=_auth())
 
         row = resp.json()["data"]["businesses"][0]
-        assert row["whatsapp"]["last_inbound_at"] == inbound_at.isoformat()
-        assert row["whatsapp"]["last_outbound_at"] == outbound_at.isoformat()
-        assert row["last_activity_at"] == outbound_at.isoformat()
+        # Sprint 77: to_iso_utc marks these naive-but-UTC values explicitly.
+        assert row["whatsapp"]["last_inbound_at"] == inbound_at.isoformat() + "Z"
+        assert row["whatsapp"]["last_outbound_at"] == outbound_at.isoformat() + "Z"
+        assert row["last_activity_at"] == outbound_at.isoformat() + "Z"
         app.dependency_overrides.clear()
 
     def test_no_recent_activity_alert_only_applies_to_connected_businesses(

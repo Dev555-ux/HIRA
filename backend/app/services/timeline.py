@@ -14,6 +14,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.time import to_iso_utc
 from app.models import Conversation, Lead, LeadEvent, Message
 
 
@@ -21,7 +22,7 @@ def _serialize_message(message: Message) -> dict:
     return {
         "type": "message",
         "id": str(message.id),
-        "created_at": message.created_at.isoformat(),
+        "created_at": to_iso_utc(message.created_at),
         "direction": message.direction,
         "body": message.body,
         "status": message.status,
@@ -32,7 +33,7 @@ def _serialize_lead_event(event: LeadEvent) -> dict:
     return {
         "type": "lead_event",
         "id": str(event.id),
-        "created_at": event.created_at.isoformat(),
+        "created_at": to_iso_utc(event.created_at),
         "event_type": event.type,
         "from_value": event.from_value,
         "to_value": event.to_value,

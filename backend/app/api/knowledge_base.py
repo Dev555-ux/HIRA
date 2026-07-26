@@ -39,6 +39,7 @@ from app.ai.web_import import WebImportError, fetch_page
 from app.auth.dependencies import Principal, get_current_principal
 from app.core.config import settings
 from app.core.rate_limit import limiter
+from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import tenant_query
 from app.models import KbEntry
@@ -95,8 +96,8 @@ def _serialize(entry: KbEntry) -> dict:
         "content": entry.content,
         "status": entry.status,
         "import_batch_id": str(entry.import_batch_id) if entry.import_batch_id else None,
-        "created_at": entry.created_at.isoformat(),
-        "updated_at": entry.updated_at.isoformat(),
+        "created_at": to_iso_utc(entry.created_at),
+        "updated_at": to_iso_utc(entry.updated_at),
     }
 
 

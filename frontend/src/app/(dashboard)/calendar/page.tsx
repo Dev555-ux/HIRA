@@ -98,7 +98,7 @@ export default function CalendarPage() {
 
 function ConnectionCard() {
   const { toast } = useToast();
-  const { data: status, isLoading, isError, refetch } = useCalendarStatus();
+  const { data: status, isPending, isError, refetch } = useCalendarStatus();
   const startConnect = useStartCalendarConnect();
   const disconnect = useDisconnectCalendar();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
@@ -134,14 +134,14 @@ function ConnectionCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">Google Calendar</CardTitle>
-        {!isLoading && !isError && (
+        {!isPending && !isError && (
           <Badge variant={status?.connected ? "success" : "secondary"}>
             {status?.connected ? "Connected" : "Not connected"}
           </Badge>
         )}
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {isPending ? (
           <Skeleton className="h-9 w-40" />
         ) : isError ? (
           <EmptyState
@@ -198,7 +198,7 @@ function ConnectionCard() {
 
 function SettingsCard() {
   const { toast } = useToast();
-  const { data: settings, isLoading, isError, refetch } = useCalendarSettings();
+  const { data: settings, isPending, isError, refetch } = useCalendarSettings();
   const updateSettings = useUpdateCalendarSettings();
 
   if (isError) {
@@ -224,7 +224,7 @@ function SettingsCard() {
     );
   }
 
-  if (isLoading || !settings) {
+  if (isPending || !settings) {
     return (
       <Card>
         <CardHeader>

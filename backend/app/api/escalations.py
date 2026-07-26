@@ -25,6 +25,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_current_principal
+from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import get_scoped
 from app.models import Conversation, Customer, Escalation, User
@@ -68,8 +69,8 @@ def _serialize(
             if escalation.resolved_by
             else None
         ),
-        "resolved_at": escalation.resolved_at.isoformat() if escalation.resolved_at else None,
-        "created_at": escalation.created_at.isoformat(),
+        "resolved_at": to_iso_utc(escalation.resolved_at),
+        "created_at": to_iso_utc(escalation.created_at),
         "conversation": {
             "id": str(conversation.id),
             "customer": {

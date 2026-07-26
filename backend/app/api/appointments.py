@@ -22,6 +22,7 @@ from app.api.calendar import map_calendar_error
 from app.auth.dependencies import Principal, get_current_principal
 from app.calendar.factory import get_appointment_service
 from app.calendar.providers.base import CalendarError
+from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import get_scoped, tenant_query
 from app.models import Appointment, Customer
@@ -68,11 +69,11 @@ def _serialize(appointment: Appointment, customer: Customer | None) -> dict:
         "conversation_id": (
             str(appointment.conversation_id) if appointment.conversation_id else None
         ),
-        "starts_at": appointment.starts_at.isoformat(),
-        "ends_at": appointment.ends_at.isoformat(),
+        "starts_at": to_iso_utc(appointment.starts_at),
+        "ends_at": to_iso_utc(appointment.ends_at),
         "status": appointment.status,
-        "created_at": appointment.created_at.isoformat(),
-        "updated_at": appointment.updated_at.isoformat(),
+        "created_at": to_iso_utc(appointment.created_at),
+        "updated_at": to_iso_utc(appointment.updated_at),
     }
 
 

@@ -223,7 +223,7 @@ class Escalation(Base):
     )
     reason: Mapped[str] = mapped_column(
         String(32)
-    )  # low_confidence | customer_request | external_failure | other
+    )  # low_confidence | customer_request | external_failure | automation_failed | other
     status: Mapped[str] = mapped_column(String(16), default="open")  # open | resolved
     # Self-claim, not assign-to-others (Sprint 69) — there's no team roster/
     # picker UI, so a team member claims a queue item for themself rather

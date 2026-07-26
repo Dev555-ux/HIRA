@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.time import to_iso_utc
 from app.models import Business, Conversation, ExecutionTrace, KbEntry, Message, WhatsAppCredential
 from app.services.execution_traces import (
     get_result_messages,
@@ -181,7 +182,7 @@ def _today_totals(db: Session, *, since: datetime) -> dict[str, int]:
 
 
 def _iso(value: datetime | None) -> str | None:
-    return value.isoformat() if value else None
+    return to_iso_utc(value)
 
 
 def _business_alerts(

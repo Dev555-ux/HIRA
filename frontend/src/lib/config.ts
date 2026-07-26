@@ -10,6 +10,15 @@ export const clerkPublishableKey =
 
 export const authEnabled = clerkPublishableKey.length > 0;
 
+// Clerk's publishable key prefix reliably encodes which kind of instance it
+// belongs to (Clerk's own documented convention): pk_test_ for development
+// instances (real auth, but with strict usage limits and a "Development
+// mode" banner Clerk itself warns about — see the console on app load),
+// pk_live_ for production. Sprint 77: this closes an RC-1 finding — a
+// production deploy was running on a pk_test_ key with no signal anywhere
+// a founder would see it until Clerk's own request cap was eventually hit.
+export const clerkKeyLooksLikeTestKey = clerkPublishableKey.startsWith("pk_test_");
+
 export const isProduction = process.env.NODE_ENV === "production";
 
 // Mock auth is only allowed outside production. In production without Clerk,

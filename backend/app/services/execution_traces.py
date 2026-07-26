@@ -110,7 +110,12 @@ def resolve_outcome(messages: list[Message]) -> str:
     resolved result Messages' statuses:
 
     - "no_result": the plan never produced a Message (empty/non-action turn).
-    - "failed": at least one result Message failed (tool execution or send).
+    - "failed": at least one result Message failed (tool execution or send),
+      *or* (Sprint 77) carries a live ai_meta["failure_reason"] — Autonomous
+      Mode's honest fallback text (app/ai/processing.py::_auto_send) means a
+      failed tool call can still end with status == "sent" once its fallback
+      goes out, so status alone can no longer answer "did this turn's actual
+      request succeed." failure_reason is the authoritative signal now.
     - "escalated": at least one result Message was escalated.
     - "rejected": at least one result Message was rejected in Assisted Mode.
     - "pending_approval": at least one result Message is still awaiting a
@@ -120,6 +125,8 @@ def resolve_outcome(messages: list[Message]) -> str:
     """
     if not messages:
         return "no_result"
+    if any((message.ai_meta or {}).get("failure_reason") for message in messages):
+        return "failed"
     statuses = {message.status for message in messages}
     for status in ("failed", "escalated", "rejected", "pending_approval", "sending"):
         if status in statuses:

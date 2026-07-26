@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.time import to_iso_utc
 from app.db.tenant import get_scoped
 from app.models import Customer, Lead, LeadEvent, User
 
@@ -62,11 +63,16 @@ def _normalize_follow_up(value: datetime | None) -> datetime | None:
 
 
 def _stringify(value: Any) -> str | None:
-    """Render a field value as the plain string LeadEvent.from_value/to_value store."""
+    """Render a field value as the plain string LeadEvent.from_value/to_value
+    store. Sprint 77: datetimes go through to_iso_utc — a bare .isoformat()
+    here fed frontend/src/components/customer-detail.tsx's
+    `new Date(item.to_value)` a timezone-less string, which every browser
+    outside UTC parses as local time, silently showing the wrong follow-up
+    date (not just the wrong relative wording)."""
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value.isoformat()
+        return to_iso_utc(value)
     return str(value)
 
 

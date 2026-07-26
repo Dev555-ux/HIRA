@@ -696,6 +696,52 @@ def test_generation_failure_escalates_instead_of_leaving_silence(db_session, mon
     assert escalations[0].status == "open"
 
 
+def test_a_failure_after_generation_succeeds_still_escalates_instead_of_leaving_silence(
+    db_session, monkeypatch
+):
+    """Sprint 77, Objective D: unlike a failure *during* generate_reply()
+    (covered above by REL-2's own escalation), a failure *after* it
+    succeeds — e.g. the final db.commit(), or here, anything raised while
+    turning the response into Message rows — used to hit the outermost
+    except with a bare rollback and nothing else: no Message, no
+    Escalation, total silence. This is the same gap class, one step later
+    in the pipeline."""
+    _, conversation = _setup_business_with_kb(db_session)
+    conversation_id = conversation.id
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="We're open 9-5!"),
+    )
+
+    def _boom(response):
+        raise RuntimeError("simulated bug turning the response into Message rows")
+
+    monkeypatch.setattr(processing, "response_to_message_fields", _boom)
+
+    processing.generate_and_store_reply(conversation_id, None, "are you open today?")
+
+    outbound = db_session.scalars(
+        select(Message).where(
+            Message.conversation_id == conversation_id, Message.direction == "outbound"
+        )
+    ).all()
+    assert len(outbound) == 1
+    assert outbound[0].status == "escalated"
+
+    conversation = db_session.get(Conversation, conversation_id)
+    assert conversation.status == "escalated"
+
+    escalations = db_session.scalars(
+        select(Escalation).where(Escalation.conversation_id == conversation_id)
+    ).all()
+    assert len(escalations) == 1
+    assert escalations[0].reason == "external_failure"
+
+
 def test_assisted_mode_stores_proposed_tool_call_without_executing(db_session, monkeypatch):
     from app.models import Customer
 
@@ -993,8 +1039,13 @@ def test_autonomous_mode_stops_after_a_failed_action_and_never_attempts_the_next
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
     assert len(outbound) == 1  # the lead action's Message was never created
     assert outbound[0].ai_meta["tool_name"] == BOOK_APPOINTMENT
-    assert outbound[0].status == "failed"
-    assert sends == []  # nothing was sent to the customer either
+    # Sprint 77: the failed booking still gets an honest fallback text sent
+    # to the customer, so this row's own delivery status is "sent" — the
+    # *booking itself* failing is what ai_meta["failure_reason"] records,
+    # and that (not status) is what stopped the lead action from running.
+    assert outbound[0].status == "sent"
+    assert outbound[0].ai_meta["failure_reason"]
+    assert sends == [processing.AUTONOMOUS_TOOL_FAILURE_TEXT]
     assert db_session.scalars(select(Lead)).first() is None  # the CRM write never ran
 
 
@@ -1147,8 +1198,15 @@ def test_autonomous_mode_executes_tool_call_immediately(db_session, monkeypatch)
     )
 
 
-def test_autonomous_mode_marks_failed_when_tool_call_execution_fails(db_session, monkeypatch):
-    from app.models import Customer
+def test_autonomous_mode_sends_an_honest_fallback_and_escalates_when_a_tool_call_fails(
+    db_session, monkeypatch
+):
+    """Sprint 77, Objective A: a failed autonomous action must never leave
+    the customer with silence. The customer gets a generic, non-technical
+    fallback (never the raw CalendarNotConnectedError text), the real
+    reason is preserved in ai_meta for the founder, and the conversation is
+    escalated exactly like a human clicking Escalate would."""
+    from app.models import Customer, Escalation
 
     biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
     db_session.add(biz)
@@ -1179,13 +1237,13 @@ def test_autonomous_mode_marks_failed_when_tool_call_execution_fails(db_session,
     )
 
     def _raise_not_connected(db, business_id):
-        raise CalendarNotConnectedError("not connected")
+        raise CalendarNotConnectedError("This business has not connected a Google Calendar")
 
     monkeypatch.setattr("app.ai.tools.get_appointment_service", _raise_not_connected)
-    sender_called = {"called": False}
+    sent: dict = {}
 
     def fake_sender(phone_number_id, to, body, **_kwargs):
-        sender_called["called"] = True
+        sent.update(body=body)
         return "wamid.sent1"
 
     processing.generate_and_store_reply(
@@ -1194,8 +1252,101 @@ def test_autonomous_mode_marks_failed_when_tool_call_execution_fails(db_session,
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
     assert len(outbound) == 1
-    assert outbound[0].status == "failed"
-    assert sender_called["called"] is False  # never attempted to send a confirmation
+    assert outbound[0].status == "sent"
+    assert outbound[0].body == processing.AUTONOMOUS_TOOL_FAILURE_TEXT
+    assert sent["body"] == processing.AUTONOMOUS_TOOL_FAILURE_TEXT
+    # The customer-safe text never leaks the internal reason...
+    assert "Google Calendar" not in sent["body"]
+    assert "Calendar" not in sent["body"]
+    # ...but the real reason is still fully audited for the founder.
+    assert "Google Calendar" in outbound[0].ai_meta["failure_reason"]
+
+    db_session.refresh(conversation)
+    assert conversation.status == "escalated"
+    escalation = db_session.scalars(
+        select(Escalation).where(Escalation.conversation_id == conversation.id)
+    ).one()
+    assert escalation.reason == "automation_failed"
+    assert escalation.status == "open"
+
+
+def test_autonomous_mode_escalates_when_whatsapp_is_not_connected(db_session, monkeypatch):
+    """Sprint 77: unlike a failed tool call, there's genuinely no channel to
+    notify the customer through here — but the founder must still find out,
+    instead of this failing completely silently as it did before."""
+    from app.models import Customer, Escalation
+
+    biz = Business(name="Auto Clinic", mode="autonomous")  # no whatsapp_phone_number_id
+    db_session.add(biz)
+    db_session.flush()
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="Hi there!"),
+    )
+
+    processing.generate_and_store_reply(conversation.id, None, "are you open today?")
+
+    db_session.refresh(conversation)
+    assert conversation.status == "escalated"
+    escalation = db_session.scalars(
+        select(Escalation).where(Escalation.conversation_id == conversation.id)
+    ).one()
+    assert escalation.reason == "automation_failed"
+
+
+def test_autonomous_mode_escalates_when_the_whatsapp_send_itself_fails(db_session, monkeypatch):
+    """Sprint 77: distinct from a failed tool call — here the *delivery*
+    itself fails (Meta rejects the send after messaging.py's own retries
+    are already exhausted), so message.status must stay "failed" (nothing
+    reached the customer), and this must escalate too."""
+    from app.models import Customer, Escalation
+    from app.services.messaging import WhatsAppSendError
+
+    biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
+    db_session.add(biz)
+    db_session.flush()
+    _connect_whatsapp(db_session, monkeypatch, biz.id)
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="Hi there!"),
+    )
+
+    def failing_sender(phone_number_id, to, body, **_kwargs):
+        raise WhatsAppSendError("Meta rejected the request")
+
+    processing.generate_and_store_reply(
+        conversation.id, None, "are you open today?", sender=failing_sender
+    )
+
+    outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).one()
+    assert outbound.status == "failed"
+    assert outbound.ai_meta["failure_reason"] == "whatsapp_send_failed"
+    db_session.refresh(conversation)
+    assert conversation.status == "escalated"
+    escalation = db_session.scalars(
+        select(Escalation).where(Escalation.conversation_id == conversation.id)
+    ).one()
+    assert escalation.reason == "automation_failed"
 
 
 # --- Section A4: tool effect + Message update must commit atomically --------
@@ -1205,13 +1356,16 @@ def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appoint
     db_session, monkeypatch
 ):
     """If the single commit in generate_and_store_reply fails after the tool
-    ran (with commit=False) and the WhatsApp send fired, nothing should be
-    left half-done: no Message row at all (not even a stale
-    "pending_approval" one a human could re-approve), no Appointment row
-    (its flush rolled back with everything else), and the now-orphaned
-    external calendar event cleaned up. A retry that then succeeds must
-    create exactly one appointment, proving the failed attempt left no
-    duplicate-booking residue behind."""
+    ran (with commit=False) and the WhatsApp send fired, nothing from that
+    turn should be left half-done: no stale "pending_approval" Message a
+    human could re-approve, no Appointment row (its flush rolled back with
+    everything else), and the now-orphaned external calendar event cleaned
+    up. Sprint 77, Objective D: the conversation is no longer left in total
+    silence on top of that -- the outer except now records exactly one
+    escalation Message/Escalation row (REL-2's existing fallback), the same
+    compensating behavior a total generation failure already got. A retry
+    that then succeeds must create exactly one appointment, proving the
+    failed attempt left no duplicate-booking residue behind."""
     from app.models import Customer
 
     biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
@@ -1275,12 +1429,22 @@ def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appoint
         conversation_id, None, "book me tuesday at 2pm", sender=fake_sender
     )
 
-    # Nothing durably persisted -- no stale pending Message, no orphaned Appointment.
-    assert (
-        db_session.scalars(select(Message).where(Message.conversation_id == conversation_id)).all()
-        == []
-    )
+    # No stale pending Message or orphaned Appointment from the failed turn --
+    # the only Message left behind is the new escalation fallback (Objective D).
+    messages = db_session.scalars(
+        select(Message).where(Message.conversation_id == conversation_id)
+    ).all()
+    assert len(messages) == 1
+    assert messages[0].status == "escalated"
     assert db_session.scalars(select(Appointment)).all() == []
+
+    db_session.refresh(conversation)
+    assert conversation.status == "escalated"
+    escalations = db_session.scalars(
+        select(Escalation).where(Escalation.conversation_id == conversation_id)
+    ).all()
+    assert len(escalations) == 1
+    assert escalations[0].reason == "external_failure"
 
     # The WhatsApp send fired for real before the commit failed.
     assert sent["count"] == 1

@@ -16,6 +16,7 @@ import {
   useResolveEscalation,
   useUnassignEscalation,
 } from "@/hooks/use-escalations";
+import { ApiError } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
 import type {
   Escalation,
@@ -41,6 +42,7 @@ const REASON_LABEL: Record<EscalationReason, string> = {
   low_confidence: "AI wasn't confident",
   customer_request: "Customer asked for a human",
   external_failure: "Message failed to send",
+  automation_failed: "Autonomous action couldn't complete",
   other: "Other",
 };
 
@@ -50,7 +52,7 @@ export default function EscalationsPage() {
     undefined,
   );
 
-  const { data, isLoading, isError, error, isFetching, refetch } = useEscalations({
+  const { data, isPending, isError, error, isFetching, refetch } = useEscalations({
     status: statusFilter,
     assigned: assignedFilter,
   });
@@ -96,7 +98,7 @@ export default function EscalationsPage() {
         </div>
       </div>
 
-      {isLoading && (
+      {isPending && (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-24 w-full" />
@@ -117,7 +119,7 @@ export default function EscalationsPage() {
         />
       )}
 
-      {!isLoading && !isError && escalations.length === 0 && (
+      {!isPending && !isError && escalations.length === 0 && (
         <EmptyState
           icon={CheckCircle2}
           title="Nothing needs you right now"
@@ -125,7 +127,7 @@ export default function EscalationsPage() {
         />
       )}
 
-      {!isLoading && !isError && escalations.length > 0 && (
+      {!isPending && !isError && escalations.length > 0 && (
         <div className="space-y-3">
           {escalations.map((escalation) => (
             <EscalationCard key={escalation.id} escalation={escalation} />
@@ -147,8 +149,40 @@ function EscalationCard({ escalation }: { escalation: Escalation }) {
   const isMine = escalation.assigned_to?.email === user?.email;
 
   async function handleResolve() {
-    await resolve.mutateAsync(escalation.id);
-    toast({ title: "Resolved.", variant: "success" });
+    try {
+      await resolve.mutateAsync(escalation.id);
+      toast({ title: "Resolved.", variant: "success" });
+    } catch (err) {
+      toast({
+        title: "Couldn't resolve this escalation",
+        description: err instanceof ApiError ? err.message : "Something went wrong — please try again.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  function handleAssign() {
+    assign.mutate(escalation.id, {
+      onError: (err) => {
+        toast({
+          title: "Couldn't assign this escalation",
+          description: err instanceof ApiError ? err.message : "Something went wrong — please try again.",
+          variant: "destructive",
+        });
+      },
+    });
+  }
+
+  function handleUnassign() {
+    unassign.mutate(escalation.id, {
+      onError: (err) => {
+        toast({
+          title: "Couldn't unassign this escalation",
+          description: err instanceof ApiError ? err.message : "Something went wrong — please try again.",
+          variant: "destructive",
+        });
+      },
+    });
   }
 
   return (
@@ -185,7 +219,7 @@ function EscalationCard({ escalation }: { escalation: Escalation }) {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => unassign.mutate(escalation.id)}
+                  onClick={handleUnassign}
                   disabled={unassign.isPending}
                 >
                   <UserMinus /> Unassign
@@ -194,7 +228,7 @@ function EscalationCard({ escalation }: { escalation: Escalation }) {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => assign.mutate(escalation.id)}
+                  onClick={handleAssign}
                   disabled={assign.isPending}
                 >
                   <UserPlus /> Assign to me

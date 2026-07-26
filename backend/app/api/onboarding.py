@@ -31,6 +31,7 @@ from app.ai.playground import get_or_create_playground_conversation, playground_
 from app.auth.dependencies import Principal, get_current_principal, get_verified_clerk_user_id
 from app.core.config import settings
 from app.core.rate_limit import limiter
+from app.core.time import to_iso_utc
 from app.core.timezones import validate_timezone
 from app.db.session import get_db
 from app.models import Business, Message
@@ -151,7 +152,7 @@ def _serialize_playground_message(message: Message) -> dict:
         "body": message.body,
         "type": message.type,
         "status": message.status,
-        "created_at": message.created_at.isoformat(),
+        "created_at": to_iso_utc(message.created_at),
     }
 
 

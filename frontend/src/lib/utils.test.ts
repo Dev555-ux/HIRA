@@ -31,6 +31,33 @@ describe("formatRelativeTime", () => {
   it("returns empty string for invalid input", () => {
     expect(formatRelativeTime("not-a-date")).toBe("");
   });
+
+  it("documents why the backend must always send an explicit UTC marker (Sprint 77)", () => {
+    // RC-1 found this live in production: the backend used to serialize
+    // naive-UTC datetimes with a bare Python .isoformat() (no "Z"/offset),
+    // and `new Date(...)` here reads a timezone-less ISO string as *local*
+    // browser time, not UTC. Fixed at the source (app/core/time.py::
+    // to_iso_utc, used by every API response) rather than by making this
+    // function lenient — every timestamp the API sends now always carries
+    // an explicit marker, so this demonstrates the failure mode the fix
+    // closes, not a case this function itself needs to handle.
+    const nowUtc = new Date();
+    const timezoneLessString = nowUtc.toISOString().replace("Z", "");
+    const properlyMarkedString = nowUtc.toISOString();
+
+    const browserOffsetMinutes = nowUtc.getTimezoneOffset();
+    if (browserOffsetMinutes === 0) {
+      // The CI/dev machine happens to run in UTC — the two strings parse
+      // identically here, so there's nothing to contrast; skip rather than
+      // assert a tautology.
+      return;
+    }
+
+    expect(formatRelativeTime(timezoneLessString)).not.toBe(
+      formatRelativeTime(properlyMarkedString),
+    );
+    expect(formatRelativeTime(properlyMarkedString)).toBe("just now");
+  });
 });
 
 describe("describeWhatsAppConnection", () => {

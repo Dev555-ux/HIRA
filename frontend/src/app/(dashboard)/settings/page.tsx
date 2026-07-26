@@ -445,7 +445,7 @@ const MODE_OPTIONS: { value: AiReplyMode; title: string; description: string }[]
 ];
 
 function AiReplyModeCard() {
-  const { data, isLoading, isError, refetch } = useSettings();
+  const { data, isPending, isError, refetch } = useSettings();
   const updateSettings = useUpdateSettings();
   const { toast } = useToast();
   const [selected, setSelected] = useState<AiReplyMode | null>(null);
@@ -457,7 +457,7 @@ function AiReplyModeCard() {
   const current = selected ?? data?.mode ?? null;
   const isDirty = data != null && current != null && current !== data.mode;
   const isSaving = updateSettings.isPending;
-  const controlsDisabled = isLoading || isSaving;
+  const controlsDisabled = isPending || isSaving;
 
   async function handleSave() {
     if (current == null) return;
@@ -485,7 +485,7 @@ function AiReplyModeCard() {
         <CardTitle className="text-base">How your employee responds</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {isLoading ? (
+        {isPending ? (
           <div className="space-y-3">
             <Skeleton className="h-16 w-full" />
             <Skeleton className="h-16 w-full" />
@@ -887,7 +887,7 @@ function WhatsAppConnectWizard({
 // real deployment config (RAILWAY_PUBLIC_DOMAIN), never hardcoded here, and
 // the verify token is intentionally shared/non-secret (DEC-038).
 function WebhookConfigStep({ onNext }: { onNext: () => void }) {
-  const { data, isLoading, isError, refetch } = useWhatsAppWebhookConfig();
+  const { data, isPending, isError, refetch } = useWhatsAppWebhookConfig();
   const { toast } = useToast();
 
   function copy(value: string) {
@@ -921,7 +921,7 @@ function WebhookConfigStep({ onNext }: { onNext: () => void }) {
       ) : (
         <>
           <div className="space-y-3">
-            {isLoading || !data ? (
+            {isPending || !data ? (
               <>
                 <Skeleton className="h-14 w-full" />
                 <Skeleton className="h-14 w-full" />
@@ -944,7 +944,7 @@ function WebhookConfigStep({ onNext }: { onNext: () => void }) {
       )}
       {!isError && (
         <DialogFooter>
-          <Button onClick={onNext} disabled={isLoading || !data}>
+          <Button onClick={onNext} disabled={isPending || !data}>
             Next: Verify connection
           </Button>
         </DialogFooter>

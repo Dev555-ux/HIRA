@@ -7,7 +7,20 @@ import { useState } from "react";
 import { ClerkBridge } from "@/components/auth/clerk-bridge";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { AuthContext } from "@/lib/auth-context";
-import { authEnabled, isProduction } from "@/lib/config";
+import { authEnabled, clerkKeyLooksLikeTestKey, isProduction } from "@/lib/config";
+
+// Sprint 77 (RC-1 finding): a pk_test_ key silently serving production
+// traffic has no user-visible symptom until Clerk's own request cap is hit
+// — this makes it loud in the one place a founder would actually see it
+// (server/build logs), at module load, not on every render.
+if (isProduction && clerkKeyLooksLikeTestKey) {
+  console.warn(
+    "[HIRA] NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is a pk_test_... (development) key in a " +
+      "production build. Development Clerk instances have strict usage limits and are not " +
+      "meant to serve real users — replace it with a pk_live_... key from a production " +
+      "Clerk instance.",
+  );
+}
 
 const MOCK_USER = {
   name: "Dev User",

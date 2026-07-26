@@ -423,7 +423,8 @@ class TestLastInboundAt:
 
         resp = client.get("/api/v1/whatsapp/status", headers=_auth())
 
-        assert resp.json()["data"]["last_inbound_at"] == newer.isoformat()
+        # Sprint 77: to_iso_utc marks this naive-but-UTC value explicitly.
+        assert resp.json()["data"]["last_inbound_at"] == newer.isoformat() + "Z"
         app.dependency_overrides.clear()
 
     def test_is_tenant_scoped(self, db_session):

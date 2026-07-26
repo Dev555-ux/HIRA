@@ -135,6 +135,42 @@ describe("EscalationsPage", () => {
     expect(await screen.findByText("Resolved.")).toBeInTheDocument();
   });
 
+  it("shows an error toast and leaves the escalation open when resolving fails", async () => {
+    vi.mocked(api.listEscalations).mockResolvedValue(listResponse([escalation()]));
+    vi.mocked(api.resolveEscalation).mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    renderWithProviders();
+
+    await user.click(await screen.findByRole("button", { name: "Resolve" }));
+
+    expect(await screen.findByText("Couldn't resolve this escalation")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resolve" })).toBeInTheDocument();
+  });
+
+  it("shows an error toast when assigning fails", async () => {
+    vi.mocked(api.listEscalations).mockResolvedValue(listResponse([escalation()]));
+    vi.mocked(api.assignEscalation).mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    renderWithProviders();
+
+    await user.click(await screen.findByRole("button", { name: /assign to me/i }));
+
+    expect(await screen.findByText("Couldn't assign this escalation")).toBeInTheDocument();
+  });
+
+  it("shows an error toast when unassigning fails", async () => {
+    vi.mocked(api.listEscalations).mockResolvedValue(
+      listResponse([escalation({ assigned_to: { id: "u1", email: "dev@test.com" } })]),
+    );
+    vi.mocked(api.unassignEscalation).mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    renderWithProviders();
+
+    await user.click(await screen.findByRole("button", { name: "Unassign" }));
+
+    expect(await screen.findByText("Couldn't unassign this escalation")).toBeInTheDocument();
+  });
+
   it("hides assign/unassign/resolve actions for an already-resolved escalation", async () => {
     vi.mocked(api.listEscalations).mockResolvedValue(
       listResponse([escalation({ status: "resolved" })]),
