@@ -85,6 +85,10 @@ def _serialize_status(business: Business, stored, db: Session) -> dict:
         "connected": stored is not None,
         "status": business.whatsapp_connection_status,
         "phone_number_id_masked": _mask(business.whatsapp_phone_number_id),
+        # Sprint 72: unmasked, unlike phone_number_id_masked above — this is
+        # the real dialable number the wizard tells the owner to text, not a
+        # Meta-internal identifier, so masking it would defeat the purpose.
+        "display_phone_number": business.whatsapp_display_phone_number,
         "connected_at": stored.created_at.isoformat() if stored else None,
         "last_inbound_at": _latest_inbound_at(
             db, business.id, since=stored.created_at if stored else None
@@ -150,7 +154,7 @@ def connect_whatsapp(
     race never leaves an orphaned WhatsAppCredential behind.
     """
     try:
-        whatsapp_credentials.verify_whatsapp_credentials(
+        display_phone_number = whatsapp_credentials.verify_whatsapp_credentials(
             payload.phone_number_id, payload.access_token
         )
     except WhatsAppCredentialInvalidError as exc:
@@ -168,6 +172,7 @@ def connect_whatsapp(
     business = db.get(Business, principal.business_id)
     business.whatsapp_phone_number_id = payload.phone_number_id
     business.whatsapp_business_account_id = payload.whatsapp_business_account_id
+    business.whatsapp_display_phone_number = display_phone_number
     business.whatsapp_connection_status = "connected"
     try:
         db.flush()
@@ -214,5 +219,6 @@ def disconnect_whatsapp(
     business = db.get(Business, principal.business_id)
     business.whatsapp_phone_number_id = None
     business.whatsapp_business_account_id = None
+    business.whatsapp_display_phone_number = None
     business.whatsapp_connection_status = "not_connected"
     db.commit()

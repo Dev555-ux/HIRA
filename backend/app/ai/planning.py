@@ -30,6 +30,14 @@ ActionPlan.action (Sprint 59) — the matched profile's name (e.g.
 execution policy once a request is ready, without a third parallel keyword
 classifier: governance keys off the same action identity this module
 already computes, rather than re-detecting it.
+
+Sprint 75 (DEC-045): plan_action() is unchanged (still the single-domain
+path, now implemented via the shared _plan_for_profiles() helper so its
+behaviour is provably identical, not just similar). plan_actions() is
+additive: one ActionPlan per requested domain, for app/ai/plan.py to turn
+into a multi-domain ExecutionPlan. ActionProfile gained a `domain` field
+(calendar/crm) so plan_actions() can filter to "just this domain's
+profiles" without inferring it from the action name string.
 """
 
 from __future__ import annotations
@@ -68,6 +76,10 @@ class RequiredField:
 @dataclass(frozen=True)
 class ActionProfile:
     name: str
+    # Sprint 75 (DEC-045): which app/ai/intent.py Stage 2 category this
+    # profile belongs to — lets plan_actions() below filter to "just this
+    # domain's profiles" without inferring it from the action name string.
+    domain: str
     trigger_keywords: tuple[str, ...]
     required: tuple[RequiredField, ...]
     optional_fields: tuple[str, ...] = ()
@@ -96,6 +108,7 @@ class ActionPlan:
 _ACTION_PROFILES: tuple[ActionProfile, ...] = (
     ActionProfile(
         name="calendar_cancel",
+        domain="calendar",
         trigger_keywords=("cancel",),
         required=(
             RequiredField(
@@ -107,6 +120,7 @@ _ACTION_PROFILES: tuple[ActionProfile, ...] = (
     ),
     ActionProfile(
         name="calendar_reschedule",
+        domain="calendar",
         trigger_keywords=("reschedule",),
         required=(
             RequiredField("date", _DATE_RE, "ask what the new date should be"),
@@ -115,6 +129,7 @@ _ACTION_PROFILES: tuple[ActionProfile, ...] = (
     ),
     ActionProfile(
         name="calendar_booking",
+        domain="calendar",
         trigger_keywords=("book", "schedule"),
         required=(
             RequiredField("date", _DATE_RE, "ask what date this should be on"),
@@ -124,6 +139,7 @@ _ACTION_PROFILES: tuple[ActionProfile, ...] = (
     ),
     ActionProfile(
         name="crm_lead",
+        domain="crm",
         trigger_keywords=("lead",),
         required=(
             RequiredField("customer_name", _CUSTOMER_NAME_RE, "ask for the customer's name"),
@@ -133,9 +149,9 @@ _ACTION_PROFILES: tuple[ActionProfile, ...] = (
 )
 
 
-def plan_action(text: str) -> ActionPlan:
+def _plan_for_profiles(text: str, profiles: tuple[ActionProfile, ...]) -> ActionPlan:
     """Checks an Action-classified message against the first matching
-    ActionProfile's required fields, in _ACTION_PROFILES order.
+    profile's required fields, in the given profiles' order.
 
     Returns ready=True (no clarification) whenever no profile's trigger
     keywords match — this module only ever *withholds* tools Stage 2
@@ -145,7 +161,7 @@ def plan_action(text: str) -> ActionPlan:
     to Sprint 57's existing behaviour, not a hard stop).
     """
     lower = text.lower()
-    for profile in _ACTION_PROFILES:
+    for profile in profiles:
         if not any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in profile.trigger_keywords):
             continue
         missing = next((f for f in profile.required if not f.detector.search(text)), None)
@@ -158,3 +174,27 @@ def plan_action(text: str) -> ActionPlan:
             )
         return ActionPlan(ready=True, action=profile.name)
     return ActionPlan(ready=True)
+
+
+def plan_action(text: str) -> ActionPlan:
+    """Checks an Action-classified message against every known profile, in
+    _ACTION_PROFILES order — the single-domain path every caller before
+    Sprint 75 uses. Byte-for-byte the same behaviour as before Sprint 75;
+    only its implementation now goes through the shared helper above.
+    """
+    return _plan_for_profiles(text, _ACTION_PROFILES)
+
+
+def plan_actions(text: str, domains: list[str]) -> list[ActionPlan]:
+    """Sprint 75 (DEC-045): one ActionPlan per requested domain, in the
+    given order — app/ai/intent.py::domains_for_action() is what decides
+    that order; this module only ever answers "is *this* domain's action
+    ready," the same question plan_action() already asked for a single,
+    implicit domain. A domain with no matching profile in it behaves
+    exactly like plan_action()'s own "no profile matched at all" case
+    (ready=True, action=None) — pass-through, not a block.
+    """
+    return [
+        _plan_for_profiles(text, tuple(p for p in _ACTION_PROFILES if p.domain == domain))
+        for domain in domains
+    ]

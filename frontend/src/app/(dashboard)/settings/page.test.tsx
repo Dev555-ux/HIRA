@@ -96,6 +96,7 @@ describe("SettingsPage", () => {
       connected: false,
       status: "not_connected",
       phone_number_id_masked: null,
+      display_phone_number: null,
       connected_at: null,
       last_inbound_at: null,
     });
@@ -215,6 +216,7 @@ describe("SettingsPage", () => {
         connected: true,
         status: "connected",
         phone_number_id_masked: "••••7890",
+        display_phone_number: null,
         connected_at: "2026-07-22T00:00:00Z",
         last_inbound_at: null,
       });
@@ -232,11 +234,27 @@ describe("SettingsPage", () => {
       expect(screen.getByRole("button", { name: /disconnect/i })).toBeInTheDocument();
     });
 
+    it("prefers the real dialable number over the masked technical ID once Meta has told us it (Sprint 72)", async () => {
+      vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
+        connected: true,
+        status: "connected",
+        phone_number_id_masked: "••••7890",
+        display_phone_number: "+1 555 123 0000",
+        connected_at: "2026-07-22T00:00:00Z",
+        last_inbound_at: null,
+      });
+      renderWithProviders();
+
+      expect(await screen.findByText("+1 555 123 0000")).toBeInTheDocument();
+      expect(screen.queryByText("••••7890")).not.toBeInTheDocument();
+    });
+
     it("shows the real last-inbound timestamp once a real message has arrived", async () => {
       vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
         connected: true,
         status: "connected",
         phone_number_id_masked: "••••7890",
+        display_phone_number: null,
         connected_at: "2026-07-22T00:00:00Z",
         last_inbound_at: new Date().toISOString(),
       });
@@ -251,6 +269,7 @@ describe("SettingsPage", () => {
         connected: false,
         status: "pending_verification",
         phone_number_id_masked: null,
+        display_phone_number: null,
         connected_at: null,
         last_inbound_at: null,
       });
@@ -268,6 +287,7 @@ describe("SettingsPage", () => {
           connected: true,
           status: "connected",
           phone_number_id_masked: "••••7890",
+          display_phone_number: null,
           connected_at: "2026-07-22T00:00:00Z",
           last_inbound_at: null,
         });
@@ -283,12 +303,33 @@ describe("SettingsPage", () => {
     });
 
     describe("connection wizard", () => {
+      it("offers a collapsed setup guide on the intro step, expandable on demand (Sprint 72)", async () => {
+        const user = userEvent.setup();
+        renderWithProviders();
+
+        await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
+
+        const toggle = screen.getByRole("button", { name: /need help finding these values/i });
+        expect(toggle).toHaveAttribute("aria-expanded", "false");
+        expect(screen.queryByText("Create a Meta App")).not.toBeInTheDocument();
+
+        await user.click(toggle);
+
+        expect(toggle).toHaveAttribute("aria-expanded", "true");
+        expect(screen.getByText("Create a Meta App")).toBeInTheDocument();
+        expect(screen.getByText("Create a System User")).toBeInTheDocument();
+        expect(screen.getByText("Generate a permanent access token")).toBeInTheDocument();
+        expect(screen.getByText("Configure the webhook")).toBeInTheDocument();
+        expect(screen.getAllByRole("link", { name: /meta's guide/i }).length).toBeGreaterThan(0);
+      });
+
       it("walks from why-connect to the real form, submits real credentials, and lands on webhook setup", async () => {
         const user = userEvent.setup();
         vi.mocked(api.connectWhatsApp).mockResolvedValue({
           connected: true,
           status: "connected",
           phone_number_id_masked: "••••7890",
+          display_phone_number: null,
           connected_at: "2026-07-22T00:00:00Z",
           last_inbound_at: null,
         });
@@ -355,6 +396,7 @@ describe("SettingsPage", () => {
           connected: true,
           status: "connected",
           phone_number_id_masked: "••••7890",
+          display_phone_number: null,
           connected_at: "2026-07-22T00:00:00Z",
           last_inbound_at: "2026-07-25T12:00:00Z",
         });
@@ -373,6 +415,44 @@ describe("SettingsPage", () => {
         expect(screen.queryByRole("heading", { name: "Verify your connection" })).not.toBeInTheDocument();
       });
 
+      it("tells the owner the real number to text once Meta has reported it (Sprint 72)", async () => {
+        const user = userEvent.setup();
+        vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
+          connected: true,
+          status: "connected",
+          phone_number_id_masked: "••••7890",
+          display_phone_number: "+1 555 123 0000",
+          connected_at: "2026-07-22T00:00:00Z",
+          last_inbound_at: null,
+        });
+        renderWithProviders();
+
+        await user.click(await screen.findByRole("button", { name: "Check connection" }));
+
+        const dialog = (await screen.findByRole("heading", { name: "Verify your connection" }))
+          .closest<HTMLElement>('[role="dialog"]')!;
+        expect(within(dialog).getByText(/send a whatsapp message from your phone to/i)).toBeInTheDocument();
+        expect(within(dialog).getByText("+1 555 123 0000")).toBeInTheDocument();
+        expect(within(dialog).queryByText(/your connected business number/i)).not.toBeInTheDocument();
+      });
+
+      it("falls back to generic wording when the real number isn't known yet", async () => {
+        const user = userEvent.setup();
+        vi.mocked(api.getWhatsAppStatus).mockResolvedValue({
+          connected: true,
+          status: "connected",
+          phone_number_id_masked: "••••7890",
+          display_phone_number: null,
+          connected_at: "2026-07-22T00:00:00Z",
+          last_inbound_at: null,
+        });
+        renderWithProviders();
+
+        await user.click(await screen.findByRole("button", { name: "Check connection" }));
+
+        expect(await screen.findByText(/your connected business number/i)).toBeInTheDocument();
+      });
+
       it("shows a retryable error instead of a stuck loading state when webhook config fails to load", async () => {
         // Found during Sprint 71 release verification: without an isError
         // branch, a failed fetch left two skeletons showing forever.
@@ -381,6 +461,7 @@ describe("SettingsPage", () => {
           connected: true,
           status: "connected",
           phone_number_id_masked: "••••7890",
+          display_phone_number: null,
           connected_at: "2026-07-22T00:00:00Z",
           last_inbound_at: null,
         });

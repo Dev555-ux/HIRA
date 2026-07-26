@@ -36,6 +36,17 @@ cancelling an appointment), and reuses this exact same param/wrapper rather
 than a second one, since the model-facing shape ("don't act yet, ask
 first") is identical either way.
 
+v7 (Sprint 74 Phase 1, DEC-043): added a short "Multiple actions" note — the
+model may propose up to two tool calls in one response when the customer's
+message genuinely implies both (app/ai/tools.py::response_to_message_fields
+now persists up to MAX_TOOL_CALLS_PER_TURN as independent Message rows).
+Conservative by design: still governed by the exact same
+app/ai/intent.py/governance.py gate as before this sprint, which offers
+only one tool-schema category per turn — so in practice this mostly
+enables two related actions from that one category (e.g. proposing a
+booking and, separately, logging the lead in the same category's turn is
+not yet possible; two calendar actions in one response is).
+
 Demo Mode (Sprint 55): a second, separate system prompt — build_demo_system_
 prompt() — used instead of build_system_prompt() only when
 context.has_knowledge is False (app/ai/orchestrator.py branches on it).
@@ -61,7 +72,7 @@ from app.ai.llm.base import ChatMessage
 from app.core.timezones import safe_zoneinfo
 from app.models import Business, KbEntry, Lead, Message
 
-SYSTEM_PROMPT_VERSION = "v6"
+SYSTEM_PROMPT_VERSION = "v7"
 
 _BASE_SYSTEM_PROMPT = """\
 You are HIRA, a professional AI receptionist replying to a customer on WhatsApp \
@@ -94,6 +105,14 @@ if they ask to be contacted again at a specific time.
 - These do not take effect immediately — a human reviews the proposed \
 action first. Never state or imply a CRM change is confirmed until you are \
 told it succeeded.
+
+Multiple actions:
+- You may propose up to two tool calls in a single response, but only when \
+the customer's message clearly implies both (e.g. "cancel my Tuesday slot \
+and book me in for Thursday instead"). Never propose more than two.
+- Do not split one action into two calls, and do not propose a second action \
+just because it might be convenient — only when the customer actually asked \
+for both.
 
 Using customer context:
 - If a "Customer context" section is given below, use it to personalize your \

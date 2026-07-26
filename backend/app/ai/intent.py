@@ -25,6 +25,13 @@ architecture review preceding this sprint for the reasoning.
 Extending with a new tool category (Payments, Communication, ...) means
 adding one _ActionCategory entry to _ACTION_CATEGORIES below — no branching
 logic changes, no other module needs to know a new category exists.
+
+Sprint 75 (DEC-045): tools_for_action()/tools_for_message() above are
+unchanged — still "first matching category only," the single-domain path
+every existing caller (and test) relies on. domains_for_action()/
+tool_schemas_for_domain() below are additive: they let app/ai/plan.py build
+a multi-domain execution plan without this module's own single-match
+behaviour changing at all.
 """
 
 from __future__ import annotations
@@ -170,6 +177,42 @@ _ACTION_CATEGORIES: tuple[_ActionCategory, ...] = (
         tool_schemas=CALENDAR_TOOL_SCHEMAS,
     ),
 )
+
+
+def domains_for_action(text: str) -> list[str]:
+    """Sprint 75 (DEC-045): like tools_for_action, but returns *every*
+    matching category's name instead of stopping at the first — ordered by
+    where each category's earliest matching keyword first appears in the
+    text, so "reschedule my appointment and log me as a lead" plans
+    Scheduler before Sales, matching how a human reads the request
+    left-to-right. A category with no match contributes nothing; a message
+    matching only one category returns a single-item list, identical in
+    effect to tools_for_action for that message (Sprint 75 acceptance
+    criterion 9 — single-domain behaviour unchanged).
+
+    Planning only — this never calls a tool or exposes anything to the
+    model by itself. app/ai/plan.py is what turns this into tool schemas.
+    """
+    lower = text.lower()
+    matches: list[tuple[int, str]] = []
+    for category in _ACTION_CATEGORIES:
+        positions = [lower.find(kw) for kw in category.keywords if kw in lower]
+        if positions:
+            matches.append((min(positions), category.name))
+    matches.sort(key=lambda m: m[0])
+    return [name for _, name in matches]
+
+
+def tool_schemas_for_domain(name: str) -> list[ToolSchema]:
+    """The tool schemas for one Stage 2 category by name — same list objects
+    _ACTION_CATEGORIES already holds, not a copy. Returns [] for an unknown
+    name rather than raising: app/ai/plan.py only ever calls this with a
+    name domains_for_action() itself just produced, but staying total (not
+    partial) avoids a KeyError-shaped failure mode for no real benefit."""
+    for category in _ACTION_CATEGORIES:
+        if category.name == name:
+            return category.tool_schemas
+    return []
 
 
 def tools_for_action(text: str) -> list[ToolSchema]:

@@ -307,6 +307,10 @@ export interface WhatsAppStatus {
   connected: boolean;
   status: "not_connected" | "pending_verification" | "connected";
   phone_number_id_masked: string | null;
+  // Sprint 72: the real, dialable number (e.g. "+1 555 123 4567") — unlike
+  // phone_number_id_masked, never masked, since the owner needs to read it
+  // in full to know which number to text during verification.
+  display_phone_number: string | null;
   connected_at: string | null;
   // Sprint 71: the most recent real inbound Message's timestamp, or null if
   // none has ever arrived — the only honest signal that the webhook is
@@ -486,4 +490,130 @@ export type AiReplyMode = "assisted" | "autonomous";
 
 export interface BusinessSettings {
   mode: AiReplyMode;
+}
+
+// Founder Operations Dashboard (Sprint 73, GET /api/v1/founder/overview).
+// Internal-only — not shown anywhere a business owner can reach.
+export type FounderAlert =
+  | "whatsapp_disconnected"
+  | "missing_knowledge_base"
+  | "ai_failures"
+  | "no_recent_activity";
+
+export interface FounderSummary {
+  total_businesses: number;
+  connected_businesses: number;
+  active_businesses: number;
+  messages_today: number;
+  ai_responses_today: number;
+  failed_responses_today: number;
+  avg_response_time_seconds: number | null;
+}
+
+export interface FounderBusinessRow {
+  id: string;
+  name: string;
+  created_at: string;
+  onboarding_status: "created" | "live";
+  onboarding_complete: boolean;
+  whatsapp: {
+    status: "not_connected" | "pending_verification" | "connected";
+    display_phone_number: string | null;
+    credential_stored: boolean;
+    last_inbound_at: string | null;
+    last_outbound_at: string | null;
+  };
+  knowledge_base: {
+    published_count: number;
+    draft_count: number;
+    last_updated_at: string | null;
+  };
+  ai_activity: {
+    conversations: number;
+    ai_responses: number;
+    failed_responses: number;
+    avg_response_time_seconds: number | null;
+  };
+  last_activity_at: string | null;
+  alerts: FounderAlert[];
+}
+
+export interface FounderOverview {
+  summary: FounderSummary;
+  businesses: FounderBusinessRow[];
+}
+
+// AI Employee Observability (Sprint 76, GET /api/v1/founder/ai-metrics,
+// /api/v1/founder/traces). Also internal-only.
+export interface FounderAiMetrics {
+  total_turns: number;
+  employee_utilisation: Record<string, number>;
+  most_used_employee: string | null;
+  most_used_tools: { tool_name: string; count: number }[];
+  failed_tool_executions: number;
+  governance_blocks: number;
+  avg_plan_length: number;
+  avg_execution_time_ms: number;
+}
+
+export type TraceOutcome =
+  | "sent"
+  | "pending_approval"
+  | "sending"
+  | "failed"
+  | "rejected"
+  | "escalated"
+  | "no_result";
+
+export interface FounderTraceRow {
+  id: string;
+  business_id: string;
+  business_name: string | null;
+  category: string;
+  plan_step_count: number;
+  roles: string[];
+  outcome: TraceOutcome;
+  duration_ms: number;
+  created_at: string;
+}
+
+export interface FounderPlanStep {
+  domain: string;
+  action: string | null;
+  role: string | null;
+  tools: string[];
+}
+
+export interface FounderExecutionPlan {
+  category: string;
+  steps: FounderPlanStep[];
+  clarification_hint: string | null;
+}
+
+export interface FounderProposedToolCall {
+  tool_name: string;
+  agent_role: string | null;
+}
+
+export interface FounderTraceResultMessage {
+  id: string;
+  type: string;
+  body: string;
+  status: string;
+  ai_meta: Record<string, unknown> | null;
+}
+
+export interface FounderTraceDetail {
+  id: string;
+  business_id: string;
+  business_name: string | null;
+  conversation_id: string;
+  category: string;
+  customer_message: string | null;
+  plan: FounderExecutionPlan;
+  proposed_tool_calls: FounderProposedToolCall[];
+  result_messages: FounderTraceResultMessage[];
+  outcome: TraceOutcome;
+  duration_ms: number;
+  created_at: string;
 }

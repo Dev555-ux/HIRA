@@ -2,9 +2,11 @@
 
 Runs after the webhook has acknowledged (so Meta isn't kept waiting): loads the
 conversation, generates a grounded reply via the orchestrator, and stores it as
-an outbound message in `pending_approval` status (Assisted Mode — a human
-approves before it is actually sent, or before a proposed calendar action
-executes — see DEC-032). Sending/executing is a separate, later step.
+one or more outbound messages (Sprint 74 Phase 1: up to two, one per proposed
+employee action — see app/ai/tools.py::response_to_message_fields) in
+`pending_approval` status (Assisted Mode — a human approves before any of them
+is actually sent, or before a proposed calendar/CRM action executes — see
+DEC-032). Sending/executing is a separate, later step.
 
 Opens its own DB session because it runs outside the request lifecycle.
 """
@@ -12,16 +14,21 @@ Opens its own DB session because it runs outside the request lifecycle.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 
+from app.ai.intent import ConversationCategory
 from app.ai.llm.base import LLMResponse, ToolCall
 from app.ai.orchestrator import generate_reply
+from app.ai.plan import ExecutionPlan
 from app.ai.prompts import SYSTEM_PROMPT_VERSION
+from app.ai.roles import RECEPTIONIST, role_for_tool
 from app.ai.tools import confirmation_message_for, execute_tool_call, response_to_message_fields
 from app.db.session import SessionLocal
 from app.models import Business, Conversation, Customer, Escalation, Message
+from app.services.execution_traces import record_execution_trace
 from app.services.messaging import WhatsAppSendError, send_text
 from app.whatsapp.credentials import get_access_token, get_stored_credential
 
@@ -40,6 +47,7 @@ NON_TEXT_FALLBACK_TEXT = (
 
 def generate_and_store_reply(
     conversation_id: uuid.UUID,
+    trigger_message_id: uuid.UUID,
     user_text: str,
     *,
     sender: Callable[..., str] = send_text,
@@ -59,9 +67,13 @@ def generate_and_store_reply(
         # that already-tested compensation path.
         try:
             if user_text.strip():
-                response, retrieved = generate_reply(db, conversation, user_text)
+                start = time.monotonic()
+                response, retrieved, plan = generate_reply(db, conversation, user_text)
+                duration_ms = int((time.monotonic() - start) * 1000)
             else:
                 response, retrieved = LLMResponse(text=NON_TEXT_FALLBACK_TEXT, model="none"), []
+                plan = ExecutionPlan(category=ConversationCategory.CONVERSATION, steps=())
+                duration_ms = 0
         except Exception:
             logger.exception("Failed to generate reply for conversation %s", conversation_id)
             db.rollback()
@@ -76,45 +88,103 @@ def generate_and_store_reply(
 
         business = db.get(Business, conversation.business_id)
 
-        message_type, body, extra_ai_meta = response_to_message_fields(response)
-        message = Message(
-            conversation_id=conversation.id,
-            business_id=conversation.business_id,
-            direction="outbound",
-            body=body,
-            type=message_type,
-            status="pending_approval",
-            ai_meta={
-                "model": response.model,
-                "prompt_version": SYSTEM_PROMPT_VERSION,
-                "retrieved_count": len(retrieved),
-                **extra_ai_meta,
-            },
-        )
-        db.add(message)
-        db.flush()
+        # Sprint 74 Phase 1 (DEC-043): response_to_message_fields() now
+        # returns up to MAX_TOOL_CALLS_PER_TURN entries (still always at
+        # least one) — each becomes its own independently governed,
+        # independently auditable Message row, processed sequentially, in
+        # order. A single-tool-call turn (the overwhelming common case,
+        # and every case before this sprint) produces exactly the one
+        # Message row it always did — this loop body is identical to the
+        # old single-message code, just repeated 1-2 times instead of
+        # written out once.
+        on_commit_failures: list[Callable[[], None]] = []
+        last_message: Message | None = None
+        proposed_tool_calls: list[dict] = []
+        result_message_ids: list[uuid.UUID] = []
+        for message_type, body, extra_ai_meta in response_to_message_fields(response):
+            tool_name = extra_ai_meta.get("tool_name")
+            agent_role = role_for_tool(tool_name) if tool_name else RECEPTIONIST
+            if tool_name:
+                proposed_tool_calls.append({"tool_name": tool_name, "agent_role": agent_role})
+            message = Message(
+                conversation_id=conversation.id,
+                business_id=conversation.business_id,
+                direction="outbound",
+                body=body,
+                type=message_type,
+                status="pending_approval",
+                ai_meta={
+                    "model": response.model,
+                    "prompt_version": SYSTEM_PROMPT_VERSION,
+                    "retrieved_count": len(retrieved),
+                    "agent_role": agent_role,
+                    **extra_ai_meta,
+                },
+            )
+            db.add(message)
+            db.flush()
+            last_message = message
+            result_message_ids.append(message.id)
 
-        # Autonomous Mode: send/execute immediately with no human approval.
-        # Assisted Mode (the default) leaves the reply/proposed action as
-        # pending_approval for the dashboard.
-        on_commit_failure = None
-        if business is not None and business.mode == "autonomous":
-            on_commit_failure = _auto_send(db, business, conversation, message, sender)
+            # Autonomous Mode: send/execute immediately with no human
+            # approval. Assisted Mode (the default) leaves the reply/
+            # proposed action as pending_approval for the dashboard.
+            if business is not None and business.mode == "autonomous":
+                on_commit_failure = _auto_send(db, business, conversation, message, sender)
+                if on_commit_failure is not None:
+                    on_commit_failures.append(on_commit_failure)
+                if message.status == "failed":
+                    # Sprint 75, Objective D: stop execution — a later
+                    # planned action may have been proposed on the
+                    # assumption this one succeeded (e.g. "reschedule to
+                    # Thursday, then log the new contact info"), so
+                    # proceeding after a failure risks acting on a false
+                    # premise. Whatever this turn already sent (if
+                    # anything, from an earlier successful step) stands as
+                    # the safe partial response; the failed step is marked
+                    # and fully auditable, same as a single-action failure
+                    # always was — just no longer followed by more actions.
+                    break
 
-        # Section A4: _auto_send ran any tool call with commit=False, so its
-        # effect (e.g. the Appointment row) is only flushed. This commit is
-        # what durably persists that effect together with the Message row
-        # (creation + status/ai_meta/body/wa_message_id) — either both land
-        # or neither does. On failure, on_commit_failure (if set) deletes the
-        # now-orphaned external calendar event before re-raising, to be
+        # Sprint 76: recorded defensively — a tracing bug must never break
+        # the real reply flow this loop just built. Flushed (not committed)
+        # here so it lands atomically with this turn's Message rows in the
+        # single commit below.
+        try:
+            record_execution_trace(
+                db,
+                business_id=conversation.business_id,
+                conversation_id=conversation.id,
+                trigger_message_id=trigger_message_id,
+                plan=plan,
+                proposed_tool_calls=proposed_tool_calls,
+                result_message_ids=result_message_ids,
+                duration_ms=duration_ms,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record execution trace for conversation %s", conversation_id
+            )
+
+        # Section A4: each _auto_send call above ran its tool call with
+        # commit=False, so its effect (e.g. an Appointment row) is only
+        # flushed. This single commit is what durably persists every
+        # message from this turn together with every tool call's effect —
+        # all land or none does. On failure, every collected
+        # on_commit_failure runs (in order) to delete now-orphaned external
+        # side effects (e.g. calendar events) before re-raising, to be
         # caught by the except below like any other failure here.
         try:
             db.commit()
         except Exception:
-            if on_commit_failure is not None:
+            for on_commit_failure in on_commit_failures:
                 on_commit_failure()
             raise
-        logger.info("Stored reply for conversation %s (status=%s)", conversation_id, message.status)
+        logger.info(
+            "Stored reply for conversation %s (status=%s)",
+            conversation_id,
+            last_message.status if last_message else None,
+        )
     except Exception:
         logger.exception("Failed to generate reply for conversation %s", conversation_id)
         db.rollback()

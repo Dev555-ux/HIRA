@@ -6,6 +6,7 @@ import {
   BookOpen,
   Building2,
   CalendarClock,
+  ChevronDown,
   Copy,
   ExternalLink,
   Globe,
@@ -221,11 +222,14 @@ export default function SettingsPage() {
               <>
                 <p className="text-sm text-muted-foreground">
                   Your AI employee is connected
-                  {whatsappStatus?.phone_number_id_masked ? (
+                  {/* Sprint 72: prefer the real, dialable number over the
+                      masked technical ID whenever Meta has told us it —
+                      falls back for connections made before this existed. */}
+                  {whatsappStatus?.display_phone_number || whatsappStatus?.phone_number_id_masked ? (
                     <>
                       {" "}
                       (<span className="font-medium text-foreground">
-                        {whatsappStatus.phone_number_id_masked}
+                        {whatsappStatus.display_phone_number ?? whatsappStatus.phone_number_id_masked}
                       </span>
                       )
                     </>
@@ -593,6 +597,85 @@ function WhatsAppWizardAutoOpen({ onOpen }: { onOpen: () => void }) {
   return null;
 }
 
+// Sprint 72: a plain-text, collapsible walkthrough — deliberately not
+// screenshots. Meta's own console UI changes often enough that embedded
+// screenshots go stale within a few months and become actively misleading;
+// menu paths and field names are far more durable, and the "official guide"
+// links below point at Meta's own docs, which Meta keeps current so HIRA
+// doesn't have to. Self-contained state (not lifted to the wizard) so it
+// naturally resets each time the intro step remounts.
+const META_SETUP_STEPS: {
+  title: string;
+  description: string;
+  guideUrl: string;
+}[] = [
+  {
+    title: "Create a Meta App",
+    description:
+      'developers.facebook.com → My Apps → Create App → choose "Business" → add the "WhatsApp" product.',
+    guideUrl: "https://developers.facebook.com/docs/development/create-an-app",
+  },
+  {
+    title: "Create a System User",
+    description:
+      "Meta Business Settings → Users → System Users → Add → assign it to your WhatsApp Business Account with Manage access.",
+    guideUrl: "https://developers.facebook.com/docs/whatsapp/business-management-api/get-started",
+  },
+  {
+    title: "Generate a permanent access token",
+    description:
+      'From that System User: Generate New Token → select your App → grant the "whatsapp_business_messaging" and "whatsapp_business_management" permissions → copy the token immediately (Meta only shows it once).',
+    guideUrl: "https://developers.facebook.com/docs/whatsapp/business-management-api/get-started",
+  },
+  {
+    title: "Configure the webhook",
+    description:
+      'App Dashboard → WhatsApp → Configuration → Webhooks → paste the Callback URL and Verify Token (shown a couple of steps ahead in this wizard) → subscribe to the "messages" field.',
+    guideUrl: "https://developers.facebook.com/docs/whatsapp/cloud-api/guides/set-up-webhooks/",
+  },
+];
+
+function MetaSetupGuide() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded-md border">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 p-3 text-left text-sm font-medium"
+      >
+        Need help finding these values from Meta?
+        <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <ol className="space-y-3 border-t p-3">
+          {META_SETUP_STEPS.map((step, i) => (
+            <li key={step.title} className="flex gap-3 text-sm">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                {i + 1}
+              </span>
+              <div className="space-y-0.5">
+                <p className="font-medium">{step.title}</p>
+                <p className="text-muted-foreground">{step.description}</p>
+                <a
+                  href={step.guideUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  Meta&apos;s guide <ExternalLink className="size-3" />
+                </a>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 type WhatsAppWizardStep = "intro" | "form" | "webhook" | "verify";
 
 /** Real self-serve connection (Sprint 69, ONBOARD-D "guided-manual v1") —
@@ -706,6 +789,7 @@ function WhatsAppConnectWizard({
               </span>
             </li>
           </ul>
+          <MetaSetupGuide />
           <DialogFooter>
             <Button variant="outline" onClick={() => close(false)}>
               Cancel
@@ -921,7 +1005,18 @@ function VerifyConnectionStep({ onDone }: { onDone: () => void }) {
       <DialogHeader>
         <DialogTitle>Verify your connection</DialogTitle>
         <DialogDescription>
-          Send a WhatsApp message from your phone to your connected business number.
+          {/* Sprint 72: the wizard previously said "your connected business
+              number" with no way to know what that number actually was —
+              phone_number_id (already collected) is a Meta-internal ID, not
+              a dialable number. display_phone_number is the real one. */}
+          {data?.display_phone_number ? (
+            <>
+              Send a WhatsApp message from your phone to{" "}
+              <span className="font-medium text-foreground">{data.display_phone_number}</span>.
+            </>
+          ) : (
+            "Send a WhatsApp message from your phone to your connected business number."
+          )}
         </DialogDescription>
       </DialogHeader>
       <p className="text-sm text-muted-foreground">

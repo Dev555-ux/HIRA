@@ -32,8 +32,8 @@ def _client(db_session):
     dispatched: list[tuple] = []
 
     def fake_dispatcher():
-        def dispatch(background_tasks, conversation_id, user_text):
-            dispatched.append((conversation_id, user_text))
+        def dispatch(background_tasks, conversation_id, message_id, user_text):
+            dispatched.append((conversation_id, message_id, user_text))
 
         return dispatch
 
@@ -223,6 +223,11 @@ def test_post_persists_inbound_and_dispatches_reply(db_session):
     assert db_session.scalars(select(Customer)).first().wa_phone == "+15551230000"
     assert db_session.scalars(select(Conversation)).first().status == "active"
     assert len(dispatched) == 1  # reply generation was scheduled
+    # Sprint 76: dispatch is handed the *actual* persisted inbound Message's
+    # id (not just conversation_id/text) — record_execution_trace's
+    # trigger_message_id depends on this being the real row, not a
+    # placeholder, all the way from app/webhooks/whatsapp.py.
+    assert dispatched[0][1] == inbound[0].id
     app.dependency_overrides.clear()
 
 

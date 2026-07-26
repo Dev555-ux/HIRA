@@ -20,16 +20,21 @@ reasoning `_auto_send` already applies to Autonomous Mode.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.intent import ConversationCategory
 from app.ai.llm import LLMError, LLMResponse
 from app.ai.llm.base import ToolCall
 from app.ai.orchestrator import generate_reply
+from app.ai.plan import ExecutionPlan
+from app.ai.roles import RECEPTIONIST, role_for_tool
 from app.ai.tools import confirmation_message_for, execute_tool_call, response_to_message_fields
 from app.models import Conversation, Customer, KbEntry, Message
+from app.services.execution_traces import record_execution_trace
 
 logger = logging.getLogger(__name__)
 
@@ -111,56 +116,114 @@ def playground_reply(
     db.add(inbound)
     db.flush()
 
+    start = time.monotonic()
     try:
-        response, retrieved = generate_reply(db, conversation, user_text)
+        response, retrieved, plan = generate_reply(db, conversation, user_text)
     except LLMError:
         logger.exception(
             "Demo Chat LLM call failed for business %s; returning fallback reply", business_id
         )
         response = LLMResponse(text=LLM_UNAVAILABLE_TEXT, model="unavailable")
         retrieved = []
-    message_type, body, extra_ai_meta = response_to_message_fields(response)
-    ai_meta = {"model": response.model, "retrieved_count": len(retrieved), **extra_ai_meta}
+        plan = ExecutionPlan(category=ConversationCategory.CONVERSATION, steps=())
+    duration_ms = int((time.monotonic() - start) * 1000)
 
-    tool_outcome: dict | None = None
-    if message_type == "tool_call":
-        # Demo Chat executes proposed actions immediately rather than holding
-        # them in the Pending Approvals queue — there is no real customer or
-        # human reviewer waiting on a demo conversation, so "pending approval"
-        # here would just be a permanent dead end. Reuses the exact same
-        # execute_tool_call()/confirmation_message_for() Autonomous Mode's
-        # _auto_send already calls (app/ai/processing.py) — no new execution
-        # path, no bypass of the tool layer.
-        tool_call = ToolCall(
-            id="demo", name=extra_ai_meta["tool_name"], arguments=extra_ai_meta["tool_arguments"]
-        )
-        result = execute_tool_call(
-            db,
-            business_id,
-            tool_call,
-            customer_id=conversation.customer_id,
+    # Sprint 74 Phase 1 (DEC-043): up to MAX_TOOL_CALLS_PER_TURN entries now,
+    # each executed immediately and persisted as its own Message — same
+    # reasoning as before (no human reviewer on a demo conversation, so
+    # holding anything as pending_approval would be a dead end), just
+    # repeated sequentially instead of written out once. The API/UI contract
+    # is intentionally unchanged (still one `body`/`tool_outcome` returned,
+    # from the *last* entry) — Demo Chat's frontend shows one reply bubble
+    # per turn; earlier entries are still fully persisted and attributed,
+    # just not the one reflected in this return value. See
+    # documentation/API.md if a future sprint wants to surface all of them.
+    last_body = ""
+    last_tool_outcome: dict | None = None
+    proposed_tool_calls: list[dict] = []
+    result_message_ids: list[uuid.UUID] = []
+    for message_type, body, extra_ai_meta in response_to_message_fields(response):
+        tool_name = extra_ai_meta.get("tool_name")
+        agent_role = role_for_tool(tool_name) if tool_name else RECEPTIONIST
+        if tool_name:
+            proposed_tool_calls.append({"tool_name": tool_name, "agent_role": agent_role})
+        ai_meta = {
+            "model": response.model,
+            "retrieved_count": len(retrieved),
+            "agent_role": agent_role,
+            **extra_ai_meta,
+        }
+
+        tool_outcome: dict | None = None
+        if message_type == "tool_call":
+            # Demo Chat executes proposed actions immediately rather than
+            # holding them in the Pending Approvals queue — reuses the exact
+            # same execute_tool_call()/confirmation_message_for() Autonomous
+            # Mode's _auto_send already calls (app/ai/processing.py) — no
+            # new execution path, no bypass of the tool layer.
+            tool_call = ToolCall(
+                id="demo",
+                name=extra_ai_meta["tool_name"],
+                arguments=extra_ai_meta["tool_arguments"],
+            )
+            result = execute_tool_call(
+                db,
+                business_id,
+                tool_call,
+                customer_id=conversation.customer_id,
+                conversation_id=conversation.id,
+            )
+            ai_meta["tool_result"] = result.message
+            tool_outcome = {"name": tool_call.name, "success": result.success}
+            # Either way, the customer-visible text is a resolved outcome,
+            # never the Pending queue's internal "Book: ..." editable
+            # preview (Section A1's same fix, applied here) — success gets
+            # the deterministic confirmation text; failure gets the tool's
+            # own honest reason (e.g. "This business has not connected a
+            # Google Calendar").
+            message_type = "text"
+            body = confirmation_message_for(tool_call, result) if result.success else result.message
+
+        outbound = Message(
             conversation_id=conversation.id,
+            business_id=business_id,
+            direction="outbound",
+            body=body,
+            type=message_type,
+            status="sent",
+            ai_meta=ai_meta,
         )
-        ai_meta["tool_result"] = result.message
-        tool_outcome = {"name": tool_call.name, "success": result.success}
-        # Either way, the customer-visible text is a resolved outcome, never
-        # the Pending queue's internal "Book: ..." editable preview (Section
-        # A1's same fix, applied here) — success gets the deterministic
-        # confirmation text; failure gets the tool's own honest reason (e.g.
-        # "This business has not connected a Google Calendar").
-        message_type = "text"
-        body = confirmation_message_for(tool_call, result) if result.success else result.message
+        db.add(outbound)
+        db.flush()
+        last_body = body
+        last_tool_outcome = tool_outcome
+        result_message_ids.append(outbound.id)
 
-    outbound = Message(
-        conversation_id=conversation.id,
-        business_id=business_id,
-        direction="outbound",
-        body=body,
-        type=message_type,
-        status="sent",
-        ai_meta=ai_meta,
-    )
-    db.add(outbound)
+        if tool_outcome is not None and not tool_outcome["success"]:
+            # Sprint 75, Objective D: stop execution — same reasoning as
+            # Autonomous Mode's identical check in app/ai/processing.py. A
+            # later planned action may assume this one succeeded, so this
+            # demo turn ends here rather than proposing further actions on
+            # a false premise. What already sent (if anything from an
+            # earlier successful step) stands as the safe partial reply.
+            break
+
+    # Sprint 76: same defensive recording as app/ai/processing.py — a
+    # tracing bug must never break a demo turn's real reply.
+    try:
+        record_execution_trace(
+            db,
+            business_id=business_id,
+            conversation_id=conversation.id,
+            trigger_message_id=inbound.id,
+            plan=plan,
+            proposed_tool_calls=proposed_tool_calls,
+            result_message_ids=result_message_ids,
+            duration_ms=duration_ms,
+        )
+    except Exception:
+        logger.exception("Failed to record execution trace for business %s", business_id)
+
     db.commit()
 
-    return response, retrieved, body, tool_outcome
+    return response, retrieved, last_body, last_tool_outcome

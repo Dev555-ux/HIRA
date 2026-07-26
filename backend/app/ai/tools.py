@@ -14,6 +14,17 @@ other tool here — calendar and CRM alike — writes real state, so DEC-032/
 DEC-033 gate all of them behind the existing Pending Approvals workflow in
 Assisted Mode (see `app/ai/processing.py`); only Autonomous Mode, or an
 already-approved pending draft, calls `execute_tool_call` for these.
+
+Sprint 74 Phase 1 (DEC-043): `response_to_message_fields()` turns up to
+`MAX_TOOL_CALLS_PER_TURN` (2) proposed actions from one LLMResponse into
+that many independent Message rows, each governed/approved/executed exactly
+as a single proposed action always was — "two employees acting in one
+customer turn" is two ordinary tool-call Messages, not a new execution
+path. `app/ai/intent.py`/`app/ai/planning.py`/`app/ai/governance.py` are
+unchanged: they still offer/gate exactly one tool-schema category per turn,
+so both entries (when there are two) come from that same already-governed
+category — no action reaches here without having gone through the existing
+governance gate.
 """
 
 from __future__ import annotations
@@ -161,32 +172,62 @@ def confirmation_message_for(tool_call: ToolCall, result: ToolExecutionResult) -
     return "Thanks — that's been taken care of."
 
 
-def response_to_message_fields(response: LLMResponse) -> tuple[str, str, dict]:
-    """(type, body, extra_ai_meta) for storing an LLMResponse as a Message.
+#: Sprint 74 Phase 1 (DEC-043): the model may propose more than one action in
+#: a single response; at most this many are ever turned into Message rows.
+#: Not configurable yet, and not a general multi-tool-execution engine — see
+#: this module's own docstring and DEC-043 for why 2, not unbounded.
+MAX_TOOL_CALLS_PER_TURN = 2
 
-    Shared by app/ai/processing.py (initial generation) and
-    app/services/replies.py (regenerate), so a regenerated draft can flip
-    between a plain-text reply and a proposed tool call exactly like the
-    first generation did — no separate code path for each.
+
+def response_to_message_fields(response: LLMResponse) -> list[tuple[str, str, dict]]:
+    """[(type, body, extra_ai_meta), ...] for storing an LLMResponse as one or
+    more Message rows — one entry per proposed action, capped at
+    MAX_TOOL_CALLS_PER_TURN (Sprint 74 Phase 1). Always at least one entry.
+
+    Shared by app/ai/processing.py (initial generation), app/ai/playground.py
+    (Demo Chat), and app/services/replies.py (regenerate — which only ever
+    consumes the first entry, since it replaces one already-existing Message;
+    see its own docstring), so every caller interprets a response the same
+    way.
+
+    Employee attribution (ai_meta["agent_role"]) is deliberately NOT added
+    here — app/ai/roles.py imports tool name constants from this module, so
+    importing app/ai/roles.py back here would be circular. Callers attach
+    agent_role via app.ai.roles.role_for_tool(tool_name) when building the
+    final ai_meta dict.
     """
-    if response.tool_calls:
-        tool_call = response.tool_calls[0]  # MVP: one proposed action per turn
+    if not response.tool_calls:
+        return [("text", response.text, {})]
+
+    fields: list[tuple[str, str, dict]] = []
+    for tool_call in response.tool_calls[:MAX_TOOL_CALLS_PER_TURN]:
         if tool_call.name == CHECK_AVAILABILITY:
             # check_availability is read-only and meant to be resolved
             # entirely inside generate_reply()'s bounded round-trip
             # (app/ai/orchestrator.py). Reaching here means the model asked
             # again after that round-trip (observed live with Groq/Llama on
             # an unconnected calendar) — there's nothing meaningful to
-            # approve for a read-only lookup, so this falls back to plain
-            # text rather than surfacing a confusing "pending" availability
-            # check that approve_and_send couldn't execute anyway.
-            return "text", response.text or "Let me check on that and get back to you.", {}
-        return (
-            "tool_call",
-            preview_tool_call(tool_call),
-            {"tool_name": tool_call.name, "tool_arguments": tool_call.arguments},
+            # approve for a read-only lookup, so this contributes no entry
+            # of its own rather than surfacing a confusing "pending"
+            # availability check that approve_and_send couldn't execute
+            # anyway. Unlike before Sprint 74, this no longer short-circuits
+            # the whole response — a second, real tool call alongside it
+            # (if any) still gets its own entry below.
+            continue
+        fields.append(
+            (
+                "tool_call",
+                preview_tool_call(tool_call),
+                {"tool_name": tool_call.name, "tool_arguments": tool_call.arguments},
+            )
         )
-    return "text", response.text, {}
+
+    if not fields:
+        # Every proposed call was check_availability (or tool_calls was
+        # empty after slicing, which can't actually happen) — same fallback
+        # text as before Sprint 74.
+        return [("text", response.text or "Let me check on that and get back to you.", {})]
+    return fields
 
 
 def execute_tool_call(

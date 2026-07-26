@@ -257,7 +257,7 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 - **Category**: Technical
 - **Estimated effort**: M
 - **Dependencies**: None
-- **Status**: To Do
+- **Status**: Partially done (Sprint 76, 2026-07-26) — `backend/app/ai/evaluation.py`'s `BENCHMARK_CONVERSATIONS`/`compare_plan()` is a real, runnable regression suite (`tests/test_evaluation.py`), but it only covers deterministic *planning* output (which domain/action/tools a message resolves to), not actual LLM *reply quality/wording* — the golden-set-of-20-30-scenarios-scored-against-expected-behavior scope this item originally asked for, covering the model's generated text itself, is still open.
 - **Success criteria**: A runnable eval suite exists (e.g. under `backend/tests/` or a dedicated `evals/` script), scores are captured per run, and CI (or a documented manual step) runs it whenever the system prompt or LLM provider/model changes.
 
 ---

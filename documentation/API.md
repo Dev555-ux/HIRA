@@ -105,13 +105,15 @@ Google Calendar Integration (Sprint 29, 2026-07-10, see DEC-032). Booking always
 
 ### AI booking & CRM tools
 
-The orchestrator (`app/ai/orchestrator.py::generate_reply`) passes seven tool schemas to the LLM, combined into one list (`app/ai/tools.py::TOOL_SCHEMAS`): the four calendar tools from Sprint 29 — `check_availability`, `book_appointment`, `reschedule_appointment`, `cancel_appointment` — and three CRM tools added in Sprint 30 (DEC-033, `app/ai/lead_tools.py`):
+The orchestrator (`app/ai/orchestrator.py::generate_reply`) passes the model only the tool schemas `app/ai/plan.py::build_execution_plan()` decides are relevant to the message (Sprint 57 tool routing, generalized to multiple domains in Sprint 75/DEC-045 — see `ExecutionPlan` below) — never an unconditional fixed set. The full catalog those schemas are drawn from is the four calendar tools from Sprint 29 — `check_availability`, `book_appointment`, `reschedule_appointment`, `cancel_appointment` — and three CRM tools added in Sprint 30 (DEC-033, `app/ai/lead_tools.py`):
 
 - `create_lead` — logs the customer as a lead (optional `source`, `notes`). Fails gracefully (not surfaced as an error to the customer) if a lead already exists for them (`UNIQUE(business_id, customer_id)`, DEC-031).
 - `update_lead_stage` — moves the customer's existing lead to a new pipeline stage (same seven-value set as `PATCH /leads/{id}`). Fails gracefully if no lead exists yet.
 - `set_lead_follow_up` — schedules `next_follow_up_at` on the customer's existing lead. Fails gracefully if no lead exists yet.
 
-`check_availability` is read-only and resolved automatically inside `generate_reply` (executed immediately, its result fed back for one bounded follow-up model call — never surfaced as something to approve). Every other tool — the three calendar writes and all three CRM tools — is *not* executed inline: see Assisted-Mode Approvals above. In Assisted Mode it becomes a `pending_approval` message with `type="tool_call"`; approving it (`POST /messages/{id}/approve`) executes the tool — via `AppointmentService` for a calendar tool, via `app/services/leads.py` for a CRM tool, both through the single `execute_tool_call` dispatcher — before sending the confirmation. In Autonomous Mode the tool executes immediately, same as autonomous text-sending (DEC-027). The model proposes at most one tool call per turn in this MVP (`response_to_message_fields` only looks at `LLMResponse.tool_calls[0]`) — observed live in Sprint 30 proposing both `create_lead` and `update_lead_stage` in the same turn, with only the first surfaced.
+`check_availability` is read-only and resolved automatically inside `generate_reply` (executed immediately, its result fed back for one bounded follow-up model call — never surfaced as something to approve). Every other tool — the three calendar writes and all three CRM tools — is *not* executed inline: see Assisted-Mode Approvals above. In Assisted Mode it becomes a `pending_approval` message with `type="tool_call"`; approving it (`POST /messages/{id}/approve`) executes the tool — via `AppointmentService` for a calendar tool, via `app/services/leads.py` for a CRM tool, both through the single `execute_tool_call` dispatcher — before sending the confirmation. In Autonomous Mode the tool executes immediately, same as autonomous text-sending (DEC-027).
+
+**Multiple actions per turn (Sprint 74/75, DEC-043/DEC-045)**: the model may propose up to `app/ai/tools.py::MAX_TOOL_CALLS_PER_TURN` (2) tool calls in one response — `response_to_message_fields()` turns each into its own independent Message row, attributed to the Employee Registry role that owns it (`app/ai/roles.py::role_for_tool`, e.g. `scheduler`, `sales_executive`). Each call still goes through the exact same approval/execution path as a single call. A cross-domain turn (e.g. "reschedule my appointment and log this as a lead") is only offered both domains' tools if the *first* domain's action already cleared readiness and governance (`app/ai/plan.py::build_execution_plan`, DEC-046) — a policy-gated first action means the second domain's tools are withheld entirely for that turn, never offered "alongside" an ungoverned one. `regenerate_draft` (`POST /messages/{id}/regenerate`) is the one exception: it only ever consumes the first proposed action, since it replaces one already-existing Message in place.
 
 ### Knowledge Base
 - `GET /kb` — list entries.
@@ -128,6 +130,36 @@ The orchestrator (`app/ai/orchestrator.py::generate_reply`) passes seven tool sc
 ### Users
 - `GET /users` — staff in the business.
 - `POST /users/invite` — invite staff (owner only).
+
+### Founder Operations Dashboard (Sprint 73)
+
+Internal-only, read-only, cross-tenant (see `app/api/founder_ops.py`, `app/services/founder_ops.py`). Not part of the tenant-scoped convention above — deliberately spans every business, for the founder's own operational visibility during beta. **Not customer-facing.**
+
+- **Auth**: `Authorization: Bearer <clerk_jwt>`, same as every other dashboard endpoint — but checked against `FOUNDER_CLERK_USER_IDS` (a comma-separated allowlist of Clerk user ids in Railway's Variables tab / `backend/.env`), not resolved to a `business_id`. Any authenticated caller not on the allowlist gets `404` (not `403`) — same "don't confirm a resource exists" convention as cross-tenant access elsewhere in this API. No token → `401`, same as everywhere else. An empty/unset allowlist means every caller gets `404` — the feature is off by default, not open by default.
+- `GET /founder/overview` — **implemented**. One response covering every section of the dashboard:
+  - `data.summary` — `total_businesses`, `connected_businesses`, `active_businesses` (at least one message in the last 24h), `messages_today`/`ai_responses_today`/`failed_responses_today` (UTC calendar-day boundary), `avg_response_time_seconds` (platform-wide average, see below).
+  - `data.businesses[]` — one row per business (all businesses, newest-created first — no pagination yet, see Notes below), each with:
+    - `name`, `created_at`, `onboarding_status` (raw `Business.onboarding_status`), `onboarding_complete` (derived: published KB entries exist **and** WhatsApp is connected — the same two prerequisites the customer-facing onboarding checklist already gates "Go Live" on).
+    - `whatsapp`: `status`, `display_phone_number`, `credential_stored` (a `WhatsAppCredential` row exists), `last_inbound_at`, `last_outbound_at`.
+    - `knowledge_base`: `published_count`, `draft_count`, `last_updated_at`.
+    - `ai_activity`: `conversations`, `ai_responses` (outbound message count), `failed_responses` (all-time `Message.status == "failed"` count), `avg_response_time_seconds`.
+    - `last_activity_at` — most recent message of either direction.
+    - `alerts[]` — any of `whatsapp_disconnected`, `missing_knowledge_base` (zero published entries — a business with only unreviewed drafts still triggers this), `ai_failures` (a failed message in the last 24h — an old failure alone does not), `no_recent_activity` (a *connected* business with no message in the last 7 days; not applied to businesses that were never connected, since that's already covered by `whatsapp_disconnected` and isn't a meaningful additional signal).
+  - **Response time** is computed per conversation turn (an outbound message immediately following an inbound one, via a `LAG()` window function — not fetched into Python and paired by hand), then averaged — both per-business and platform-wide. Two outbound messages in a row are not counted as a turn.
+
+**Notes**: No mutation endpoints exist on this router by design ("read-only, no destructive actions"). No pagination on `businesses[]` yet — fine at current beta scale (all aggregate queries are grouped/bulk, not per-business, so query *count* doesn't grow with business count; only response *size* would, eventually) — add `limit`/`offset` here first if that becomes a real constraint, matching every other list endpoint's convention.
+
+### AI Employee Observability (Sprint 76)
+
+Also on the Founder Operations router — same auth, same `FOUNDER_CLERK_USER_IDS` allowlist, same 404-not-403 convention as above.
+
+- `GET /founder/ai-metrics` — **implemented**. Platform-wide aggregates over every `ExecutionTrace` row (see `app/services/execution_traces.py`, `app/services/founder_ops.py::get_ai_metrics`):
+  - `total_turns`, `employee_utilisation` (`{role: count}`, from `proposed_tool_calls[].agent_role`), `most_used_employee`, `most_used_tools` (top 5, `[{tool_name, count}]`), `avg_plan_length` (mean steps per plan), `avg_execution_time_ms`.
+  - `failed_tool_executions` — traces with at least one proposed tool call whose result Message currently resolves to `outcome == "failed"` (see below). **Known asymmetry**: Demo Chat never sets a Message's status to `"failed"` for a failed tool call (it resolves the failure into ordinary `"sent"` text instead — pre-existing Sprint 74 behavior), so this undercounts failures that happened in Demo Chat specifically; real WhatsApp/Autonomous Mode failures are captured correctly.
+  - `governance_blocks` — a **proxy**, not an exact count: traces where `plan.clarification_hint` is non-null. This covers both "governance withheld an action" and "planning wasn't ready yet" (missing details) — the two aren't distinguishable from a trace alone today.
+- `GET /founder/traces` — **implemented**. Conversation Replay list. Query params: `business_id` (optional, filters to one business), `limit` (default 50, max 200), `offset` (default 0). Returns `data: [{id, business_id, business_name, category, plan_step_count, roles, outcome, duration_ms, created_at}]`, newest first.
+- `GET /founder/traces/{id}` — **implemented**. Conversation Replay detail — the full "why did HIRA do that" view for one turn: `data: {id, business_id, business_name, conversation_id, category, customer_message, plan, proposed_tool_calls, result_messages, outcome, duration_ms, created_at}`. `plan` is the `ExecutionPlan` actually built (`{category, steps: [{domain, action, role, tools}], clarification_hint}`). `result_messages` is each turn's outbound `Message` row(s), resolved to their *current* state at request time (`{id, type, body, status, ai_meta}`), not frozen at trace-write time. `404` for an unknown id, same as any other not-found resource.
+- `outcome` (both endpoints above) is derived at read time from `result_messages`' current statuses, one of: `sent`, `pending_approval`, `sending`, `failed`, `rejected`, `escalated`, `no_result` (no Message was ever produced — a non-action turn). Priority order when a turn produced more than one Message: `failed` > `escalated` > `rejected` > `pending_approval` > `sending` > `sent`.
 
 ---
 

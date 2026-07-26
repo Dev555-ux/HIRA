@@ -93,7 +93,7 @@ class _SpyProvider(LLMProvider):
 def test_generate_reply_injects_knowledge_and_returns_response(db_session):
     _, conversation = _setup_business_with_kb(db_session)
 
-    response, retrieved = generate_reply(
+    response, retrieved, plan = generate_reply(
         db_session,
         conversation,
         "what are your opening hours?",
@@ -114,13 +114,48 @@ def test_generate_reply_uses_demo_prompt_and_no_tools_without_business_knowledge
     _, conversation = _setup_business_without_kb(db_session)
     spy = _SpyProvider()
 
-    response, retrieved = generate_reply(db_session, conversation, "Hi", llm=spy)
+    response, retrieved, plan = generate_reply(db_session, conversation, "Hi", llm=spy)
 
     assert response.text == "Hello! I'm HIRA."
     assert retrieved == []
     assert len(spy.calls) == 1
     assert spy.calls[0]["tools"] is None
     assert "Answer ONLY using the information" not in spy.calls[0]["system"]
+
+
+def test_generate_reply_returns_the_plan_it_actually_used_for_a_grounded_turn(db_session):
+    _, conversation = _setup_business_with_kb(db_session)
+    spy = _SpyProvider(fixed_reply="Sure, checking our calendar.")
+
+    _, _, plan = generate_reply(
+        db_session,
+        conversation,
+        "Book a meeting with John tomorrow at 3 PM.",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
+    )
+
+    assert plan.category.value == "action"
+    assert len(plan.steps) == 1
+    assert plan.steps[0].domain == "calendar"
+
+
+def test_generate_reply_returns_an_empty_steps_plan_for_demo_mode(db_session):
+    """Sprint 76: the Demo Mode branch (no Business Knowledge yet) never
+    runs planning at all — recomputing build_execution_plan() in a caller
+    would misrepresent that turn as having offered tools it never did. The
+    plan generate_reply() returns here must have empty steps regardless of
+    what the message *would* have planned to, while still reflecting Stage 1
+    classification for tracing (Sprint 76's execution_traces)."""
+    _, conversation = _setup_business_without_kb(db_session)
+    spy = _SpyProvider()
+
+    _, _, plan = generate_reply(
+        db_session, conversation, "Book a meeting with John tomorrow at 3 PM.", llm=spy
+    )
+
+    assert plan.steps == ()
+    assert plan.category.value == "action"  # Stage 1 still classifies it
 
 
 def test_generate_reply_uses_normal_prompt_once_knowledge_exists(db_session):
@@ -132,7 +167,7 @@ def test_generate_reply_uses_normal_prompt_once_knowledge_exists(db_session):
     _, conversation = _setup_business_with_kb(db_session)
     spy = _SpyProvider(fixed_reply="We're open 9am-5pm on weekdays.")
 
-    response, retrieved = generate_reply(
+    response, retrieved, plan = generate_reply(
         db_session, conversation, "what are your hours?", llm=spy, embedding=FakeEmbeddingProvider()
     )
 
@@ -227,6 +262,60 @@ def test_generate_reply_offers_only_crm_tools_for_a_lead_action(db_session):
 
     tool_names = {schema.name for schema in spy.calls[0]["tools"]}
     assert tool_names == {CREATE_LEAD, UPDATE_LEAD_STAGE, SET_LEAD_FOLLOW_UP}
+
+
+# --- Sprint 75 (DEC-045): cross-employee planning at the generate_reply level -
+
+
+def test_generate_reply_offers_both_domains_tools_for_a_two_domain_message(db_session):
+    """The end-to-end proof that Sprint 75 actually widened what the model
+    is offered — not just that app/ai/plan.py's unit tests are internally
+    consistent."""
+    _, conversation = _setup_business_with_kb(db_session)
+    spy = _SpyProvider(fixed_reply="Done — both taken care of.")
+
+    generate_reply(
+        db_session,
+        conversation,
+        "Book a meeting tomorrow at 3pm and create a lead for John",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
+    )
+
+    tool_names = {schema.name for schema in spy.calls[0]["tools"]}
+    assert tool_names == {
+        BOOK_APPOINTMENT,
+        CHECK_AVAILABILITY,
+        RESCHEDULE_APPOINTMENT,
+        CANCEL_APPOINTMENT,
+        CREATE_LEAD,
+        UPDATE_LEAD_STAGE,
+        SET_LEAD_FOLLOW_UP,
+    }
+
+
+def test_generate_reply_still_offers_only_one_domain_for_a_single_domain_message(db_session):
+    """Regression guard, at this exact call boundary, for acceptance
+    criterion 9 — identical assertion to the pre-Sprint-75 booking test
+    above, just naming the sprint that must not have changed it."""
+    _, conversation = _setup_business_with_kb(db_session)
+    spy = _SpyProvider(fixed_reply="Sure, checking our calendar.")
+
+    generate_reply(
+        db_session,
+        conversation,
+        "Book a meeting tomorrow at 3pm",
+        llm=spy,
+        embedding=FakeEmbeddingProvider(),
+    )
+
+    tool_names = {schema.name for schema in spy.calls[0]["tools"]}
+    assert tool_names == {
+        BOOK_APPOINTMENT,
+        CHECK_AVAILABILITY,
+        RESCHEDULE_APPOINTMENT,
+        CANCEL_APPOINTMENT,
+    }
 
 
 # --- Sprint 58: Action Readiness Check (planning.py) -----------------------
@@ -434,7 +523,7 @@ def test_generate_reply_passes_write_tool_calls_through_unexecuted(db_session):
     )
     provider = MockProvider(fixed_reply="", fixed_tool_calls=[tool_call])
 
-    response, _ = generate_reply(
+    response, _, _ = generate_reply(
         db_session,
         conversation,
         "book me tuesday at 2pm",
@@ -468,7 +557,7 @@ def test_generate_reply_executes_check_availability_then_asks_again(db_session, 
         ]
     )
 
-    response, _ = generate_reply(
+    response, _, _ = generate_reply(
         db_session,
         conversation,
         # Sprint 58: needs a concrete time too, or the Action Readiness
@@ -495,13 +584,51 @@ def test_generate_and_store_reply_persists_pending_outbound(db_session, monkeypa
         lambda name=None: MockProvider(fixed_reply="Yes, we're open today!"),
     )
 
-    processing.generate_and_store_reply(conversation.id, "are you open today?")
+    processing.generate_and_store_reply(conversation.id, None, "are you open today?")
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
     assert len(outbound) == 1
     assert outbound[0].status == "pending_approval"
     assert outbound[0].body == "Yes, we're open today!"
     assert outbound[0].ai_meta["model"] == "mock-1"
+
+
+def test_generate_and_store_reply_records_an_execution_trace(db_session, monkeypatch):
+    """Sprint 76, Objective A: every turn through the real background
+    processor gets a matching ExecutionTrace row, atomically alongside the
+    Message it produced."""
+    from app.models import ExecutionTrace
+
+    biz, conversation = _setup_business_with_kb(db_session)
+    trigger = Message(
+        conversation_id=conversation.id,
+        business_id=biz.id,
+        direction="inbound",
+        body="are you open today?",
+        status="received",
+    )
+    db_session.add(trigger)
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="Yes, we're open today!"),
+    )
+
+    processing.generate_and_store_reply(conversation.id, trigger.id, "are you open today?")
+
+    traces = db_session.scalars(
+        select(ExecutionTrace).where(ExecutionTrace.conversation_id == conversation.id)
+    ).all()
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace.business_id == biz.id
+    assert trace.trigger_message_id == trigger.id
+    outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).one()
+    assert trace.result_message_ids == [str(outbound.id)]
+    assert trace.duration_ms >= 0
 
 
 # --- AI-3: non-text inbound messages get an honest reply, not silence -----
@@ -521,7 +648,7 @@ def test_non_text_message_gets_canned_reply_without_calling_the_llm(db_session, 
 
     # app/webhooks/whatsapp.py::_extract_text collapses a non-text inbound
     # message (image/audio/video/...) to "" before dispatch.
-    processing.generate_and_store_reply(conversation.id, "")
+    processing.generate_and_store_reply(conversation.id, None, "")
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
     assert len(outbound) == 1
@@ -547,7 +674,7 @@ def test_generation_failure_escalates_instead_of_leaving_silence(db_session, mon
 
     monkeypatch.setattr(processing, "generate_reply", _boom)
 
-    processing.generate_and_store_reply(conversation_id, "are you open today?")
+    processing.generate_and_store_reply(conversation_id, None, "are you open today?")
 
     outbound = db_session.scalars(
         select(Message).where(
@@ -604,7 +731,7 @@ def test_assisted_mode_stores_proposed_tool_call_without_executing(db_session, m
         lambda db, business_id: executed.update(called=True),
     )
 
-    processing.generate_and_store_reply(conversation.id, "book me tuesday at 2pm")
+    processing.generate_and_store_reply(conversation.id, None, "book me tuesday at 2pm")
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
     assert len(outbound) == 1
@@ -642,7 +769,7 @@ def test_assisted_mode_stores_proposed_lead_tool_call_without_executing(db_sessi
         lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[tool_call]),
     )
 
-    processing.generate_and_store_reply(conversation.id, "I'd like a quote please")
+    processing.generate_and_store_reply(conversation.id, None, "I'd like a quote please")
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
     assert len(outbound) == 1
@@ -652,6 +779,223 @@ def test_assisted_mode_stores_proposed_lead_tool_call_without_executing(db_sessi
     from app.models import Lead
 
     assert db_session.scalars(select(Lead)).first() is None  # nothing written yet
+
+
+# --- Sprint 74 Phase 1 (DEC-043): two-action collaboration ------------------
+
+
+def test_assisted_mode_stores_two_proposed_actions_as_independent_pending_messages(
+    db_session, monkeypatch
+):
+    """The Employee Registry attributes each action to its owning role, and
+    each remains its own independently governed, independently approvable
+    Message — a founder can approve one and reject the other."""
+    from app.models import Customer
+
+    biz = Business(name="Clinic A")  # assisted (default)
+    db_session.add(biz)
+    db_session.flush()
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    booking = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T14:00:00",
+            "ends_at": "2026-08-05T15:00:00",
+            "summary": "Cleaning",
+        },
+    )
+    lead = ToolCall(id="2", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[booking, lead]),
+    )
+
+    processing.generate_and_store_reply(
+        conversation.id, None, "book me tuesday and I'm ready to sign up"
+    )
+
+    outbound = db_session.scalars(
+        select(Message).where(Message.direction == "outbound").order_by(Message.created_at)
+    ).all()
+    assert len(outbound) == 2
+    assert outbound[0].type == "tool_call"
+    assert outbound[0].status == "pending_approval"
+    assert outbound[0].ai_meta["tool_name"] == BOOK_APPOINTMENT
+    assert outbound[0].ai_meta["agent_role"] == "scheduler"
+    assert outbound[1].type == "tool_call"
+    assert outbound[1].status == "pending_approval"
+    assert outbound[1].ai_meta["tool_name"] == CREATE_LEAD
+    assert outbound[1].ai_meta["agent_role"] == "sales_executive"
+
+
+def test_autonomous_mode_executes_two_actions_sequentially_not_in_parallel(db_session, monkeypatch):
+    """Both actions execute and send in the order the model proposed them —
+    sequential, not concurrent (no threads/async gather introduced)."""
+    from app.models import Customer, Lead
+
+    biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
+    db_session.add(biz)
+    db_session.flush()
+    _connect_whatsapp(db_session, monkeypatch, biz.id)
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    booking = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T14:00:00",
+            "ends_at": "2026-08-05T15:00:00",
+            "summary": "Cleaning",
+        },
+    )
+    lead = ToolCall(id="2", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[booking, lead]),
+    )
+    monkeypatch.setattr(
+        "app.ai.tools.get_appointment_service",
+        lambda db, business_id: AppointmentService(
+            db, business_id, MockCalendarProvider(), calendar_id="primary"
+        ),
+    )
+    send_order: list[str] = []
+
+    def fake_sender(phone_number_id, to, body, **_kwargs):
+        send_order.append(body)
+        return f"wamid.{len(send_order)}"
+
+    processing.generate_and_store_reply(
+        conversation.id, None, "book me tuesday and I'm ready to sign up", sender=fake_sender
+    )
+
+    outbound = db_session.scalars(
+        select(Message).where(Message.direction == "outbound").order_by(Message.created_at)
+    ).all()
+    assert len(outbound) == 2
+    assert [m.status for m in outbound] == ["sent", "sent"]
+    assert [m.ai_meta["agent_role"] for m in outbound] == ["scheduler", "sales_executive"]
+    # Sent in the same order the actions were proposed and persisted —
+    # sequential execution, not parallel (order would be nondeterministic
+    # under real concurrent execution).
+    assert send_order == [outbound[0].body, outbound[1].body]
+    # Shared CRM memory (Objective D): the Lead created by the second action
+    # references the exact same Customer the booking's Appointment does —
+    # one source of truth, not a per-employee copy.
+    created_lead = db_session.scalars(select(Lead)).first()
+    assert created_lead is not None
+    assert created_lead.customer_id == customer.id
+
+
+def test_single_text_reply_is_attributed_to_the_receptionist(db_session, monkeypatch):
+    """Text-only replies (no tool call) still carry attribution — every
+    Message can show which employee handled it, not only tool-call ones."""
+    from app.models import Customer
+
+    biz = Business(name="Clinic A")
+    db_session.add(biz)
+    db_session.flush()
+    index_entry(db_session, biz.id, "Hours", "Open 9-5 weekdays.", provider=FakeEmbeddingProvider())
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="We are open 9am-5pm."),
+    )
+
+    processing.generate_and_store_reply(conversation.id, None, "are you open?")
+
+    outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
+    assert len(outbound) == 1
+    assert outbound[0].ai_meta["agent_role"] == "receptionist"
+
+
+# --- Sprint 75 (DEC-045): stop-on-failure sequential execution -------------
+
+
+def test_autonomous_mode_stops_after_a_failed_action_and_never_attempts_the_next(
+    db_session, monkeypatch
+):
+    """Objective D: if the first of two planned actions fails, the second
+    (which may have been proposed on the assumption the first succeeded)
+    must never be attempted — no Message row, no Lead row, nothing."""
+    from app.models import Customer, Lead
+
+    biz = Business(name="Auto Clinic", mode="autonomous", whatsapp_phone_number_id="PN1")
+    db_session.add(biz)
+    db_session.flush()
+    _connect_whatsapp(db_session, monkeypatch, biz.id)
+    customer = Customer(business_id=biz.id, wa_phone="+15550001111")
+    db_session.add(customer)
+    db_session.flush()
+    conversation = Conversation(business_id=biz.id, customer_id=customer.id)
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.commit()
+
+    test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
+    monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    booking = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T14:00:00",
+            "ends_at": "2026-08-05T15:00:00",
+            "summary": "Cleaning",
+        },
+    )
+    lead = ToolCall(id="2", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[booking, lead]),
+    )
+
+    def _raise_not_connected(db, business_id):
+        raise CalendarNotConnectedError("not connected")
+
+    monkeypatch.setattr("app.ai.tools.get_appointment_service", _raise_not_connected)
+    sends: list[str] = []
+
+    def fake_sender(phone_number_id, to, body, **_kwargs):
+        sends.append(body)
+        return f"wamid.{len(sends)}"
+
+    processing.generate_and_store_reply(
+        conversation.id, None, "book me tuesday and I'm ready to sign up", sender=fake_sender
+    )
+
+    outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
+    assert len(outbound) == 1  # the lead action's Message was never created
+    assert outbound[0].ai_meta["tool_name"] == BOOK_APPOINTMENT
+    assert outbound[0].status == "failed"
+    assert sends == []  # nothing was sent to the customer either
+    assert db_session.scalars(select(Lead)).first() is None  # the CRM write never ran
 
 
 def test_autonomous_mode_executes_lead_tool_call_immediately(db_session, monkeypatch):
@@ -683,7 +1027,7 @@ def test_autonomous_mode_executes_lead_tool_call_immediately(db_session, monkeyp
         return "wamid.sent1"
 
     processing.generate_and_store_reply(
-        conversation.id, "I'd like a quote please", sender=fake_sender
+        conversation.id, None, "I'd like a quote please", sender=fake_sender
     )
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
@@ -727,7 +1071,7 @@ def test_autonomous_mode_sends_reply_immediately(db_session, monkeypatch):
         sent.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.sent1"
 
-    processing.generate_and_store_reply(conversation.id, "are you open?", sender=fake_sender)
+    processing.generate_and_store_reply(conversation.id, None, "are you open?", sender=fake_sender)
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
     assert len(outbound) == 1
@@ -783,7 +1127,7 @@ def test_autonomous_mode_executes_tool_call_immediately(db_session, monkeypatch)
         return "wamid.sent1"
 
     processing.generate_and_store_reply(
-        conversation.id, "book me tuesday at 2pm", sender=fake_sender
+        conversation.id, None, "book me tuesday at 2pm", sender=fake_sender
     )
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
@@ -845,7 +1189,7 @@ def test_autonomous_mode_marks_failed_when_tool_call_execution_fails(db_session,
         return "wamid.sent1"
 
     processing.generate_and_store_reply(
-        conversation.id, "book me tuesday at 2pm", sender=fake_sender
+        conversation.id, None, "book me tuesday at 2pm", sender=fake_sender
     )
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
@@ -928,7 +1272,7 @@ def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appoint
         return f"wamid.out{sent['count']}"
 
     processing.generate_and_store_reply(
-        conversation_id, "book me tuesday at 2pm", sender=fake_sender
+        conversation_id, None, "book me tuesday at 2pm", sender=fake_sender
     )
 
     # Nothing durably persisted -- no stale pending Message, no orphaned Appointment.
@@ -947,7 +1291,7 @@ def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appoint
     # A retry (this time succeeding) creates exactly one appointment.
     monkeypatch.setattr(processing, "SessionLocal", real_sessionmaker)
     processing.generate_and_store_reply(
-        conversation_id, "book me tuesday at 2pm", sender=fake_sender
+        conversation_id, None, "book me tuesday at 2pm", sender=fake_sender
     )
 
     appointments = db_session.scalars(select(Appointment)).all()

@@ -144,8 +144,10 @@ def test_confirmation_lead_tool_differs_from_preview():
 def test_response_to_message_fields_plain_text():
     response = LLMResponse(text="Sure, we're open 9-5", model="mock-1")
 
-    type_, body, extra = response_to_message_fields(response)
+    fields = response_to_message_fields(response)
 
+    assert len(fields) == 1
+    type_, body, extra = fields[0]
     assert type_ == "text"
     assert body == "Sure, we're open 9-5"
     assert extra == {}
@@ -159,8 +161,10 @@ def test_response_to_message_fields_tool_call():
     )
     response = LLMResponse(text="", model="mock-1", tool_calls=[tool_call])
 
-    type_, body, extra = response_to_message_fields(response)
+    fields = response_to_message_fields(response)
 
+    assert len(fields) == 1
+    type_, body, extra = fields[0]
     assert type_ == "tool_call"
     assert "Cleaning" in body
     assert extra == {"tool_name": BOOK_APPOINTMENT, "tool_arguments": tool_call.arguments}
@@ -178,8 +182,10 @@ def test_response_to_message_fields_falls_back_to_text_for_a_stray_check_availab
     )
     response = LLMResponse(text="", model="mock-1", tool_calls=[tool_call])
 
-    type_, body, extra = response_to_message_fields(response)
+    fields = response_to_message_fields(response)
 
+    assert len(fields) == 1
+    type_, body, extra = fields[0]
     assert type_ == "text"
     assert body  # never blank
     assert extra == {}
@@ -191,11 +197,63 @@ def test_response_to_message_fields_prefers_real_text_over_the_fallback():
         text="Let me look into that for you.", model="mock-1", tool_calls=[tool_call]
     )
 
-    type_, body, extra = response_to_message_fields(response)
+    fields = response_to_message_fields(response)
 
+    assert len(fields) == 1
+    type_, body, extra = fields[0]
     assert type_ == "text"
     assert body == "Let me look into that for you."
     assert extra == {}
+
+
+# --- response_to_message_fields: Sprint 74 Phase 1 (DEC-043) two-call cap ---
+
+
+def test_response_to_message_fields_returns_up_to_two_tool_calls():
+    first = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={"starts_at": "x", "ends_at": "y", "summary": "Cleaning"},
+    )
+    second = ToolCall(id="2", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+    response = LLMResponse(text="", model="mock-1", tool_calls=[first, second])
+
+    fields = response_to_message_fields(response)
+
+    assert len(fields) == 2
+    assert fields[0][0] == "tool_call"
+    assert fields[0][2] == {"tool_name": BOOK_APPOINTMENT, "tool_arguments": first.arguments}
+    assert fields[1][0] == "tool_call"
+    assert fields[1][2] == {"tool_name": CREATE_LEAD, "tool_arguments": second.arguments}
+
+
+def test_response_to_message_fields_caps_at_two_even_if_model_proposes_more():
+    calls = [
+        ToolCall(id="1", name=BOOK_APPOINTMENT, arguments={}),
+        ToolCall(id="2", name=CREATE_LEAD, arguments={}),
+        ToolCall(id="3", name=UPDATE_LEAD_STAGE, arguments={}),
+    ]
+    response = LLMResponse(text="", model="mock-1", tool_calls=calls)
+
+    fields = response_to_message_fields(response)
+
+    assert len(fields) == 2
+    assert [f[2]["tool_name"] for f in fields] == [BOOK_APPOINTMENT, CREATE_LEAD]
+
+
+def test_response_to_message_fields_skips_a_leading_stray_check_availability_and_keeps_the_real_call():
+    """A stray check_availability contributes no entry of its own (existing
+    behaviour, unchanged), but no longer swallows a real second call
+    alongside it — Sprint 74's one behavioural change to this fallback."""
+    stray_check = ToolCall(id="1", name=CHECK_AVAILABILITY, arguments={})
+    real_call = ToolCall(id="2", name=BOOK_APPOINTMENT, arguments={"summary": "Cleaning"})
+    response = LLMResponse(text="", model="mock-1", tool_calls=[stray_check, real_call])
+
+    fields = response_to_message_fields(response)
+
+    assert len(fields) == 1
+    assert fields[0][0] == "tool_call"
+    assert fields[0][2]["tool_name"] == BOOK_APPOINTMENT
 
 
 # --- execute_tool_call -------------------------------------------------------
@@ -445,7 +503,7 @@ def test_response_to_message_fields_tool_call_for_a_lead_tool():
     tool_call = ToolCall(id="1", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
     response = LLMResponse(text="", model="mock-1", tool_calls=[tool_call])
 
-    type_, body, extra = response_to_message_fields(response)
+    type_, body, extra = response_to_message_fields(response)[0]
 
     assert type_ == "tool_call"
     assert "new lead" in body

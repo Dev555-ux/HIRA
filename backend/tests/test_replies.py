@@ -295,6 +295,54 @@ def test_regenerate_draft_can_flip_a_text_draft_into_a_tool_call(db_session):
     assert result.ai_meta["tool_arguments"] == tool_call.arguments
 
 
+def test_regenerate_draft_only_regenerates_the_primary_action_when_two_are_proposed(db_session):
+    """Sprint 74 Phase 1 (DEC-043): regenerate replaces exactly one already-
+    existing Message in place, so a second action the model proposes on
+    regeneration has no row to become — only the first is used. A deliberate,
+    documented, narrow scope limit (see replies.py), not a bug."""
+    biz, _, msg = _pending_reply_with_history(db_session)
+    booking = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T14:00:00",
+            "ends_at": "2026-08-05T15:00:00",
+            "summary": "Cleaning",
+        },
+    )
+    lead = ToolCall(id="2", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+
+    result = regenerate_draft(
+        db_session,
+        biz.id,
+        msg.id,
+        llm=MockProvider(fixed_reply="", fixed_tool_calls=[booking, lead]),
+        embedding=FakeEmbeddingProvider(),
+    )
+
+    assert result.type == "tool_call"
+    assert result.ai_meta["tool_name"] == BOOK_APPOINTMENT
+    assert result.ai_meta["agent_role"] == "scheduler"
+    # No second Message was created for the dropped lead action.
+    outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
+    assert len(outbound) == 1
+
+
+def test_regenerate_draft_attributes_the_regenerated_action(db_session):
+    biz, _, msg = _pending_reply_with_history(db_session)
+    tool_call = ToolCall(id="1", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+
+    result = regenerate_draft(
+        db_session,
+        biz.id,
+        msg.id,
+        llm=MockProvider(fixed_reply="", fixed_tool_calls=[tool_call]),
+        embedding=FakeEmbeddingProvider(),
+    )
+
+    assert result.ai_meta["agent_role"] == "sales_executive"
+
+
 def test_regenerate_draft_can_flip_a_tool_call_draft_back_to_text(db_session):
     biz, customer, msg = _pending_reply_with_history(db_session)
     msg.type = "tool_call"

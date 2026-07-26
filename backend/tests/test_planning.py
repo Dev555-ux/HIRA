@@ -1,7 +1,7 @@
 """Unit tests for app/ai/planning.py (Sprint 58) — pure, deterministic
 readiness checking, no LLM/DB/network involved."""
 
-from app.ai.planning import plan_action
+from app.ai.planning import plan_action, plan_actions
 
 
 def test_booking_missing_date():
@@ -88,3 +88,55 @@ def test_non_action_text_is_always_ready():
     # given conversational/capability/knowledge text directly.
     for text in ["Hi", "What can you do?", "What are your business hours?"]:
         assert plan_action(text).ready is True
+
+
+# --- Sprint 75 (DEC-045): per-domain plans -----------------------------------
+
+
+def test_plan_actions_evaluates_each_requested_domain_independently():
+    text = "Reschedule my appointment to tomorrow at 10am and create a lead for John."
+
+    plans = plan_actions(text, ["calendar", "crm"])
+
+    assert len(plans) == 2
+    assert plans[0].ready is True
+    assert plans[0].action == "calendar_reschedule"
+    assert plans[1].ready is True
+    assert plans[1].action == "crm_lead"
+
+
+def test_plan_actions_reports_readiness_per_domain_not_globally():
+    """A complete calendar request alongside an incomplete CRM request must
+    report each domain's own readiness — one domain being incomplete must
+    not be masked by (or mask) the other's."""
+    text = "Reschedule my appointment to tomorrow at 10am and create a lead."  # no name
+
+    plans = plan_actions(text, ["calendar", "crm"])
+
+    assert plans[0].ready is True
+    assert plans[1].ready is False
+    assert plans[1].missing_field == "customer_name"
+
+
+def test_plan_actions_matches_plan_action_for_a_single_domain():
+    """plan_actions() with one domain must agree exactly with plan_action()
+    on the same text — same underlying matching logic, just filtered."""
+    text = "Book a meeting with John tomorrow at 3 PM."
+
+    assert plan_actions(text, ["calendar"])[0] == plan_action(text)
+
+
+def test_plan_actions_returns_pass_through_for_a_domain_with_no_matching_profile():
+    # "calendar" matches Stage 2 via e.g. "calendar" keyword itself, but no
+    # ActionProfile's trigger keywords match this particular phrasing.
+    plans = plan_actions("Update my calendar details.", ["calendar"])
+    assert plans[0].ready is True
+    assert plans[0].action is None
+
+
+def test_plan_actions_preserves_requested_order():
+    text = "Create a lead for John and reschedule my appointment to tomorrow at 10am."
+
+    plans = plan_actions(text, ["crm", "calendar"])
+
+    assert [p.action for p in plans] == ["crm_lead", "calendar_reschedule"]

@@ -28,6 +28,7 @@ from app.ai.llm import LLMProvider
 from app.ai.llm.base import ToolCall
 from app.ai.orchestrator import generate_reply
 from app.ai.prompts import SYSTEM_PROMPT_VERSION
+from app.ai.roles import RECEPTIONIST, role_for_tool
 from app.ai.tools import execute_tool_call, response_to_message_fields
 from app.calendar.providers.base import CalendarError
 from app.db.tenant import get_scoped
@@ -262,16 +263,29 @@ def regenerate_draft(
     if user_message is None:
         raise ValueError("No customer message found to regenerate a reply for")
 
-    response, retrieved = generate_reply(
+    # The plan generate_reply() used isn't traced here — regenerate replaces
+    # an existing Message in place rather than starting a new turn, and
+    # Sprint 76 deliberately keeps this module untouched by execution
+    # tracing (see app/services/execution_traces.py's docstring).
+    response, retrieved, _plan = generate_reply(
         db, conversation, user_message.body, llm=llm, embedding=embedding
     )
-    message_type, body, extra_ai_meta = response_to_message_fields(response)
+    # Sprint 74 Phase 1 (DEC-043): response_to_message_fields() can return up
+    # to two entries now, but regenerate replaces exactly one already-
+    # existing Message in place — there's no second row to spawn here. Only
+    # the first (primary) proposed action is used; a second action the model
+    # proposed on regeneration is silently dropped, a deliberate, narrow
+    # Phase 1 scope limit for this rare, explicit, human-triggered action
+    # (not the primary path multi-action collaboration targets).
+    message_type, body, extra_ai_meta = response_to_message_fields(response)[0]
+    tool_name = extra_ai_meta.get("tool_name")
     message.type = message_type
     message.body = body
     message.ai_meta = {
         "model": response.model,
         "prompt_version": SYSTEM_PROMPT_VERSION,
         "retrieved_count": len(retrieved),
+        "agent_role": role_for_tool(tool_name) if tool_name else RECEPTIONIST,
         "regenerated": True,
         **extra_ai_meta,
     }

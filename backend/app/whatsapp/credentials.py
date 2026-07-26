@@ -77,12 +77,20 @@ def verify_whatsapp_credentials(
     access_token: str,
     *,
     client: httpx.Client | None = None,
-) -> None:
+) -> str | None:
     """One live Graph API call proving `access_token` actually has access to
     `phone_number_id`, made *before* storing anything — so a typo'd token or
     the wrong phone number id fails immediately with a specific reason,
     rather than silently "connecting" and only failing on the first real
     send. Raises WhatsAppCredentialInvalidError on any failure.
+
+    Returns the real, dialable `display_phone_number` Meta reports for this
+    ID (Sprint 72) — `phone_number_id` itself is a Meta-internal identifier,
+    not something a business owner would recognize as "their number." `None`
+    if Meta's response omits the field (shouldn't normally happen since it's
+    explicitly requested below, but this call already has a real customer's
+    setup depending on it, so a missing field degrades to "don't show a
+    number" rather than raising).
     """
     url = f"{settings.whatsapp_api_base}/{settings.whatsapp_graph_version}/{phone_number_id}"
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -109,6 +117,7 @@ def verify_whatsapp_credentials(
             raise WhatsAppCredentialInvalidError(
                 f"Meta rejected these credentials: {resp.status_code} {resp.text}"
             )
+        return resp.json().get("display_phone_number")
     finally:
         if owns_client:
             client.close()

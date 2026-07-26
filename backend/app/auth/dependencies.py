@@ -113,3 +113,30 @@ def get_current_principal(
         clerk_user_id=clerk_user_id,
         role=user.role,
     )
+
+
+def _founder_clerk_user_ids() -> set[str]:
+    return {s.strip() for s in settings.founder_clerk_user_ids.split(",") if s.strip()}
+
+
+def get_founder_principal(clerk_user_id: str = Depends(get_verified_clerk_user_id)) -> str:
+    """Sprint 73: guards the internal, cross-tenant Founder Operations
+    Dashboard (`app/api/founder_ops.py`). Deliberately built on
+    `get_verified_clerk_user_id` (authenticate only), not
+    `get_current_principal` (authenticate + resolve one business) — this
+    view is explicitly *not* scoped to a single business, so there's no
+    single `business_id` to resolve.
+
+    Checked against `settings.founder_clerk_user_ids`, not `User.role`:
+    every business owner already has `role="owner"` (the only role any
+    signup flow ever sets — see app/services/provisioning.py), so branching
+    on role would let every customer see every other business's data, not
+    just the founder. A 404 (not 403) for a non-allowlisted caller, matching
+    this codebase's existing convention of not confirming a resource's
+    existence to someone not entitled to see it (documentation/API.md's
+    cross-tenant rule) — a business owner probing this URL learns nothing
+    from the response.
+    """
+    if clerk_user_id not in _founder_clerk_user_ids():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return clerk_user_id

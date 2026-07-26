@@ -57,6 +57,13 @@ describe("OnboardingPage", () => {
     // use after a successful submit), so this must always resolve to
     // something valid even when a given test doesn't care about its value.
     vi.mocked(api.getOnboardingStatus).mockResolvedValue({ has_business: false, business: null });
+    // Sprint 72: pin the auto-detected timezone to a known value rather
+    // than relying on whatever the test environment's ambient TZ happens
+    // to be — real detection logic is exercised, the assertion just isn't
+    // environment-dependent.
+    vi.spyOn(Intl, "DateTimeFormat").mockReturnValue({
+      resolvedOptions: () => ({ timeZone: "Asia/Kolkata" }),
+    } as Intl.DateTimeFormat);
   });
 
   it("shows validation errors when required fields are missing", async () => {
@@ -95,7 +102,9 @@ describe("OnboardingPage", () => {
         industry: "Dental Clinic",
         contact_email: "hello@acme.com",
         country: undefined,
-        timezone: undefined,
+        // Sprint 72: no longer undefined — auto-detected on mount (see the
+        // dedicated timezone describe block below for the detection itself).
+        timezone: "Asia/Kolkata",
       }),
     );
     await waitFor(() => expect(api.getOnboardingStatus).toHaveBeenCalled());
@@ -132,5 +141,42 @@ describe("OnboardingPage", () => {
 
     expect(screen.getByText(/couldn't find a verified email/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+  });
+
+  describe("timezone auto-detect (Sprint 72)", () => {
+    it("prefills the timezone field from the browser's own timezone", async () => {
+      renderWithProviders(<OnboardingPage />);
+
+      await waitFor(() =>
+        expect(screen.getByPlaceholderText("Asia/Kolkata")).toHaveValue("Asia/Kolkata"),
+      );
+    });
+
+    it("stays editable — a manual change overrides the detected value", async () => {
+      const user = userEvent.setup();
+      vi.mocked(api.createBusiness).mockResolvedValue(CREATED_BUSINESS);
+      vi.mocked(api.getOnboardingStatus).mockResolvedValue({
+        has_business: true,
+        business: CREATED_BUSINESS,
+      });
+      renderWithProviders(<OnboardingPage />);
+
+      const timezoneField = screen.getByPlaceholderText("Asia/Kolkata");
+      await waitFor(() => expect(timezoneField).toHaveValue("Asia/Kolkata"));
+      await user.clear(timezoneField);
+      await user.type(timezoneField, "America/Chicago");
+
+      await user.type(screen.getByPlaceholderText("Acme Dental Clinic"), "Acme Dental Clinic");
+      await user.selectOptions(screen.getByRole("combobox"), "Dental Clinic");
+      await user.type(screen.getByPlaceholderText("hello@acmedental.com"), "hello@acme.com");
+      await user.click(screen.getByRole("button", { name: /continue/i }));
+
+      await waitFor(() =>
+        expect(api.createBusiness).toHaveBeenCalledWith(
+          expect.any(Function),
+          expect.objectContaining({ timezone: "America/Chicago" }),
+        ),
+      );
+    });
   });
 });

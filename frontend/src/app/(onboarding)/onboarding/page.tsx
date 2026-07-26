@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { ApiError } from "@/lib/api";
@@ -49,8 +49,20 @@ export default function OnboardingPage() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
+
+  // Sprint 72: prefilled, not hardcoded into defaultValues — this page is
+  // statically prerendered (Next.js renders it at build time on the build
+  // machine), so computing Intl's result there would bake in the wrong
+  // timezone and/or cause a hydration mismatch against the browser's real
+  // one. Setting it after mount, client-side only, avoids both. Still
+  // editable — a plain form field, not a locked value.
+  useEffect(() => {
+    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (detected) setValue("timezone", detected);
+  }, [setValue]);
 
   const onSubmit = handleSubmit(async (values) => {
     if (!user?.email) return; // guarded in the UI below; nothing to submit without it

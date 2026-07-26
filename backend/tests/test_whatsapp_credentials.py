@@ -85,12 +85,27 @@ def _client(handler):
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def test_verify_whatsapp_credentials_succeeds_on_200():
+def test_verify_whatsapp_credentials_succeeds_on_200_and_returns_the_display_phone_number():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == "Bearer good-token"
         return httpx.Response(200, json={"display_phone_number": "+1 555 123 0000"})
 
-    verify_whatsapp_credentials("PN1", "good-token", client=_client(handler))
+    result = verify_whatsapp_credentials("PN1", "good-token", client=_client(handler))
+
+    assert result == "+1 555 123 0000"
+
+
+def test_verify_whatsapp_credentials_returns_none_if_meta_omits_the_field():
+    """Degrades to "don't show a number" rather than raising — the field is
+    always requested (fields=display_phone_number), so this shouldn't
+    normally happen, but a missing field must never break the connect flow."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    result = verify_whatsapp_credentials("PN1", "good-token", client=_client(handler))
+
+    assert result is None
 
 
 def test_verify_whatsapp_credentials_raises_on_401():

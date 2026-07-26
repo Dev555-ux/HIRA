@@ -6,6 +6,8 @@ import pytest
 from app.ai.intent import (
     ConversationCategory,
     classify_conversation,
+    domains_for_action,
+    tool_schemas_for_domain,
     tools_for_action,
     tools_for_message,
 )
@@ -136,3 +138,55 @@ def test_tools_for_message_returns_category_and_tools_together():
         RESCHEDULE_APPOINTMENT,
         CANCEL_APPOINTMENT,
     }
+
+
+# --- Sprint 75 (DEC-045): multi-domain detection ----------------------------
+
+
+def test_domains_for_action_returns_a_single_domain_for_a_single_domain_message():
+    """A single-domain message must produce the exact same single-item
+    result tools_for_action's caller already relied on — acceptance
+    criterion 9 (single-domain behaviour unchanged), at the domain-detection
+    layer specifically."""
+    assert domains_for_action("Book a meeting tomorrow") == ["calendar"]
+    assert domains_for_action("I have a new lead for you") == ["crm"]
+
+
+def test_domains_for_action_returns_no_domain_for_an_unrecognised_action():
+    assert domains_for_action("Send an invoice.") == []
+
+
+def test_domains_for_action_orders_by_first_mention_in_text():
+    text = "Please reschedule my appointment to Thursday and log this as a new lead"
+    # "reschedule" appears before "lead" in the text.
+    assert domains_for_action(text) == ["calendar", "crm"]
+
+
+def test_domains_for_action_orders_by_first_mention_reversed():
+    text = "I have a lead who wants to book a meeting"
+    # "lead" appears before "book" in the text.
+    assert domains_for_action(text) == ["crm", "calendar"]
+
+
+def test_domains_for_action_deduplicates_a_single_matching_category():
+    # "book" and "schedule" both match the calendar category — must not
+    # produce ["calendar", "calendar"].
+    assert domains_for_action("Book and schedule my appointment") == ["calendar"]
+
+
+def test_tool_schemas_for_domain_matches_the_stage_2_registry():
+    assert {s.name for s in tool_schemas_for_domain("calendar")} == {
+        BOOK_APPOINTMENT,
+        CHECK_AVAILABILITY,
+        RESCHEDULE_APPOINTMENT,
+        CANCEL_APPOINTMENT,
+    }
+    assert {s.name for s in tool_schemas_for_domain("crm")} == {
+        CREATE_LEAD,
+        UPDATE_LEAD_STAGE,
+        SET_LEAD_FOLLOW_UP,
+    }
+
+
+def test_tool_schemas_for_domain_returns_empty_for_an_unknown_domain():
+    assert tool_schemas_for_domain("payments") == []

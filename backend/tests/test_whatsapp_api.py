@@ -72,6 +72,7 @@ def test_get_status_when_not_connected(db_session):
         "connected": False,
         "status": "not_connected",
         "phone_number_id_masked": None,
+        "display_phone_number": None,
         "connected_at": None,
         "last_inbound_at": None,
     }
@@ -316,6 +317,77 @@ def _add_inbound_message(
         )
     )
     db_session.commit()
+
+
+class TestDisplayPhoneNumber:
+    """Sprint 72: the real, dialable number Meta returns at connect time —
+    verify_whatsapp_credentials() already fetched this and previously
+    discarded it, leaving the wizard's verify step referencing "your
+    connected business number" with no way to say what that number is."""
+
+    def test_connect_persists_the_real_display_phone_number(self, db_session, monkeypatch):
+        _configure_encryption(monkeypatch)
+        biz, _ = _seed_business(db_session, "A", "user_a")
+        db_session.commit()
+        monkeypatch.setattr(
+            "app.api.whatsapp.whatsapp_credentials.verify_whatsapp_credentials",
+            lambda *a, **k: "+1 555 123 0000",
+        )
+        client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+        resp = client.post("/api/v1/whatsapp/connect", json=CONNECT_BODY, headers=_auth())
+
+        assert resp.json()["data"]["display_phone_number"] == "+1 555 123 0000"
+        db_session.refresh(biz)
+        assert biz.whatsapp_display_phone_number == "+1 555 123 0000"
+        app.dependency_overrides.clear()
+
+    def test_status_omits_it_when_never_connected(self, db_session):
+        _seed_business(db_session, "A", "user_a")
+        db_session.commit()
+        client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+        resp = client.get("/api/v1/whatsapp/status", headers=_auth())
+
+        assert resp.json()["data"]["display_phone_number"] is None
+        app.dependency_overrides.clear()
+
+    def test_disconnect_clears_it(self, db_session, monkeypatch):
+        _configure_encryption(monkeypatch)
+        biz, _ = _seed_business(db_session, "A", "user_a")
+        db_session.commit()
+        monkeypatch.setattr(
+            "app.api.whatsapp.whatsapp_credentials.verify_whatsapp_credentials",
+            lambda *a, **k: "+1 555 123 0000",
+        )
+        client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+        client.post("/api/v1/whatsapp/connect", json=CONNECT_BODY, headers=_auth())
+
+        resp = client.post("/api/v1/whatsapp/disconnect", headers=_auth())
+
+        assert resp.status_code == 204
+        db_session.refresh(biz)
+        assert biz.whatsapp_display_phone_number is None
+        app.dependency_overrides.clear()
+
+    def test_is_never_masked_unlike_the_phone_number_id(self, db_session, monkeypatch):
+        """Deliberately different from phone_number_id_masked: this is a
+        real, human-facing number the owner needs to read in full to know
+        which number to text, not an internal identifier."""
+        _configure_encryption(monkeypatch)
+        _seed_business(db_session, "A", "user_a")
+        db_session.commit()
+        monkeypatch.setattr(
+            "app.api.whatsapp.whatsapp_credentials.verify_whatsapp_credentials",
+            lambda *a, **k: "+1 555 123 0000",
+        )
+        client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+        resp = client.post("/api/v1/whatsapp/connect", json=CONNECT_BODY, headers=_auth())
+
+        assert resp.json()["data"]["display_phone_number"] == "+1 555 123 0000"
+        assert "•" not in resp.json()["data"]["display_phone_number"]
+        app.dependency_overrides.clear()
 
 
 class TestLastInboundAt:

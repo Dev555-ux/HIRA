@@ -22,6 +22,10 @@ import type {
   Escalation,
   EscalationAssignedFilter,
   EscalationStatusFilter,
+  FounderAiMetrics,
+  FounderOverview,
+  FounderTraceDetail,
+  FounderTraceRow,
   ImportWebsitePayload,
   ImportWebsiteResult,
   KbDraftBatch,
@@ -404,4 +408,34 @@ export const api = {
     apiFetch<ApiEnvelope<Appointment>>(`/api/v1/appointments/${id}/cancel`, getToken, {
       method: "POST",
     }).then((r) => r.data),
+
+  // Founder Operations Dashboard (Sprint 73) — internal-only, cross-tenant.
+  // A non-founder caller gets a real 404 from the backend, same as any
+  // other "not found" — apiFetch/ApiError surface it unchanged, no special
+  // casing needed here.
+  getFounderOverview: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<FounderOverview>>("/api/v1/founder/overview", getToken).then(
+      (r) => r.data,
+    ),
+
+  // AI Employee Observability (Sprint 76) — same founder-only, cross-tenant
+  // gate as the overview above.
+  getFounderAiMetrics: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<FounderAiMetrics>>("/api/v1/founder/ai-metrics", getToken).then(
+      (r) => r.data,
+    ),
+
+  listFounderTraces: (
+    getToken: GetToken,
+    params: { business_id?: string; limit?: number; offset?: number } = {},
+  ) =>
+    apiFetch<ApiEnvelope<FounderTraceRow[]>>(
+      `/api/v1/founder/traces${buildQuery(params)}`,
+      getToken,
+    ).then((r) => r.data),
+
+  getFounderTraceDetail: (getToken: GetToken, id: string) =>
+    apiFetch<ApiEnvelope<FounderTraceDetail>>(`/api/v1/founder/traces/${id}`, getToken).then(
+      (r) => r.data,
+    ),
 };

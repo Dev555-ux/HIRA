@@ -202,6 +202,67 @@ def test_playground_executes_a_proposed_lead_tool_call_for_real(db_session, monk
     assert lead.source == "Demo Chat"
 
 
+def test_playground_executes_two_proposed_actions_sequentially(db_session, monkeypatch):
+    """Sprint 74 Phase 1 (DEC-043): both actions execute for real and both
+    persist their own Message, attributed to their owning employee — the
+    API/UI contract stays unchanged (one body/tool_outcome returned,
+    reflecting the last action), but nothing is lost server-side."""
+    from app.ai.llm.base import ToolCall
+    from app.ai.lead_tools import CREATE_LEAD
+    from app.ai.tools import BOOK_APPOINTMENT
+    from app.calendar.providers.mock import MockCalendarProvider
+    from app.calendar.service import AppointmentService
+    from app.models import Lead
+
+    biz = _business(db_session)
+    booking = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T14:00:00",
+            "ends_at": "2026-08-05T15:00:00",
+            "summary": "Cleaning",
+        },
+    )
+    lead = ToolCall(id="2", name=CREATE_LEAD, arguments={"source": "Demo Chat"})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[booking, lead]),
+    )
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+    monkeypatch.setattr(
+        "app.ai.tools.get_appointment_service",
+        lambda db, business_id: AppointmentService(
+            db, business_id, MockCalendarProvider(), calendar_id="primary"
+        ),
+    )
+
+    response, _, body, tool_outcome = playground_reply(
+        db_session, biz.id, "book me tuesday and sign me up"
+    )
+
+    # Return value reflects the last action (the API/UI contract is
+    # unchanged — one bubble per turn).
+    assert tool_outcome == {"name": CREATE_LEAD, "success": True}
+    assert body == "Thanks — that's been taken care of."
+
+    conversation = get_or_create_playground_conversation(db_session, biz.id)
+    outbound = (
+        db_session.query(Message)
+        .filter_by(conversation_id=conversation.id, direction="outbound")
+        .order_by(Message.created_at)
+        .all()
+    )
+    assert len(outbound) == 2
+    assert outbound[0].ai_meta["agent_role"] == "scheduler"
+    assert outbound[0].ai_meta["tool_result"] == "Appointment booked."
+    assert outbound[1].ai_meta["agent_role"] == "sales_executive"
+    assert outbound[1].ai_meta["tool_result"] == "Lead logged."
+    assert db_session.query(Lead).filter_by(business_id=biz.id).first() is not None
+
+
 def test_playground_reports_an_honest_failure_for_a_tool_call_that_cant_execute(
     db_session, monkeypatch
 ):
@@ -243,3 +304,80 @@ def test_playground_reports_an_honest_failure_for_a_tool_call_that_cant_execute(
     )
     assert outbound.type == "text"
     assert outbound.body == body
+
+
+def test_playground_stops_after_a_failed_action_and_never_attempts_the_next(
+    db_session, monkeypatch
+):
+    """Sprint 75, Objective D — same stop-on-failure guarantee as Autonomous
+    Mode's identical test in test_orchestrator.py, exercised through Demo
+    Chat's own execution path."""
+    from app.ai.llm.base import ToolCall
+    from app.ai.lead_tools import CREATE_LEAD
+    from app.ai.tools import BOOK_APPOINTMENT
+    from app.models import Lead
+
+    biz = _business(db_session)
+    booking = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T14:00:00",
+            "ends_at": "2026-08-05T15:00:00",
+            "summary": "Cleaning",
+        },
+    )
+    lead = ToolCall(id="2", name=CREATE_LEAD, arguments={"source": "Demo Chat"})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[booking, lead]),
+    )
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+    # No AppointmentService/CalendarProvider monkeypatch — the booking fails
+    # with the same honest "no calendar connected" error as the test above.
+
+    response, _, body, tool_outcome = playground_reply(
+        db_session, biz.id, "book me tuesday and sign me up"
+    )
+
+    assert tool_outcome == {"name": BOOK_APPOINTMENT, "success": False}
+    assert body == "This business has not connected a Google Calendar"
+
+    conversation = get_or_create_playground_conversation(db_session, biz.id)
+    outbound = (
+        db_session.query(Message)
+        .filter_by(conversation_id=conversation.id, direction="outbound")
+        .all()
+    )
+    assert len(outbound) == 1  # the lead action was never attempted
+    assert db_session.query(Lead).filter_by(business_id=biz.id).first() is None
+
+
+def test_playground_reply_records_an_execution_trace(db_session, monkeypatch):
+    """Sprint 76, Objective A: Demo Chat turns get an ExecutionTrace too,
+    same as real WhatsApp turns — trigger_message_id is the synthetic
+    inbound Message this turn created (get_or_create_playground_conversation
+    has no separate webhook layer to hand one in from)."""
+    from app.models import ExecutionTrace
+
+    biz = _business(db_session)
+    index_entry(
+        db_session, biz.id, "Hours", "We are open 9am to 5pm.", provider=FakeEmbeddingProvider()
+    )
+    _mock_llm_and_embeddings(monkeypatch, fixed_reply="We're open 9-5!")
+
+    playground_reply(db_session, biz.id, "what are your hours?")
+
+    conversation = get_or_create_playground_conversation(db_session, biz.id)
+    trace = db_session.query(ExecutionTrace).filter_by(conversation_id=conversation.id).one()
+    inbound, outbound = (
+        db_session.query(Message)
+        .filter_by(conversation_id=conversation.id)
+        .order_by(Message.created_at)
+        .all()
+    )
+    assert trace.business_id == biz.id
+    assert trace.trigger_message_id == inbound.id
+    assert trace.result_message_ids == [str(outbound.id)]

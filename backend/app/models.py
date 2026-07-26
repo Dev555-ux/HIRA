@@ -52,6 +52,13 @@ class Business(Base):
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     whatsapp_phone_number_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     whatsapp_business_account_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The actual dialable number (e.g. "+1 555 123 4567"), distinct from
+    # whatsapp_phone_number_id (a Meta-internal identifier, not a phone
+    # number). Meta returns this from the same verify_whatsapp_credentials()
+    # call already made at connect time — captured here (Sprint 72) so the
+    # wizard's verify step can tell a business owner which number to
+    # actually text, instead of only referencing "your connected number."
+    whatsapp_display_phone_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
     mode: Mapped[str] = mapped_column(String(16), default="assisted")  # assisted | autonomous
     # created | live — see ONBOARDING_ARCHITECTURE.md §2.1. Only "created" is set
     # by anything today; "live" is reserved for the future go-live milestone.
@@ -314,3 +321,56 @@ class WhatsAppCredential(Base):
     app_secret_encrypted: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class ExecutionTrace(Base):
+    """One row per customer turn's app/ai/plan.py::ExecutionPlan (Sprint 76)
+    — a dedicated table, not another ai_meta key, because a trace is
+    turn-level (one turn can produce up to two Message rows, per Sprint 74's
+    MAX_TOOL_CALLS_PER_TURN) and Objectives B/C/D all want to query/compare/
+    aggregate whole plans, including domains the plan *skipped*, which no
+    single Message row owns.
+
+    Write-once, never retroactively updated: `result_message_ids` records
+    which Message row(s) this turn produced, and "execution outcome" for
+    Assisted-Mode actions (approved/rejected/executed later, asynchronously,
+    by app/services/replies.py) is derived at *read* time by joining to
+    those Messages' current status — see app/services/execution_traces.py.
+    This keeps replies.py completely untouched by this sprint.
+    """
+
+    __tablename__ = "execution_traces"
+    __table_args__ = (Index("ix_execution_traces_business_created", "business_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    # The inbound Message that triggered this turn. Nullable + SET NULL:
+    # a trace should outlive the message it came from being touched by
+    # anything else this schema might do to Message rows later.
+    trigger_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
+    # app/ai/intent.py::ConversationCategory value — conversation | capability
+    # | knowledge | action.
+    category: Mapped[str] = mapped_column(String(16))
+    # {"category", "steps": [{"domain", "action", "role", "tools": [...]}],
+    # "clarification_hint": str | null} — the ExecutionPlan actually built,
+    # including why planning stopped early if it did (see
+    # app/services/execution_traces.py::_serialize_plan and
+    # app/ai/plan.py::ExecutionPlan).
+    plan: Mapped[dict] = mapped_column(JSONB)
+    # [{"tool_name", "agent_role"}, ...] — what the model actually proposed
+    # from the plan's offered tools, capped at MAX_TOOL_CALLS_PER_TURN. Can
+    # be fewer than `plan.steps` (the model isn't required to use every
+    # tool it's offered), informing "abandoned" plans (Objective E).
+    proposed_tool_calls: Mapped[list] = mapped_column(JSONB)
+    # The outbound Message row(s) this turn produced, in order — joined at
+    # read time for current status/tool_result, never duplicated here.
+    result_message_ids: Mapped[list] = mapped_column(JSONB)
+    duration_ms: Mapped[int] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

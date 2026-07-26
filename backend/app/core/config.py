@@ -99,6 +99,18 @@ class Settings(BaseSettings):
     # requests as authenticated. Must never be set in production.
     allow_mock_auth: bool = False
 
+    # Sprint 73: the Founder Operations Dashboard (/api/v1/founder/*) is a
+    # cross-tenant view — deliberately not gated by User.role (every business
+    # owner already has role="owner", so that check would let every customer
+    # in, not just the founder). A comma-separated Clerk user id allowlist,
+    # checked by app/auth/dependencies.py::get_founder_principal. Empty by
+    # default: the routes 404 for everyone (fail closed) rather than being
+    # reachable with no allowlist configured — safe, so unlike
+    # CLERK_JWKS_URL/CALENDAR_ENCRYPTION_KEY this is NOT in
+    # _REQUIRED_IN_PRODUCTION below; an unconfigured founder dashboard is a
+    # missing internal feature, not a security hole the way those are.
+    founder_clerk_user_ids: str = ""
+
     # Google Calendar (Sprint 29, DEC-032). Empty by default like the other API
     # keys above; app/calendar/oauth.py and credentials.py raise a clear,
     # actionable error if a real connect/encrypt is attempted without these set.

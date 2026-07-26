@@ -53,8 +53,10 @@ SERVICE_WINDOW = timedelta(hours=24)
 def get_reply_dispatcher():
     """Returns the callable that schedules reply generation. Overridable in tests."""
 
-    def dispatch(background_tasks: BackgroundTasks, conversation_id, user_text: str) -> None:
-        background_tasks.add_task(generate_and_store_reply, conversation_id, user_text)
+    def dispatch(
+        background_tasks: BackgroundTasks, conversation_id, message_id, user_text: str
+    ) -> None:
+        background_tasks.add_task(generate_and_store_reply, conversation_id, message_id, user_text)
 
     return dispatch
 
@@ -146,14 +148,14 @@ def receive(
         return Response(status_code=403)
 
     new_inbound = _persist_inbound(db, payload)
-    for conversation_id, user_text in new_inbound:
-        dispatch(background_tasks, conversation_id, user_text)
+    for conversation_id, message_id, user_text in new_inbound:
+        dispatch(background_tasks, conversation_id, message_id, user_text)
     # Always 200 once persisted, so Meta does not retry.
     return Response(status_code=200, content='{"status":"received"}', media_type="application/json")
 
 
 def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
-    """Persist inbound messages; return (conversation_id, text) for new ones."""
+    """Persist inbound messages; return (conversation_id, message_id, text) for new ones."""
     new_inbound: list[tuple] = []
     now = datetime.now(timezone.utc)
     for entry in payload.get("entry", []):
@@ -185,20 +187,20 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
                 conversation = _get_or_create_conversation(db, business.id, customer.id, now)
 
                 body = _extract_text(msg)
-                db.add(
-                    Message(
-                        conversation_id=conversation.id,
-                        business_id=business.id,
-                        direction="inbound",
-                        wa_message_id=wa_message_id,
-                        body=body,
-                        type=msg.get("type", "text"),
-                        status="received",
-                    )
+                message = Message(
+                    conversation_id=conversation.id,
+                    business_id=business.id,
+                    direction="inbound",
+                    wa_message_id=wa_message_id,
+                    body=body,
+                    type=msg.get("type", "text"),
+                    status="received",
                 )
+                db.add(message)
+                db.flush()
                 conversation.last_message_at = now
                 conversation.window_expires_at = now + SERVICE_WINDOW
-                new_inbound.append((conversation.id, body))
+                new_inbound.append((conversation.id, message.id, body))
             db.commit()
     return new_inbound
 

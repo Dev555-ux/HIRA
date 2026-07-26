@@ -67,6 +67,17 @@ policy decision, not a readiness check: it never runs for a request Sprint
 — only whether it's allowed through unmoderated this turn. A request with
 no named action (Sprint 58 found no matching profile) skips governance
 entirely and keeps Sprint 57/58's existing pass-through behaviour.
+
+Cross-employee planning (Sprint 75, DEC-045): the three paragraphs above
+still describe exactly what happens conceptually, but the *code* moved —
+app/ai/plan.py::build_execution_plan() now runs Stage 1/2 classification,
+per-domain readiness, and per-domain governance itself, generalized from
+"one domain" to "up to app/ai/tools.py::MAX_TOOL_CALLS_PER_TURN domains,
+each independently gated the same way." This function just calls it once
+and uses the resulting ExecutionPlan.tools/clarification_hint — it no
+longer owns any of that gating logic directly. A single-domain message
+still produces a single-step plan and therefore identical behaviour to
+before this sprint.
 """
 
 from __future__ import annotations
@@ -77,10 +88,9 @@ from sqlalchemy.orm import Session
 
 from app.ai.context import RETRIEVAL_K, build_context
 from app.ai.embeddings import EmbeddingProvider
-from app.ai.governance import ExecutionDecision, evaluate_execution
-from app.ai.intent import tools_for_message
+from app.ai.intent import classify_conversation
 from app.ai.llm import LLMProvider, LLMResponse, get_llm_provider
-from app.ai.planning import plan_action
+from app.ai.plan import ExecutionPlan, build_execution_plan
 from app.ai.prompts import (
     DEMO_SYSTEM_PROMPT_VERSION,
     SYSTEM_PROMPT_VERSION,
@@ -101,8 +111,17 @@ def generate_reply(
     *,
     llm: LLMProvider | None = None,
     embedding: EmbeddingProvider | None = None,
-) -> tuple[LLMResponse, list]:
-    """Produce a grounded reply. Returns (response, retrieved_entries).
+) -> tuple[LLMResponse, list, ExecutionPlan]:
+    """Produce a grounded reply. Returns (response, retrieved_entries, plan).
+
+    `plan` (Sprint 76) is the ExecutionPlan actually used to decide which
+    tools, if any, were offered this turn — callers use it for execution
+    tracing (app/services/execution_traces.py) rather than recomputing
+    build_execution_plan() themselves, which would silently lie about a Demo
+    Mode turn (no Business Knowledge yet) that never runs planning at all
+    below. In that branch, `plan` still reflects Stage 1 classification
+    (so a trace can tell "this looked like an action" apart from "this was
+    small talk") but always has empty steps, since no tools were offered.
 
     Does not persist or send, and never writes to a calendar/CRM — the caller
     decides (e.g. store as pending for Assisted Mode, then send/execute via
@@ -123,44 +142,32 @@ def generate_reply(
         demo_system = build_demo_system_prompt(context)
         messages = build_messages(context.history, user_text)
         response = llm.generate(system=demo_system, messages=messages)
-        return response, context.retrieved_kb
+        demo_plan = ExecutionPlan(category=classify_conversation(user_text), steps=())
+        return response, context.retrieved_kb, demo_plan
 
     messages = build_messages(context.history, user_text)
 
-    category, tools = tools_for_message(user_text)
-    clarification_hint: str | None = None
-    decision: ExecutionDecision | None = None
-    if tools:
-        plan = plan_action(user_text)
-        if not plan.ready:
-            tools = []
-            clarification_hint = plan.clarification_hint
-        elif plan.action is not None:
-            # Only a *named*, ready action is policy-gated — an action
-            # Sprint 58 doesn't recognise yet has no policy to enforce
-            # either, so it keeps Sprint 57/58's existing pass-through
-            # behaviour unchanged (see this module's docstring).
-            governance = evaluate_execution(plan.action)
-            decision = governance.decision
-            if decision != ExecutionDecision.EXECUTE_NOW:
-                tools = []
-                clarification_hint = (
-                    governance.confirmation_prompt
-                    or governance.approval_reason
-                    or governance.explanation
-                )
+    # Sprint 75 (DEC-045): Stage 1/2 classification, per-domain readiness,
+    # and per-domain governance all now live behind this one call
+    # (app/ai/plan.py) instead of inline here — an ExecutionPlan already
+    # reflects every gate a single action used to go through, generalized
+    # to up to MAX_TOOL_CALLS_PER_TURN domains. A message matching only one
+    # domain produces an identical-shape single-step plan, so this is a
+    # pure refactor for single-domain requests, not a behaviour change.
+    plan = build_execution_plan(user_text)
+    tools = plan.tools
 
-    system = build_system_prompt(context, clarification_hint=clarification_hint)
+    system = build_system_prompt(context, clarification_hint=plan.clarification_hint)
     logger.info(
         "Generating reply: business=%s conversation=%s retrieved=%d category=%s tools=%d "
-        "ready=%s decision=%s prompt=%s",
+        "steps=%s ready=%s prompt=%s",
         conversation.business_id,
         conversation.id,
         len(context.retrieved_kb),
-        category.value,
+        plan.category.value,
         len(tools),
-        clarification_hint is None,
-        decision.value if decision else None,
+        [step.role for step in plan.steps],
+        plan.clarification_hint is None,
         SYSTEM_PROMPT_VERSION,
     )
     response = llm.generate(system=system, messages=messages, tools=tools)
@@ -175,4 +182,4 @@ def generate_reply(
         # again here, that's returned as-is for the caller, same as any other
         # tool call — no risk of runaway recursion.
 
-    return response, context.retrieved_kb
+    return response, context.retrieved_kb, plan
