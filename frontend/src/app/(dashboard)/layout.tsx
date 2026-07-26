@@ -56,7 +56,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { data, isLoading, isError, error, refetch, isFetching } = useOnboardingStatus();
+  const { data, isPending, isError, error, refetch, isFetching } = useOnboardingStatus();
 
   useEffect(() => {
     if (data && !data.has_business) {
@@ -64,7 +64,15 @@ export default function DashboardLayout({
     }
   }, [data, router]);
 
-  if (isLoading) {
+  // isPending (not isLoading): this query is `enabled: isLoaded` (Clerk),
+  // so on a fresh page load it starts out disabled — isLoading is defined
+  // as isPending && isFetching, which is false while disabled, even though
+  // no data has arrived yet. Gating on isLoading let that window fall
+  // through to the `!data?.has_business` branch below and flash "Continue
+  // Setup" for an already-onboarded account. isPending is true whenever
+  // there's no data and no error yet, regardless of enabled/fetching state
+  // — the correct "we don't know the answer yet" check here.
+  if (isPending) {
     return <FullPageLoading />;
   }
 

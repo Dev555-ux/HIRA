@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthContext, type AuthContextValue } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
@@ -43,6 +44,30 @@ function renderWithProviders(ui: React.ReactElement) {
   );
 }
 
+// Simulates Clerk's real cold-start sequence: isLoaded starts false (so
+// useOnboardingStatus's query starts disabled) and flips true a tick later
+// — exactly the window the isPending-vs-isLoading bug lived in, which every
+// other test here skips by hardcoding isLoaded: true from the first render.
+function renderWithColdAuth(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  function ColdAuthProvider({ children }: { children: React.ReactNode }) {
+    const [isLoaded, setIsLoaded] = useState(false);
+    return (
+      <AuthContext.Provider value={{ ...mockAuth, isLoaded }}>
+        <button onClick={() => setIsLoaded(true)}>finish loading clerk</button>
+        {children}
+      </AuthContext.Provider>
+    );
+  }
+
+  return render(
+    <QueryClientProvider client={qc}>
+      <ColdAuthProvider>{ui}</ColdAuthProvider>
+    </QueryClientProvider>,
+  );
+}
+
 describe("DashboardLayout", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -60,6 +85,40 @@ describe("DashboardLayout", () => {
       "href",
       "/onboarding",
     );
+  });
+
+  it("shows the loading skeleton, never 'Continue Setup', while Clerk is still loading", async () => {
+    // Regression test: useOnboardingStatus is `enabled: isLoaded`, so before
+    // Clerk finishes loading the query is disabled — no data, no error, and
+    // (in TanStack Query v5) isLoading is false because isFetching is false
+    // while disabled. Gating this layout on isLoading let that window fall
+    // through to the "no business" branch and flash "Continue Setup" for an
+    // already-onboarded account on every cold page load — this asserts the
+    // isPending-gated fix stays in place.
+    vi.mocked(api.getOnboardingStatus).mockResolvedValue({
+      has_business: true,
+      business: {
+        id: "biz-1",
+        name: "Acme",
+        industry: null,
+        contact_email: null,
+        country: null,
+        timezone: "UTC",
+        onboarding_status: "created",
+        whatsapp_connection_status: "not_connected",
+      },
+    });
+    const user = userEvent.setup();
+
+    renderWithColdAuth(<DashboardLayout>content</DashboardLayout>);
+
+    expect(screen.queryByText("Welcome to HIRA")).not.toBeInTheDocument();
+    expect(screen.queryByText("content")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "finish loading clerk" }));
+
+    await waitFor(() => expect(screen.getByText("content")).toBeInTheDocument());
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it("renders the dashboard chrome once a business exists", async () => {

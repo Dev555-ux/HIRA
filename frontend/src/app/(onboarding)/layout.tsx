@@ -12,7 +12,7 @@ export default function OnboardingLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { data, isLoading } = useOnboardingStatus();
+  const { data, isPending } = useOnboardingStatus();
 
   // A business that's already provisioned has no reason to see the
   // onboarding form again — send it straight to the dashboard.
@@ -22,7 +22,12 @@ export default function OnboardingLayout({
     }
   }, [data, router]);
 
-  if (isLoading || data?.has_business) {
+  // isPending, not isLoading — see (dashboard)/layout.tsx's identical fix
+  // for why: this query starts disabled until Clerk finishes loading, and
+  // isLoading is false while disabled even with no data yet, which let this
+  // gate briefly fall through to the real onboarding form for an
+  // already-signed-in user before their status had actually loaded.
+  if (isPending || data?.has_business) {
     return (
       <div className="flex min-h-screen items-center justify-center p-8">
         <Skeleton className="h-8 w-48" />
