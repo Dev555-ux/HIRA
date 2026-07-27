@@ -572,6 +572,67 @@ def test_generate_reply_executes_check_availability_then_asks_again(db_session, 
     assert response.tool_calls is None
 
 
+class _SequencedSpyProvider(LLMProvider):
+    """Like _SequencedProvider, but also records the `tools` argument of
+    each call — lets a test assert exactly which tools were withheld on the
+    follow-up call after a read tool resolves (DEC-050)."""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls: list[dict] = []
+
+    def generate(self, *, system, messages, max_tokens=None, tools=None):
+        self.calls.append({"system": system, "tools": tools})
+        return self._responses.pop(0)
+
+
+def test_generate_reply_withholds_the_resolved_read_tool_on_the_follow_up_call(
+    db_session, monkeypatch
+):
+    """DEC-050: the bounded round-trip generalizes past check_availability —
+    proven here by asserting the follow-up call's own `tools` argument no
+    longer includes check_availability (structurally, not just by prompt
+    instruction), while every state-changing tool from the same domain is
+    still offered, and the injected directive is domain-agnostic wording."""
+    _, conversation = _setup_business_with_kb(db_session)
+    monkeypatch.setattr(
+        "app.ai.tools.get_appointment_service",
+        lambda db, business_id: AppointmentService(
+            db, business_id, MockCalendarProvider(), calendar_id="primary"
+        ),
+    )
+    availability_call = ToolCall(
+        id="1",
+        name=CHECK_AVAILABILITY,
+        arguments={
+            "starts_at": "2026-08-05T09:00:00+00:00",
+            "ends_at": "2026-08-05T17:00:00+00:00",
+        },
+    )
+    provider = _SequencedSpyProvider(
+        [
+            LLMResponse(text="", model="mock-1", tool_calls=[availability_call]),
+            LLMResponse(text="We have a slot at 9am, does that work?", model="mock-1"),
+        ]
+    )
+
+    generate_reply(
+        db_session,
+        conversation,
+        "can I book tuesday at 9am?",
+        llm=provider,
+        embedding=FakeEmbeddingProvider(),
+    )
+
+    assert len(provider.calls) == 2
+    first_tools = {t.name for t in provider.calls[0]["tools"]}
+    second_tools = {t.name for t in provider.calls[1]["tools"]}
+    assert CHECK_AVAILABILITY in first_tools
+    assert CHECK_AVAILABILITY not in second_tools
+    assert {BOOK_APPOINTMENT, RESCHEDULE_APPOINTMENT, CANCEL_APPOINTMENT} <= second_tools
+    assert "tool that changes state" in provider.calls[1]["system"]
+
+
 class _RaisingProvider(LLMProvider):
     """Simulates the LLM provider itself failing (e.g. Groq's tool_use_failed
     400) after a real plan has already been decided — see

@@ -25,11 +25,19 @@ class ChatMessage:
 class ToolSchema:
     """A tool the model may call — name/description/JSON-schema parameters,
     the common shape both OpenAI-compatible (Groq) and Anthropic (Claude)
-    tool-calling APIs accept with minimal reshaping. See app/ai/tools.py."""
+    tool-calling APIs accept with minimal reshaping. See app/ai/tools.py.
+
+    `interaction_type` (DEC-050): "read" for a tool that only looks something
+    up (e.g. check_availability) vs. "write" (the default) for anything that
+    changes real state. app/ai/orchestrator.py's bounded round-trip uses this
+    to resolve a proposed read tool inline and withhold it on the one
+    follow-up call, generically across every domain — it never needs to know
+    a specific tool's name, only this field."""
 
     name: str
     description: str
     parameters: dict
+    interaction_type: Literal["read", "write"] = "write"
 
 
 @dataclass

@@ -6,18 +6,31 @@ reply — including the calendar/CRM tool schemas (DEC-032/DEC-033), so the
 model can propose an action instead of only generating text. This module
 stays thin by design: context assembly, memory, and prompt construction each
 live in their own module; this one just wires them together and handles the
-one bounded check_availability round-trip. Providers (LLM + embeddings) are
-injected, so this logic is independent of any vendor and fully testable with
-mocks.
+one bounded read-tool round-trip. Providers (LLM + embeddings) are injected,
+so this logic is independent of any vendor and fully testable with mocks.
 
-check_availability is read-only, so it's handled entirely inside this
-function: if the model calls it, the result is executed immediately and fed
-back as extra system-prompt grounding (reusing the same "inject context into
-the system prompt" pattern KB retrieval already uses) for exactly one
-follow-up call — bounded by construction, not a loop, so there's no runaway
-risk. A write tool (book/reschedule/cancel/CRM), if proposed, is returned
-as-is on LLMResponse.tool_calls for the caller (app/ai/processing.py,
-app/services/replies.py) to turn into a pending approval or execute, per mode.
+Read-tool round-trip (originally Sprint 56 for check_availability specifically,
+generalized in DEC-050): a tool marked `interaction_type="read"` on its
+ToolSchema (app/ai/llm/base.py) is safe to execute the instant the model
+proposes it, regardless of Assisted/Autonomous mode, since there's nothing to
+approve for a lookup. If the model's first call proposes one, this function
+executes it immediately and feeds the result back as extra system-prompt
+grounding (reusing the same "inject context into the system prompt" pattern
+KB retrieval already uses) — with an explicit, domain-agnostic instruction to
+act on it with a state-changing tool rather than repeating the lookup — for
+exactly one follow-up call. That follow-up call withholds the just-resolved
+read tool from the offered set, structurally rather than only by instruction,
+so the model can't simply ask the same question again. Bounded by
+construction, not a loop: whatever the follow-up call proposes — a
+state-changing tool, another read tool, or plain text — is returned as-is,
+no risk of runaway recursion. A write tool (book/reschedule/cancel/CRM), if
+proposed, is returned as-is on LLMResponse.tool_calls for the caller
+(app/ai/processing.py, app/services/replies.py) to turn into a pending
+approval or execute, per mode. This generalizes past calendar's
+check_availability to any future domain's own read-only lookup (a CRM status
+check, an invoice/quote lookup) purely by marking that tool's schema
+`interaction_type="read"` and registering an executor in
+app/ai/tools.py::READ_TOOL_EXECUTORS — no orchestrator change needed.
 
 Demo Mode (Sprint 55): this is also the earliest point that knows whether
 the business has any Business Knowledge at all (context.has_knowledge, from
@@ -118,7 +131,7 @@ from app.ai.prompts import (
     build_messages,
     build_system_prompt,
 )
-from app.ai.tools import CHECK_AVAILABILITY, execute_check_availability
+from app.ai.tools import READ_TOOL_EXECUTORS, READ_TOOL_NAMES
 from app.models import Conversation
 from app.services.execution_traces import get_pending_domain
 
@@ -204,17 +217,25 @@ def generate_reply(
     try:
         response = llm.generate(system=system, messages=messages, tools=tools)
 
-        if response.tool_calls and response.tool_calls[0].name == CHECK_AVAILABILITY:
-            availability_note = execute_check_availability(
-                db, conversation.business_id, response.tool_calls[0]
+        if response.tool_calls and response.tool_calls[0].name in READ_TOOL_NAMES:
+            read_call = response.tool_calls[0]
+            tool_result_note = READ_TOOL_EXECUTORS[read_call.name](
+                db, conversation.business_id, read_call
             )
-            system_with_availability = build_system_prompt(
-                context, availability_note=availability_note
+            system_with_result = build_system_prompt(context, tool_result_note=tool_result_note)
+            # The just-resolved read tool is withheld on this one follow-up
+            # call — structurally, not just by instruction — so the model
+            # can't simply re-ask the question it was just given the answer
+            # to; it has to either propose a state-changing tool or respond
+            # in plain text.
+            follow_up_tools = [tool for tool in tools if tool.name != read_call.name]
+            response = llm.generate(
+                system=system_with_result, messages=messages, tools=follow_up_tools
             )
-            response = llm.generate(system=system_with_availability, messages=messages, tools=tools)
-            # Deliberately not looped further: if the model calls check_availability
-            # again here, that's returned as-is for the caller, same as any other
-            # tool call — no risk of runaway recursion.
+            # Deliberately not looped further: whatever the model proposes on
+            # this second call — a state-changing tool, another read tool, or
+            # plain text — is returned as-is for the caller, same as any
+            # other tool call. No risk of runaway recursion.
     except LLMError as exc:
         # The plan (category/active_domain/tools offered) was already fully
         # decided above — only the LLM call itself failed. Attach it to the

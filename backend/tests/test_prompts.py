@@ -119,11 +119,17 @@ def test_no_summary_section_when_none():
     assert "Conversation so far (summary of earlier messages)" not in prompt
 
 
-def test_availability_note_still_appended_when_given():
-    prompt = build_system_prompt(_context(), availability_note="(Available slots: none)")
+def test_tool_result_note_still_appended_when_given():
+    prompt = build_system_prompt(_context(), tool_result_note="(Available slots: none)")
 
-    assert "Availability check result" in prompt
+    assert "Tool result" in prompt
     assert "(Available slots: none)" in prompt
+    # DEC-050: the directive is generic — no calendar-specific wording, since
+    # this same injection point now serves every domain's read-only tools.
+    assert "tool that changes state" in prompt
+    directive = prompt.split("Tool result:")[1]
+    assert "book" not in directive.lower()
+    assert "availability" not in directive.lower()
 
 
 def test_no_clarification_section_when_none_given():

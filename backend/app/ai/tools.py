@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -62,6 +63,7 @@ _CALENDAR_TOOL_SCHEMAS = [
             "date/time range, before proposing a booking. Always call this before "
             "book_appointment unless the customer already confirmed a specific slot."
         ),
+        interaction_type="read",
         parameters={
             "type": "object",
             "properties": {
@@ -127,6 +129,12 @@ TOOL_SCHEMAS = [*_CALENDAR_TOOL_SCHEMAS, *LEAD_TOOL_SCHEMAS]
 # Sprint 57: exposed (was module-private) so app/ai/intent.py's tool-category
 # registry can select this group directly instead of redefining it.
 CALENDAR_TOOL_SCHEMAS = _CALENDAR_TOOL_SCHEMAS
+
+# DEC-050: every read-only tool across every domain, derived from the
+# schemas themselves rather than a hardcoded name list — lets
+# app/ai/orchestrator.py's bounded round-trip generalize past calendar's
+# check_availability without ever needing to know a tool's name or domain.
+READ_TOOL_NAMES = {schema.name for schema in TOOL_SCHEMAS if schema.interaction_type == "read"}
 
 
 def preview_tool_call(tool_call: ToolCall) -> str:
@@ -330,3 +338,13 @@ def execute_check_availability(db: Session, business_id: uuid.UUID, tool_call: T
         f"{s.starts_at.isoformat()} to {s.ends_at.isoformat()}" for s in slots[:10]
     )
     return f"(Available slots: {formatted})"
+
+
+# DEC-050: one executor per read-only tool, keyed by name — the same
+# generalization as READ_TOOL_NAMES above. app/ai/orchestrator.py's round
+# trip looks a proposed read tool up here instead of hardcoding which domain
+# it belongs to; a future domain's own read-only lookup (e.g. a CRM status
+# check) registers itself the same way, with no orchestrator change needed.
+READ_TOOL_EXECUTORS: dict[str, Callable[[Session, uuid.UUID, ToolCall], str]] = {
+    CHECK_AVAILABILITY: execute_check_availability,
+}

@@ -195,7 +195,7 @@ def _format_customer_context(context: ConversationContext) -> str:
 def build_system_prompt(
     context: ConversationContext,
     *,
-    availability_note: str | None = None,
+    tool_result_note: str | None = None,
     clarification_hint: str | None = None,
 ) -> str:
     parts = [_BASE_SYSTEM_PROMPT, f"\nKnowledge base:\n{_format_knowledge(context.retrieved_kb)}"]
@@ -207,8 +207,13 @@ def build_system_prompt(
         parts.append(f"\nCustomer context:\n{customer_context}")
     if context.summary:
         parts.append(f"\nConversation so far (summary of earlier messages):\n{context.summary}")
-    if availability_note:
-        parts.append(f"\nAvailability check result:\n{availability_note}")
+    if tool_result_note:
+        parts.append(
+            f"\nTool result:\n{tool_result_note}\n"
+            "You now have this information. Use it to complete the customer's "
+            "request with the appropriate tool that changes state, rather than "
+            "calling the same read-only tool again."
+        )
     if clarification_hint:
         parts.append(
             f"\nAction planning:\nBefore proceeding, {clarification_hint}. No booking/reschedule/"

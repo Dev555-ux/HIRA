@@ -11,6 +11,8 @@ from app.ai.tools import (
     BOOK_APPOINTMENT,
     CANCEL_APPOINTMENT,
     CHECK_AVAILABILITY,
+    READ_TOOL_EXECUTORS,
+    READ_TOOL_NAMES,
     RESCHEDULE_APPOINTMENT,
     TOOL_SCHEMAS,
     confirmation_message_for,
@@ -423,6 +425,28 @@ def test_execute_unknown_tool_fails_gracefully(db_session, monkeypatch):
 
     assert result.success is False
     assert "Unknown tool" in result.message
+
+
+# --- DEC-050: generic read/write tool registries ----------------------------
+
+
+def test_read_tool_names_contains_only_check_availability():
+    # Today's only read-only tool — a future domain's own lookup tool joins
+    # this set purely by marking its ToolSchema interaction_type="read",
+    # no other code changes required.
+    assert READ_TOOL_NAMES == {CHECK_AVAILABILITY}
+
+
+def test_every_write_tool_schema_defaults_to_write_interaction_type():
+    write_tools = {BOOK_APPOINTMENT, CANCEL_APPOINTMENT, RESCHEDULE_APPOINTMENT, CREATE_LEAD}
+    for schema in TOOL_SCHEMAS:
+        if schema.name in write_tools:
+            assert schema.interaction_type == "write"
+
+
+def test_read_tool_executors_covers_every_read_tool_with_a_matching_signature():
+    assert set(READ_TOOL_EXECUTORS) == READ_TOOL_NAMES
+    assert READ_TOOL_EXECUTORS[CHECK_AVAILABILITY] is execute_check_availability
 
 
 # --- execute_check_availability ----------------------------------------------
