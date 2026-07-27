@@ -89,3 +89,26 @@ class CalendarProvider(ABC):
     @abstractmethod
     def cancel_event(self, *, calendar_id: str, event_id: str) -> None:
         """Cancel an existing event. Raises CalendarNotFoundError if it's gone."""
+
+
+def invert_busy_periods(window: TimeSlot, busy: list[TimeSlot]) -> list[TimeSlot]:
+    """The free sub-windows of `window` given a list of busy periods within it.
+
+    Provider-agnostic (pure, no vendor dependency) — shared by every
+    CalendarProvider that computes availability from a list of busy blocks
+    (Google's freebusy response, Sprint 78's InternalSchedulerProvider's own
+    Appointment rows, ...). Originally lived in providers/google.py; moved
+    here so a non-Google provider doesn't need to import Google's module to
+    reuse it.
+    """
+    free: list[TimeSlot] = []
+    cursor = window.starts_at
+    for period in sorted(busy, key=lambda b: b.starts_at):
+        if period.starts_at > cursor:
+            free.append(TimeSlot(starts_at=cursor, ends_at=min(period.starts_at, window.ends_at)))
+        cursor = max(cursor, period.ends_at)
+        if cursor >= window.ends_at:
+            return free
+    if cursor < window.ends_at:
+        free.append(TimeSlot(starts_at=cursor, ends_at=window.ends_at))
+    return free

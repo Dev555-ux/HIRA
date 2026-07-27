@@ -1,11 +1,12 @@
 """Appointments API (/api/v1/appointments) — Sprint 29 (DEC-032).
 
 Booking/rescheduling/cancelling always goes through `AppointmentService`
-(`app/calendar/factory.py::get_appointment_service`), which writes to the
-connected Google Calendar first — there is no "local-only" appointment path,
-matching `AppointmentService`'s existing "external calendar is the source of
-truth" design (DEC-028). A business with no connected calendar gets `409`
-(`CalendarNotConnectedError`) on every write here.
+(`app/calendar/factory.py::get_appointment_service`). A business with a
+connected Google Calendar writes there first (external calendar as source of
+truth — DEC-028); a business without one is scheduled by HIRA Calendar
+instead (`InternalSchedulerProvider`, Sprint 78/79) — either way this route
+never needs to know which provider is active. `409` here now means a real
+conflict or a genuinely unknown business, not "no calendar connected."
 """
 
 from __future__ import annotations

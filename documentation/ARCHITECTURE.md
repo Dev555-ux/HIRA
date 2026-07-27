@@ -47,7 +47,7 @@ Related: `WHATSAPP_INTEGRATION.md`, `TECH_STACK.md`, `DATABASE.md`, `API.md`, `F
                               │ Business owner / staff
 ```
 
-External dependencies: **Meta Cloud API** (messaging), **Anthropic Claude** (reasoning), **Google Calendar API** (scheduling), **Clerk** (dashboard auth).
+External dependencies: **Meta Cloud API** (messaging), **Anthropic Claude** (reasoning), **Clerk** (dashboard auth). Scheduling (HIRA Calendar) has no external dependency — the **Google Calendar API** is an optional sync layer a business can connect later (Sprint 78/79), not a requirement.
 
 ---
 
@@ -58,7 +58,7 @@ External dependencies: **Meta Cloud API** (messaging), **Anthropic Claude** (rea
 | **Webhook Handler** | Receives Meta webhooks, verifies signature (`X-Hub-Signature-256`), deduplicates by message ID, enqueues for processing, returns 200 fast. |
 | **Conversation Orchestrator (AI engine)** | The core loop. Loads conversation context, classifies intent, retrieves KB, decides: answer / call a tool / escalate. Lives in `ai/`. |
 | **KB Retrieval** | Embeds the incoming question, vector-searches `kb_entries` (pgvector), returns top matches as grounding context. |
-| **Calendar Service** | Wraps Google Calendar API: check availability, create, reschedule, cancel events. |
+| **Calendar Service** | Check availability, create, reschedule, cancel events — via HIRA's own internal scheduler by default (no setup required), or the connected Google Calendar API once a business opts into sync. Both sit behind the same provider interface (see `CalendarProvider`, DEC-032/Sprint 78). |
 | **Escalation Service** | Flags a conversation for human handling, surfaces it in the dashboard Inbox, pauses autonomous replies. |
 | **Messaging Service** | Sends outbound WhatsApp messages via Cloud API; manages the 24h-window vs. template distinction. |
 | **Dashboard API** | REST endpoints the Next.js frontend consumes (see `API.md`). |

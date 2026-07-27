@@ -62,11 +62,11 @@ function CalendarConnectionStatusFromQuery() {
   useEffect(() => {
     const status = searchParams.get("calendar");
     if (status === "connected") {
-      toast({ title: "Google Calendar connected", variant: "success" });
+      toast({ title: "Google Sync enabled", variant: "success" });
       qc.invalidateQueries({ queryKey: ["calendar-status"] });
     } else if (status === "error") {
       toast({
-        title: "Couldn't connect Google Calendar",
+        title: "Couldn't enable Google Sync",
         description: searchParams.get("message") ?? "Something went wrong — please try again.",
         variant: "destructive",
       });
@@ -81,8 +81,8 @@ export default function CalendarPage() {
   return (
     <>
       <PageHeader
-        title="Calendar"
-        description="Connect Google Calendar so HIRA can check availability and book appointments."
+        title="HIRA Calendar"
+        description="Manages your appointments and availability automatically. Optionally connect Google Calendar to keep everything in sync."
       />
       <Suspense fallback={null}>
         <CalendarConnectionStatusFromQuery />
@@ -96,6 +96,11 @@ export default function CalendarPage() {
   );
 }
 
+// Sprint 79: HIRA Calendar is the product's own always-on scheduling system
+// (Sprint 78's InternalSchedulerProvider, promoted from fallback to the
+// default experience) — Google Calendar is now an optional sync layer on
+// top of it, not a prerequisite. This card never shows a "Not connected"
+// warning; the un-synced state is simply "HIRA Calendar, Active."
 function ConnectionCard() {
   const { toast } = useToast();
   const { data: status, isPending, isError, refetch } = useCalendarStatus();
@@ -119,7 +124,7 @@ function ConnectionCard() {
   async function handleDisconnect() {
     try {
       await disconnect.mutateAsync();
-      toast({ title: "Google Calendar disconnected" });
+      toast({ title: "Google Sync disabled — HIRA Calendar is managing your schedule now." });
     } catch (err) {
       toast({
         title: "Couldn't disconnect",
@@ -133,11 +138,9 @@ function ConnectionCard() {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-base">Google Calendar</CardTitle>
+        <CardTitle className="text-base">HIRA Calendar</CardTitle>
         {!isPending && !isError && (
-          <Badge variant={status?.connected ? "success" : "secondary"}>
-            {status?.connected ? "Connected" : "Not connected"}
-          </Badge>
+          <Badge variant="success">{status?.connected ? "Google Sync Enabled" : "Active"}</Badge>
         )}
       </CardHeader>
       <CardContent>
@@ -158,7 +161,8 @@ function ConnectionCard() {
         ) : status?.connected ? (
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">
-              Calendar: <span className="font-medium text-foreground">{status.calendar_id}</span>
+              Synced to Google Calendar:{" "}
+              <span className="font-medium text-foreground">{status.calendar_id}</span>
             </p>
             <Button
               variant="outline"
@@ -166,15 +170,14 @@ function ConnectionCard() {
               onClick={() => setConfirmDisconnect(true)}
               disabled={disconnect.isPending}
             >
-              <Unlink /> Disconnect
+              <Unlink /> Disconnect Google Sync
             </Button>
           </div>
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Once connected, HIRA checks your real availability before offering a time, and
-              books, reschedules, or cancels appointments directly on this calendar — nothing
-              gets double-booked.
+              HIRA Calendar manages your appointments automatically. You can optionally connect
+              Google Calendar in the future for synchronization.
             </p>
             <Button size="sm" onClick={handleConnect} disabled={startConnect.isPending}>
               <ExternalLink /> {startConnect.isPending ? "Connecting…" : "Connect Google Calendar"}
@@ -186,8 +189,8 @@ function ConnectionCard() {
       <ConfirmDialog
         open={confirmDisconnect}
         onOpenChange={setConfirmDisconnect}
-        title="Disconnect Google Calendar?"
-        description="HIRA won't be able to check availability or book appointments until you reconnect."
+        title="Disconnect Google Sync?"
+        description="HIRA Calendar will keep managing your appointments and availability on its own — nothing already booked is affected."
         confirmLabel="Disconnect"
         onConfirm={handleDisconnect}
         isPending={disconnect.isPending}

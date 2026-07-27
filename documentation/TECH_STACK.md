@@ -16,7 +16,7 @@ Optimization targets: solo founder · learning · fast development · low cost �
 | **Auth (dashboard)** | **Clerk** (or Supabase Auth if using Supabase) | Don't hand-roll auth for a production system as a solo founder. Managed auth is secure, fast, free at MVP scale. |
 | **Backend + DB hosting** | **Railway** (app + managed Postgres) | Simplest path for a solo founder: managed Postgres, easy deploys, low cost, good logs. Render is an equivalent alternative. |
 | **Frontend hosting** | **Vercel** | First-class Next.js host, generous free tier. |
-| **Calendar integration** | **Google Calendar API (OAuth 2.0)** | Required by MVP scope (book/reschedule). |
+| **Calendar** | **HIRA Calendar** (internal scheduler, no setup required), with **optional Google Calendar Sync (OAuth 2.0)** | Scheduling (book/reschedule/cancel) works out of the box via HIRA's own `Appointment` table (Sprint 78/79) — Google Calendar is an additional sync layer a business can connect later, not a dependency. |
 | **Background jobs** | Start with FastAPI background tasks / a lightweight scheduler; add a queue (e.g., Redis + worker) only when reminders/volume require it | Avoid premature infra (CLAUDE.md §14). |
 
 ## Alternatives weighed (not chosen)

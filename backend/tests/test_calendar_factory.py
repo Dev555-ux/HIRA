@@ -9,6 +9,7 @@ from app.calendar.credentials import store_credentials
 from app.calendar.factory import get_appointment_service
 from app.calendar.providers.base import CalendarNotConnectedError
 from app.calendar.providers.google import GoogleCalendarProvider
+from app.calendar.providers.internal import InternalSchedulerProvider
 from app.calendar.service import AppointmentService
 from app.core.config import settings
 from app.models import Business
@@ -21,13 +22,17 @@ def _calendar_key(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "client-secret")
 
 
-def test_get_appointment_service_raises_when_not_connected(db_session):
+def test_get_appointment_service_falls_back_to_internal_scheduler_when_not_connected(db_session):
+    """Sprint 78: no stored Google credential no longer raises — it wires a
+    real InternalSchedulerProvider instead, so scheduling still works."""
     biz = Business(name="Clinic A")
     db_session.add(biz)
     db_session.flush()
 
-    with pytest.raises(CalendarNotConnectedError):
-        get_appointment_service(db_session, biz.id)
+    service = get_appointment_service(db_session, biz.id)
+
+    assert isinstance(service, AppointmentService)
+    assert isinstance(service._provider, InternalSchedulerProvider)
 
 
 def test_get_appointment_service_raises_for_unknown_business(db_session):

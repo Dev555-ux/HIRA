@@ -20,7 +20,7 @@ const FEATURES = [
     icon: CalendarClock,
     title: "Appointment booking",
     description:
-      "No back-and-forth to find a time that works. HIRA checks real availability and books, reschedules, or cancels in your connected Google Calendar.",
+      "No back-and-forth to find a time that works. HIRA Calendar checks real availability and books, reschedules, or cancels — no setup required, with optional Google Calendar sync.",
   },
   {
     icon: CheckCheck,

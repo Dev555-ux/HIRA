@@ -1,7 +1,9 @@
 """Tests for the Appointments API (/api/v1/appointments): auth, tenant
 isolation, CRUD/actions, and CalendarError mapping — always via
-AppointmentService (get_appointment_service monkeypatched to a Mock-backed
-instance; there is no local-only appointment path) (DEC-032)."""
+AppointmentService, most tests with get_appointment_service monkeypatched to
+a Mock-backed instance (DEC-032). One test (below) deliberately leaves it
+un-monkeypatched to exercise the real factory's InternalSchedulerProvider
+fallback (Sprint 78) for a business with no Google Calendar connected."""
 
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -202,7 +204,13 @@ def test_create_appointment_rejects_ends_before_starts(db_session, monkeypatch):
     app.dependency_overrides.clear()
 
 
-def test_create_appointment_returns_409_when_calendar_not_connected(db_session):
+def test_create_appointment_succeeds_via_internal_scheduler_when_calendar_not_connected(
+    db_session,
+):
+    """Sprint 78: a business with no Google Calendar connected no longer
+    fails here — app/calendar/factory.py falls back to
+    InternalSchedulerProvider, so booking works via real Appointment rows
+    with no external calendar involved at all."""
     _, _, customer = _seed_business(db_session, "A", "user_a")
     db_session.commit()
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
@@ -218,7 +226,8 @@ def test_create_appointment_returns_409_when_calendar_not_connected(db_session):
         headers=_auth(),
     )
 
-    assert resp.status_code == 409
+    assert resp.status_code == 201
+    assert resp.json()["data"]["status"] == "booked"
     app.dependency_overrides.clear()
 
 

@@ -266,13 +266,36 @@ def test_playground_executes_two_proposed_actions_sequentially(db_session, monke
 def test_playground_reports_an_honest_failure_for_a_tool_call_that_cant_execute(
     db_session, monkeypatch
 ):
-    """A proposed booking with no Google Calendar connected must not look
-    like a silent failure or a fake success — the tool's own honest reason
-    becomes the chat reply, same as it would for a real WhatsApp customer."""
+    """A proposed booking for a slot that's already taken must not look like
+    a silent failure or a fake success — the tool's own honest reason becomes
+    the chat reply, same as it would for a real WhatsApp customer.
+
+    Sprint 78: a missing Google Calendar connection no longer makes booking
+    fail (see app/calendar/factory.py's InternalSchedulerProvider fallback),
+    so this now exercises a genuine failure mode that still exists under the
+    internal scheduler — a real slot conflict."""
+    from datetime import datetime
+
     from app.ai.llm.base import ToolCall
     from app.ai.tools import BOOK_APPOINTMENT
+    from app.models import Appointment, Customer
 
     biz = _business(db_session)
+    blocker_customer = Customer(business_id=biz.id, wa_phone="+15550009999")
+    db_session.add(blocker_customer)
+    db_session.flush()
+    db_session.add(
+        Appointment(
+            business_id=biz.id,
+            customer_id=blocker_customer.id,
+            google_event_id="internal-blocker",
+            starts_at=datetime.fromisoformat("2026-08-05T14:00:00"),
+            ends_at=datetime.fromisoformat("2026-08-05T15:00:00"),
+            status="booked",
+        )
+    )
+    db_session.flush()
+
     tool_call = ToolCall(
         id="1",
         name=BOOK_APPOINTMENT,
@@ -294,7 +317,7 @@ def test_playground_reports_an_honest_failure_for_a_tool_call_that_cant_execute(
 
     assert response.text == ""
     assert tool_outcome == {"name": BOOK_APPOINTMENT, "success": False}
-    assert body == "This business has not connected a Google Calendar"
+    assert body == "Requested slot overlaps an existing appointment"
 
     conversation = get_or_create_playground_conversation(db_session, biz.id)
     outbound = (
@@ -311,13 +334,34 @@ def test_playground_stops_after_a_failed_action_and_never_attempts_the_next(
 ):
     """Sprint 75, Objective D — same stop-on-failure guarantee as Autonomous
     Mode's identical test in test_orchestrator.py, exercised through Demo
-    Chat's own execution path."""
+    Chat's own execution path.
+
+    Sprint 78: a missing Google Calendar connection no longer makes booking
+    fail (InternalSchedulerProvider fallback), so this now uses a genuine
+    slot conflict to exercise the same stop-on-failure guarantee."""
+    from datetime import datetime
+
     from app.ai.llm.base import ToolCall
     from app.ai.lead_tools import CREATE_LEAD
     from app.ai.tools import BOOK_APPOINTMENT
-    from app.models import Lead
+    from app.models import Appointment, Customer, Lead
 
     biz = _business(db_session)
+    blocker_customer = Customer(business_id=biz.id, wa_phone="+15550009999")
+    db_session.add(blocker_customer)
+    db_session.flush()
+    db_session.add(
+        Appointment(
+            business_id=biz.id,
+            customer_id=blocker_customer.id,
+            google_event_id="internal-blocker",
+            starts_at=datetime.fromisoformat("2026-08-05T14:00:00"),
+            ends_at=datetime.fromisoformat("2026-08-05T15:00:00"),
+            status="booked",
+        )
+    )
+    db_session.flush()
+
     booking = ToolCall(
         id="1",
         name=BOOK_APPOINTMENT,
@@ -336,14 +380,14 @@ def test_playground_stops_after_a_failed_action_and_never_attempts_the_next(
         "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
     )
     # No AppointmentService/CalendarProvider monkeypatch — the booking fails
-    # with the same honest "no calendar connected" error as the test above.
+    # with the same genuine conflict as the test above.
 
     response, _, body, tool_outcome = playground_reply(
         db_session, biz.id, "book me tuesday and sign me up"
     )
 
     assert tool_outcome == {"name": BOOK_APPOINTMENT, "success": False}
-    assert body == "This business has not connected a Google Calendar"
+    assert body == "Requested slot overlaps an existing appointment"
 
     conversation = get_or_create_playground_conversation(db_session, biz.id)
     outbound = (
@@ -381,3 +425,80 @@ def test_playground_reply_records_an_execution_trace(db_session, monkeypatch):
     assert trace.business_id == biz.id
     assert trace.trigger_message_id == inbound.id
     assert trace.result_message_ids == [str(outbound.id)]
+
+
+def test_the_teeth_cleaning_demo_scenario_books_via_internal_scheduler_end_to_end(
+    db_session, monkeypatch
+):
+    """Sprint 78 success criteria, exercised exactly as the live demo will
+    run it through Demo Chat: 'I'd like a teeth cleaning tomorrow around
+    3 PM' books successfully via InternalSchedulerProvider (no Google
+    Calendar connected — none needed) and everything downstream (the
+    Appointment row, Founder Dashboard's data, Execution Trace,
+    Conversation Replay) reflects it exactly as it would for a
+    Google-synced booking."""
+    from datetime import datetime
+
+    from app.ai.llm.base import ToolCall
+    from app.ai.tools import BOOK_APPOINTMENT
+    from app.models import Appointment, ExecutionTrace
+
+    biz = _business(db_session)
+    tool_call = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-05T15:00:00",
+            "ends_at": "2026-08-05T15:30:00",
+            "summary": "Teeth cleaning",
+        },
+    )
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[tool_call]),
+    )
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+
+    response, _, body, tool_outcome = playground_reply(
+        db_session, biz.id, "I'd like a teeth cleaning tomorrow around 3 PM"
+    )
+
+    # Appointment Created — a real, persisted Appointment row, booked via
+    # InternalSchedulerProvider with no external calendar involved.
+    assert tool_outcome == {"name": BOOK_APPOINTMENT, "success": True}
+    assert body == (
+        "You're all set! Teeth cleaning is booked for 2026-08-05T15:00:00 to 2026-08-05T15:30:00."
+    )
+    appointment = db_session.query(Appointment).filter_by(business_id=biz.id).one()
+    assert appointment.status == "booked"
+    assert appointment.starts_at == datetime.fromisoformat("2026-08-05T15:00:00")
+    assert appointment.google_event_id.startswith("internal-")
+
+    # Founder Dashboard reflects the activity — get_upcoming_appointments is
+    # exactly what the dashboard/appointments list reads from.
+    from app.calendar.service import get_upcoming_appointments
+
+    upcoming = get_upcoming_appointments(db_session, biz.id, appointment.customer_id)
+    assert [a.id for a in upcoming] == [appointment.id]
+
+    # Execution Trace records the workflow (intent -> availability check
+    # implicit in the plan -> tool call -> result), same as any other turn.
+    conversation = get_or_create_playground_conversation(db_session, biz.id)
+    trace = db_session.query(ExecutionTrace).filter_by(conversation_id=conversation.id).one()
+    assert trace.proposed_tool_calls == [
+        {"tool_name": BOOK_APPOINTMENT, "agent_role": "scheduler"}
+    ]
+
+    # Conversation Replay shows the completed conversation — the real
+    # inbound customer message and the real outbound confirmation.
+    inbound, outbound = (
+        db_session.query(Message)
+        .filter_by(conversation_id=conversation.id)
+        .order_by(Message.created_at)
+        .all()
+    )
+    assert inbound.body == "I'd like a teeth cleaning tomorrow around 3 PM"
+    assert outbound.body == body
+    assert outbound.status == "sent"

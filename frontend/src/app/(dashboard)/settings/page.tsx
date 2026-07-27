@@ -178,20 +178,20 @@ export default function SettingsPage() {
         <Card className={CARD_HOVER}>
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={CalendarClock} />
-            <CardTitle className="text-base">Working hours &amp; calendar</CardTitle>
+            <CardTitle className="text-base">HIRA Calendar</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              HIRA only offers appointment times inside your working hours, in your timezone —
-              and once Google Calendar is connected, it checks real availability before booking
-              anything.
+              HIRA Calendar manages your appointments automatically, and only offers times inside
+              your working hours, in your timezone. You can optionally connect Google Calendar
+              for synchronization.
             </p>
             <Row
-              label="Google Calendar"
+              label="Status"
               value={
                 calendarStatus ? (
-                  <Badge variant={calendarStatus.connected ? "success" : "secondary"}>
-                    {calendarStatus.connected ? "Connected" : "Not connected"}
+                  <Badge variant="success">
+                    {calendarStatus.connected ? "Google Sync Enabled" : "Active"}
                   </Badge>
                 ) : (
                   <Skeleton className="h-5 w-20" />
@@ -200,9 +200,7 @@ export default function SettingsPage() {
             />
             <Row label="Timezone" value={business?.timezone ?? "UTC"} />
             <Button asChild size="sm" variant="outline">
-              <Link href="/calendar">
-                {calendarStatus?.connected ? "Manage calendar" : "Connect Google Calendar"}
-              </Link>
+              <Link href="/calendar">Manage calendar</Link>
             </Button>
           </CardContent>
         </Card>

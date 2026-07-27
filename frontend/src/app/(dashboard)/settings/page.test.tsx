@@ -172,15 +172,15 @@ describe("SettingsPage", () => {
     });
   });
 
-  describe("Working hours & calendar", () => {
-    it("shows calendar connection status and timezone, linking to the real Calendar page", async () => {
+  describe("HIRA Calendar", () => {
+    it("shows Google Sync status and timezone, linking to the real Calendar page", async () => {
       vi.mocked(api.getCalendarStatus).mockResolvedValue({
         connected: true,
         calendar_id: "primary",
       });
       renderWithProviders();
 
-      expect(await screen.findByText("Connected")).toBeInTheDocument();
+      expect(await screen.findByText("Google Sync Enabled")).toBeInTheDocument();
       expect(screen.getByText("America/Chicago")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Manage calendar" })).toHaveAttribute(
         "href",
@@ -188,10 +188,13 @@ describe("SettingsPage", () => {
       );
     });
 
-    it("invites connecting when Calendar isn't connected yet", async () => {
+    it("shows Active, never a warning, when Google Calendar isn't connected yet", async () => {
       renderWithProviders();
-      expect(await screen.findByText("Not connected")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Connect Google Calendar" })).toHaveAttribute(
+      expect(await screen.findByText("Active")).toBeInTheDocument();
+      expect(
+        screen.getByText(/HIRA Calendar manages your appointments automatically/i),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Manage calendar" })).toHaveAttribute(
         "href",
         "/calendar",
       );

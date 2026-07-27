@@ -405,7 +405,10 @@ def test_get_availability_requires_authentication(db_session):
     app.dependency_overrides.clear()
 
 
-def test_get_availability_returns_409_when_not_connected(db_session):
+def test_get_availability_succeeds_via_internal_scheduler_when_not_connected(db_session):
+    """Sprint 78: no stored Google credential now falls back to
+    InternalSchedulerProvider instead of failing — the whole window is free
+    since no appointments exist yet for this business."""
     _seed_business(db_session, "A", "user_a")
     db_session.commit()
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
@@ -415,7 +418,10 @@ def test_get_availability_returns_409_when_not_connected(db_session):
         headers=_auth(),
     )
 
-    assert resp.status_code == 409
+    assert resp.status_code == 200
+    assert resp.json()["data"] == [
+        {"starts_at": "2026-08-05T09:00:00Z", "ends_at": "2026-08-05T17:00:00Z"}
+    ]
     app.dependency_overrides.clear()
 
 

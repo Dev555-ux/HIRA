@@ -63,9 +63,12 @@ describe("CalendarPage", () => {
     });
   });
 
-  it("shows 'Not connected' and a connect button when no calendar is linked", async () => {
+  it("shows 'Active' (never a warning) and an optional connect button when no calendar is linked", async () => {
     renderWithProviders(<CalendarPage />);
-    expect(await screen.findByText("Not connected")).toBeInTheDocument();
+    expect(await screen.findByText("Active")).toBeInTheDocument();
+    expect(
+      screen.getByText(/HIRA Calendar manages your appointments automatically/i),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /connect google calendar/i })).toBeInTheDocument();
   });
 
@@ -83,13 +86,13 @@ describe("CalendarPage", () => {
     );
   });
 
-  it("shows 'Connected' with the calendar id and a disconnect button", async () => {
+  it("shows 'Google Sync Enabled' with the calendar id and a disconnect button", async () => {
     vi.mocked(api.getCalendarStatus).mockResolvedValue(
       status({ connected: true, calendar_id: "primary" }),
     );
     renderWithProviders(<CalendarPage />);
 
-    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(await screen.findByText("Google Sync Enabled")).toBeInTheDocument();
     expect(screen.getByText("primary")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /disconnect/i })).toBeInTheDocument();
   });
@@ -107,7 +110,9 @@ describe("CalendarPage", () => {
     await user.click(within(dialog).getByRole("button", { name: /disconnect/i }));
 
     await waitFor(() => expect(api.disconnectCalendar).toHaveBeenCalledWith(expect.any(Function)));
-    expect(await screen.findByText("Google Calendar disconnected")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Google Sync disabled — HIRA Calendar is managing your schedule now."),
+    ).toBeInTheDocument();
   });
 
   it("shows the current timezone and lets the user save a new one", async () => {
@@ -167,7 +172,7 @@ describe("CalendarPage", () => {
     renderWithProviders(<CalendarPage />);
 
     expect(await screen.findByText("Couldn't load calendar status")).toBeInTheDocument();
-    expect(screen.queryByText("Not connected")).not.toBeInTheDocument();
+    expect(screen.queryByText("Active")).not.toBeInTheDocument();
   });
 
   it("shows a retryable error state when calendar settings fail to load", async () => {

@@ -21,7 +21,7 @@ const FAQS = [
   {
     question: "Can it actually book appointments?",
     answer:
-      "Yes — HIRA connects to your Google Calendar, checks real availability, and can book, reschedule, or cancel appointments as part of the conversation.",
+      "Yes — HIRA Calendar checks real availability and can book, reschedule, or cancel appointments as part of the conversation, right out of the box. You can optionally connect Google Calendar later if you want everything synced there too.",
   },
   {
     question: "Do I need a WhatsApp Business account already?",

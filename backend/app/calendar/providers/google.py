@@ -31,6 +31,7 @@ from app.calendar.providers.base import (
     CalendarProvider,
     CalendarProviderUnavailableError,
     TimeSlot,
+    invert_busy_periods,
 )
 
 
@@ -69,21 +70,6 @@ def _wrap_error(exc: HttpError | GoogleAuthError) -> CalendarError:
     if status is not None and status >= 500:
         return CalendarProviderUnavailableError(f"Google Calendar unavailable: {exc}")
     return CalendarError(f"Google Calendar request failed: {exc}")
-
-
-def invert_busy_periods(window: TimeSlot, busy: list[TimeSlot]) -> list[TimeSlot]:
-    """The free sub-windows of `window` given a list of busy periods within it."""
-    free: list[TimeSlot] = []
-    cursor = window.starts_at
-    for period in sorted(busy, key=lambda b: b.starts_at):
-        if period.starts_at > cursor:
-            free.append(TimeSlot(starts_at=cursor, ends_at=min(period.starts_at, window.ends_at)))
-        cursor = max(cursor, period.ends_at)
-        if cursor >= window.ends_at:
-            return free
-    if cursor < window.ends_at:
-        free.append(TimeSlot(starts_at=cursor, ends_at=window.ends_at))
-    return free
 
 
 class GoogleCalendarProvider(CalendarProvider):
