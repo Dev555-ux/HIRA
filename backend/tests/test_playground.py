@@ -502,3 +502,124 @@ def test_the_teeth_cleaning_demo_scenario_books_via_internal_scheduler_end_to_en
     assert inbound.body == "I'd like a teeth cleaning tomorrow around 3 PM"
     assert outbound.body == body
     assert outbound.status == "sent"
+
+
+def test_sprint_80_reproduces_and_fixes_the_exact_reported_production_bug(db_session, monkeypatch):
+    """The exact two-turn conversation from the live production bug report
+    (DEC-049), reproduced end-to-end through the real orchestrator/planning
+    pipeline — not just unit-level app/ai/plan.py assertions.
+
+    Turn 1 deliberately uses a MockProvider that replies with *plain text
+    only, no tool call* — the worst case, where the model narrates without
+    acting, exactly as observed live. Before Sprint 80 this would also have
+    had zero tools offered in the first place (Stage 1 never recognised
+    "I'd like a teeth cleaning tomorrow around 3 PM" as ACTION at all); now
+    tools are offered, and even though this particular canned reply still
+    doesn't call one, the turn's ExecutionTrace correctly records
+    active_domain="calendar" for turn 2 to inherit.
+
+    Turn 2 is the customer's bare affirmative follow-up — the literal
+    "Sure, please go ahead" from the bug report — with a MockProvider that
+    now proposes book_appointment, proving the domain carried across turns
+    and a real appointment gets booked, where before this reply would have
+    gone entirely tools-less."""
+    from app.ai.llm.base import ToolCall
+    from app.ai.tools import BOOK_APPOINTMENT
+    from app.calendar.service import get_upcoming_appointments
+    from app.models import Appointment, ExecutionTrace
+
+    biz = _business(db_session)
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+    # Business Knowledge must be non-empty, or generate_reply() takes the
+    # Demo Mode branch (app/ai/orchestrator.py) — which never calls
+    # build_execution_plan()/offers any tools at all, real or inherited —
+    # and this test would (as it initially did) pass for the wrong reason:
+    # MockProvider returns whatever fixed_tool_calls it's given regardless
+    # of whether the orchestrator actually offered any tools that turn.
+    index_entry(
+        db_session,
+        biz.id,
+        "Services",
+        "We offer teeth cleaning appointments.",
+        provider=FakeEmbeddingProvider(),
+    )
+
+    # --- Turn 1: the original request, model replies in prose only -----
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(
+            fixed_reply="I'll check availability for you — let me just check our schedule."
+        ),
+    )
+    _, _, turn_1_body, turn_1_outcome = playground_reply(
+        db_session, biz.id, "I'd like a teeth cleaning tomorrow around 3 PM."
+    )
+    assert turn_1_outcome is None  # no tool was called this turn — the reply is text-only
+
+    conversation = get_or_create_playground_conversation(db_session, biz.id)
+    turn_1_trace = (
+        db_session.query(ExecutionTrace)
+        .filter_by(conversation_id=conversation.id)
+        .order_by(ExecutionTrace.created_at)
+        .first()
+    )
+    # This is the crux of the bug: tools *were* offered this turn (proven by
+    # active_domain being set), not silently withheld — the model simply
+    # chose not to call one, which is a legitimate model choice the next
+    # turn's continuity now correctly compensates for.
+    assert turn_1_trace.plan["category"] == "action"
+    assert turn_1_trace.plan["active_domain"] == "calendar"
+    assert turn_1_trace.proposed_tool_calls == []
+
+    # --- Turn 2: the bare confirmation from the bug report --------------
+    booking_call = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-06T15:00:00",
+            "ends_at": "2026-08-06T15:30:00",
+            "summary": "Teeth cleaning",
+        },
+    )
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[booking_call]),
+    )
+    _, _, turn_2_body, turn_2_outcome = playground_reply(
+        db_session, biz.id, "Sure, please go ahead."
+    )
+
+    assert turn_2_outcome == {"name": BOOK_APPOINTMENT, "success": True}
+    assert "booked" in turn_2_body.lower()
+    appointment = db_session.query(Appointment).filter_by(business_id=biz.id).one()
+    assert appointment.status == "booked"
+
+    # Founder Dashboard / Execution Trace / Conversation Replay all reflect
+    # the real outcome, not the hallucinated one.
+    upcoming = get_upcoming_appointments(db_session, biz.id, appointment.customer_id)
+    assert [a.id for a in upcoming] == [appointment.id]
+
+    turn_2_trace = (
+        db_session.query(ExecutionTrace)
+        .filter_by(conversation_id=conversation.id)
+        .order_by(ExecutionTrace.created_at.desc())
+        .first()
+    )
+    assert turn_2_trace.proposed_tool_calls == [
+        {"tool_name": BOOK_APPOINTMENT, "agent_role": "scheduler"}
+    ]
+
+    messages = (
+        db_session.query(Message)
+        .filter_by(conversation_id=conversation.id)
+        .order_by(Message.created_at)
+        .all()
+    )
+    assert [m.body for m in messages] == [
+        "I'd like a teeth cleaning tomorrow around 3 PM.",
+        "I'll check availability for you — let me just check our schedule.",
+        "Sure, please go ahead.",
+        turn_2_body,
+    ]

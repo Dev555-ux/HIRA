@@ -32,6 +32,35 @@ every existing caller (and test) relies on. domains_for_action()/
 tool_schemas_for_domain() below are additive: they let app/ai/plan.py build
 a multi-domain execution plan without this module's own single-match
 behaviour changing at all.
+
+Sprint 80 (multi-turn intent continuity — production bug): classify_conversation()
+now returns `ConversationCategory | None`. `None` means "no rule matched at
+all" — a message with no signal of its own (a bare "yes", "sure, go ahead",
+or, it turns out, a natural request like "I'd like a teeth cleaning tomorrow
+around 3 PM", which matches none of the imperative/first-person-modal
+patterns below despite being an unambiguous booking request). Previously
+this fell back to CONVERSATION indistinguishably from a confident greeting
+or small-talk match, silently discarding the fact that the message was
+genuinely ambiguous rather than confidently non-action — which is exactly
+what let a live production conversation go tools-less on both the original
+request *and* its own follow-up confirmation (see DEC-049). A caller with no
+conversation context to offer (evaluation.py's benchmark comparisons, or
+this module's own tools_for_message() below) coalesces None to CONVERSATION
+itself, preserving every existing behaviour byte-for-byte. A caller *with*
+context (app/ai/plan.py::build_execution_plan(), via
+app/services/execution_traces.py::get_pending_domain()) instead treats None
+as "check whether a workflow is already pending before defaulting to
+conversation" — see plan.py for the actual resolution logic; nothing in this
+module knows about conversations, history, or the database.
+
+domains_for_action() also gained one additive fallback for the same root
+cause found on the Stage 2 side: a message with a time marker (already-
+existing `_TIME_MARKER_RE`, not a new pattern) that matches no domain's own
+vocabulary still defaults to "calendar" — the general, structural inference
+that "the customer named a specific time" is itself calendar-shaped,
+independent of whether they used a generic scheduling word like "book" or
+named a business-specific service ("teeth cleaning") no fixed keyword list
+could ever fully enumerate.
 """
 
 from __future__ import annotations
@@ -105,13 +134,18 @@ _KNOWLEDGE_KEYWORDS = (
 _KNOWLEDGE_QUESTION_RE = re.compile(r"^(what|where|when|how much|do you have)\b")
 
 
-def classify_conversation(text: str) -> ConversationCategory:
+def classify_conversation(text: str) -> ConversationCategory | None:
     """Stage 1 — deterministic, rule-based, no LLM/network call.
 
     Checked in order of consequence, not alphabetically: ACTION first (a
     false negative here silently strips tools from a genuine request),
-    then CAPABILITY, then KNOWLEDGE, defaulting to CONVERSATION — the safe
-    fallback (see tools_for_message) — when nothing matches.
+    then CAPABILITY, then KNOWLEDGE.
+
+    Returns None (Sprint 80) when no rule matches at all — genuinely
+    ambiguous, not confidently anything. An empty message and an explicit
+    greeting/small-talk match are NOT ambiguous — both stay confident
+    CONVERSATION returns, same as always. See this module's docstring for
+    why the distinction matters and who's responsible for resolving it.
     """
     lower = text.strip().lower()
     if not lower:
@@ -136,7 +170,7 @@ def classify_conversation(text: str) -> ConversationCategory:
     if any(kw in lower for kw in _KNOWLEDGE_KEYWORDS):
         return ConversationCategory.KNOWLEDGE
 
-    return ConversationCategory.CONVERSATION
+    return None
 
 
 @dataclass(frozen=True)
@@ -192,6 +226,15 @@ def domains_for_action(text: str) -> list[str]:
 
     Planning only — this never calls a tool or exposes anything to the
     model by itself. app/ai/plan.py is what turns this into tool schemas.
+
+    Sprint 80: if no domain's own keywords match at all but the text names
+    a specific time (`_TIME_MARKER_RE` — already defined above, not a new
+    pattern), defaults to ["calendar"] — "I'd like a teeth cleaning
+    tomorrow around 3 PM" names a business-specific service no fixed
+    keyword list could enumerate, but a named time is itself a structural,
+    generalizable signal that this is calendar-shaped. Only a fallback for
+    the *no-match* case — never overrides an actual keyword match (CRM or
+    otherwise), so existing multi-domain detection is unchanged.
     """
     lower = text.lower()
     matches: list[tuple[int, str]] = []
@@ -200,6 +243,8 @@ def domains_for_action(text: str) -> list[str]:
         if positions:
             matches.append((min(positions), category.name))
     matches.sort(key=lambda m: m[0])
+    if not matches and _TIME_MARKER_RE.search(lower):
+        return ["calendar"]
     return [name for _, name in matches]
 
 
@@ -224,11 +269,8 @@ def tools_for_action(text: str) -> list[ToolSchema]:
     an unrecognised action degrades to a plain-text reply rather than
     guessing a tool category. See tools_for_message's module-level note.
     """
-    lower = text.lower()
-    for category in _ACTION_CATEGORIES:
-        if any(keyword in lower for keyword in category.keywords):
-            return category.tool_schemas
-    return []
+    domains = domains_for_action(text)
+    return tool_schemas_for_domain(domains[0]) if domains else []
 
 
 def tools_for_message(text: str) -> tuple[ConversationCategory, list[ToolSchema]]:
@@ -239,8 +281,13 @@ def tools_for_message(text: str) -> tuple[ConversationCategory, list[ToolSchema]
     for a request that turns out to need a tool category HIRA doesn't have
     a mapping for yet, is a plain-text answer, not exposing unrelated
     tools).
+
+    No conversation context available here, so an ambiguous (None) Stage 1
+    result coalesces to CONVERSATION — identical to this function's
+    behaviour before Sprint 80. app/ai/plan.py::build_execution_plan() is
+    the context-aware entry point real conversations actually go through.
     """
-    category = classify_conversation(text)
+    category = classify_conversation(text) or ConversationCategory.CONVERSATION
     if category != ConversationCategory.ACTION:
         return category, []
 

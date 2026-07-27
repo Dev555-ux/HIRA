@@ -37,6 +37,7 @@ def _serialize_plan(plan: ExecutionPlan) -> dict:
             for step in plan.steps
         ],
         "clarification_hint": plan.clarification_hint,
+        "active_domain": plan.active_domain,
     }
 
 
@@ -103,6 +104,39 @@ def get_result_messages(db: Session, trace: ExecutionTrace) -> list[Message]:
         for message in db.scalars(select(Message).where(Message.id.in_(message_ids)))
     }
     return [rows[message_id] for message_id in message_ids if message_id in rows]
+
+
+def get_pending_domain(db: Session, conversation_id: uuid.UUID) -> str | None:
+    """Sprint 80 (multi-turn intent continuity, DEC-049): is this
+    conversation mid-workflow? Looks at only the single most recent trace —
+    if it was action-shaped (`plan["active_domain"]` set) and no write tool
+    was actually proposed yet (`proposed_tool_calls` empty — check_availability
+    never appears here, see app/ai/orchestrator.py, so "empty" specifically
+    means no book/reschedule/cancel/CRM call happened), that domain is still
+    open and the next ambiguous reply should continue it. A domain clears
+    itself automatically the moment a write tool *is* proposed (the next
+    trace's own proposed_tool_calls is then non-empty) or the current
+    message classifies as something confident on its own (app/ai/plan.py
+    only consults this for a None/ambiguous Stage 1 result) — no explicit
+    "clear pending state" step anywhere, by construction.
+
+    Read-only, single indexed query (conversation_id, created_at) — no
+    heavier than the read helpers above.
+    """
+    trace = db.scalars(
+        select(ExecutionTrace)
+        .where(ExecutionTrace.conversation_id == conversation_id)
+        .order_by(ExecutionTrace.created_at.desc())
+        .limit(1)
+    ).first()
+    if trace is None:
+        return None
+    plan = trace.plan or {}
+    if plan.get("category") != "action":
+        return None
+    if trace.proposed_tool_calls:
+        return None
+    return plan.get("active_domain")
 
 
 def resolve_outcome(messages: list[Message]) -> str:

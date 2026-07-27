@@ -47,6 +47,16 @@ enables two related actions from that one category (e.g. proposing a
 booking and, separately, logging the lead in the same category's turn is
 not yet possible; two calendar actions in one response is).
 
+v8 (Sprint 80, DEC-049): added an explicit "Never narrate an action you are
+not taking" rule. The production bug this sprint fixed was two-layered —
+tools weren't being offered when they should have been (the actual fix,
+app/ai/intent.py + app/ai/plan.py), but the model's own text also
+compounded it by claiming "I'll check availability" and "I can propose a
+book_appointment" — describing tool calls in prose instead of making them,
+on a turn where no tool was even available to call. Fixing tool availability
+should make this rare in practice, but the rule is a direct, cheap backstop
+independent of whether classification ever misses an edge case again.
+
 Demo Mode (Sprint 55): a second, separate system prompt — build_demo_system_
 prompt() — used instead of build_system_prompt() only when
 context.has_knowledge is False (app/ai/orchestrator.py branches on it).
@@ -72,7 +82,7 @@ from app.ai.llm.base import ChatMessage
 from app.core.timezones import safe_zoneinfo
 from app.models import Business, KbEntry, Lead, Message
 
-SYSTEM_PROMPT_VERSION = "v7"
+SYSTEM_PROMPT_VERSION = "v8"
 
 _BASE_SYSTEM_PROMPT = """\
 You are HIRA, a professional AI receptionist replying to a customer on WhatsApp \
@@ -95,6 +105,11 @@ immediately — a human reviews the proposed action first.
 confirmed until you are told it succeeded.
 - All appointment times you propose must be within the business's current \
 date/time and, if working hours are given below, within them.
+- Never say you are checking availability, booking, rescheduling, or \
+cancelling unless you are calling the matching tool in this same reply. If \
+no booking/reschedule/cancellation tool is available to you this turn, do \
+not describe taking one of these actions — ask a natural follow-up \
+question instead, or say plainly that you'll need a moment to look into it.
 
 Tracking leads:
 - If a customer shows buying interest (asks about pricing, requests a quote, \

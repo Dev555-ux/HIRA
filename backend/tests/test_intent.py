@@ -84,23 +84,33 @@ def test_classifies_crm_action(text):
     assert names == {CREATE_LEAD, UPDATE_LEAD_STAGE, SET_LEAD_FOLLOW_UP}
 
 
-def test_unknown_gibberish_input_falls_back_to_conversation():
+def test_unknown_gibberish_input_returns_none_not_a_confident_guess():
+    # Sprint 80: no rule matches at all -> None, distinct from a *confident*
+    # CONVERSATION match (a real greeting/small-talk hit). A context-free
+    # caller (tools_for_message) still coalesces this to CONVERSATION —
+    # see test_tools_for_message_never_falls_back_to_all_tools below — but
+    # classify_conversation itself must not silently discard the ambiguity,
+    # since app/ai/plan.py needs it to decide whether to check for a
+    # pending workflow.
     category = classify_conversation("zzxxqq flibbertigibbet asdkjh")
-    assert category == ConversationCategory.CONVERSATION
+    assert category is None
 
 
 def test_empty_input_falls_back_to_conversation():
+    # Unlike gibberish, an empty message is unambiguous, not merely
+    # unmatched — stays a confident CONVERSATION, never None.
     assert classify_conversation("") == ConversationCategory.CONVERSATION
     assert classify_conversation("   ") == ConversationCategory.CONVERSATION
 
 
-def test_ambiguous_input_returns_a_valid_category_without_crashing():
+def test_ambiguous_input_returns_none_or_a_valid_category_without_crashing():
     # Mixed signals (a knowledge-shaped question about scheduling) — the
     # point of this test isn't to pin one "correct" answer (there isn't a
     # single obviously correct one), it's to prove the classifier always
-    # returns *some* valid category rather than raising or guessing wildly.
+    # returns either a real category or the explicit "ambiguous" signal
+    # (Sprint 80: None), never raises or guesses wildly.
     category = classify_conversation("What's the deal with scheduling around here?")
-    assert isinstance(category, ConversationCategory)
+    assert category is None or isinstance(category, ConversationCategory)
 
 
 def test_action_classified_but_unrecognised_tool_category_yields_no_tools():

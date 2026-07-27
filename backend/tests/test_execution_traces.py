@@ -90,6 +90,7 @@ class TestRecordExecutionTrace:
                 }
             ],
             "clarification_hint": None,
+            "active_domain": None,
         }
         assert trace.proposed_tool_calls == [
             {"tool_name": "book_appointment", "agent_role": "scheduler"}

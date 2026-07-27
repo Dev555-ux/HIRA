@@ -31,6 +31,22 @@ Capped at app/ai/tools.py::MAX_TOOL_CALLS_PER_TURN (2) — the same constant
 Sprint 74's execution layer already caps at, not a second number that could
 drift out of sync. Planning three steps when only two could ever become
 Message rows would be pure waste.
+
+Sprint 80 (multi-turn intent continuity, DEC-049): build_execution_plan()
+gained an optional `pending_domain` param — the domain a *prior* turn in
+this same conversation was already working on, resolved by the caller via
+app/services/execution_traces.py::get_pending_domain() (this module stays
+DB-free; the caller does the lookup and hands in a plain string). Used only
+when Stage 1 (app/ai/intent.py::classify_conversation) returns None for the
+*current* message — genuinely ambiguous, not confidently anything else —
+which is exactly what a bare "yes"/"sure, go ahead" is. `ExecutionPlan`
+gained `active_domain`, recording whichever domain *this* turn ended up
+using (whether or not it reached `steps` — a domain withheld pending more
+detail is still "active"), so the next turn's get_pending_domain() has
+something to find. A message that confidently classifies as something else
+(a real greeting, a knowledge question, an explicit new action) always
+takes precedence over an inherited pending domain — continuity only ever
+fills a genuine gap, never overrides a clear signal.
 """
 
 from __future__ import annotations
@@ -68,6 +84,11 @@ class ExecutionPlan:
     # domain) — folded into the system prompt exactly like Sprint 58/59's
     # single-action clarification_hint always was.
     clarification_hint: str | None = None
+    # Sprint 80: the domain this turn was actually about, whether or not it
+    # made it into `steps` — the one piece of state the *next* turn can
+    # inherit if it turns out to be an ambiguous continuation. None for any
+    # non-ACTION turn, or an ACTION turn where no domain matched at all.
+    active_domain: str | None = None
 
     @property
     def tools(self) -> list[ToolSchema]:
@@ -76,20 +97,40 @@ class ExecutionPlan:
         return [tool for step in self.steps for tool in step.tools]
 
 
-def build_execution_plan(text: str) -> ExecutionPlan:
+def build_execution_plan(text: str, *, pending_domain: str | None = None) -> ExecutionPlan:
     """The single entry point app/ai/orchestrator.py calls. Empty-steps
     plans (category != ACTION, or no domain matched, or the very first
     domain isn't ready/governed) behave exactly like "no tools offered"
     always did — this function's return shape makes that the uniform,
     zero-special-casing default rather than a caller-side check.
+
+    `pending_domain` (Sprint 80) is consulted only when this message's own
+    text is genuinely ambiguous (classify_conversation returns None) *and*
+    domains_for_action() itself finds nothing for the current text either
+    — a message's own domain match (including domains_for_action's own
+    time-marker fallback, e.g. "Actually, create a lead for Priya" pivoting
+    away from a pending calendar domain) always takes priority over an
+    inherited one, same as any other confident classification.
     """
     category = classify_conversation(text)
-    if category != ConversationCategory.ACTION:
+    if category is None:
+        domains = domains_for_action(text)
+        if domains:
+            category = ConversationCategory.ACTION
+        elif pending_domain is not None:
+            category = ConversationCategory.ACTION
+            domains = [pending_domain]
+        else:
+            return ExecutionPlan(category=ConversationCategory.CONVERSATION, steps=())
+    elif category != ConversationCategory.ACTION:
         return ExecutionPlan(category=category, steps=())
+    else:
+        domains = domains_for_action(text)
 
-    domains = domains_for_action(text)[:MAX_TOOL_CALLS_PER_TURN]
+    domains = domains[:MAX_TOOL_CALLS_PER_TURN]
     if not domains:
         return ExecutionPlan(category=category, steps=())
+    active_domain = domains[0]
 
     steps: list[PlanStep] = []
     clarification_hint: str | None = None
@@ -115,5 +156,8 @@ def build_execution_plan(text: str) -> ExecutionPlan:
         steps.append(PlanStep(domain=domain, action=action_plan.action, role=role, tools=tools))
 
     return ExecutionPlan(
-        category=category, steps=tuple(steps), clarification_hint=clarification_hint
+        category=category,
+        steps=tuple(steps),
+        clarification_hint=clarification_hint,
+        active_domain=active_domain,
     )

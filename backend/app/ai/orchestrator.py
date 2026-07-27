@@ -78,6 +78,19 @@ and uses the resulting ExecutionPlan.tools/clarification_hint — it no
 longer owns any of that gating logic directly. A single-domain message
 still produces a single-step plan and therefore identical behaviour to
 before this sprint.
+
+Multi-turn intent continuity (Sprint 80, DEC-049): before calling
+build_execution_plan(), this function now also looks up whether this
+conversation has a pending, unresolved workflow
+(app/services/execution_traces.py::get_pending_domain() — a plain read of
+the most recent ExecutionTrace, no new state to maintain) and hands it in
+as `pending_domain`. build_execution_plan() only ever consults this for a
+message whose own text is genuinely ambiguous (Stage 1 returns None) — a
+bare "yes"/"sure, go ahead" replying to HIRA's own "let me check
+availability" is exactly that case, and previously lost the domain
+entirely, going tools-less and leaving the model to narrate an action it
+had no way to actually take. A confident classification of any kind still
+always wins over an inherited pending domain.
 """
 
 from __future__ import annotations
@@ -88,7 +101,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.context import RETRIEVAL_K, build_context
 from app.ai.embeddings import EmbeddingProvider
-from app.ai.intent import classify_conversation
+from app.ai.intent import ConversationCategory, classify_conversation
 from app.ai.llm import LLMProvider, LLMResponse, get_llm_provider
 from app.ai.plan import ExecutionPlan, build_execution_plan
 from app.ai.prompts import (
@@ -100,6 +113,7 @@ from app.ai.prompts import (
 )
 from app.ai.tools import CHECK_AVAILABILITY, execute_check_availability
 from app.models import Conversation
+from app.services.execution_traces import get_pending_domain
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +156,12 @@ def generate_reply(
         demo_system = build_demo_system_prompt(context)
         messages = build_messages(context.history, user_text)
         response = llm.generate(system=demo_system, messages=messages)
-        demo_plan = ExecutionPlan(category=classify_conversation(user_text), steps=())
+        # Demo Mode never offers tools regardless of category (see module
+        # docstring), so there's no pending workflow to inherit — an
+        # ambiguous (None) Stage 1 result coalesces to CONVERSATION, same
+        # as always.
+        demo_category = classify_conversation(user_text) or ConversationCategory.CONVERSATION
+        demo_plan = ExecutionPlan(category=demo_category, steps=())
         return response, context.retrieved_kb, demo_plan
 
     messages = build_messages(context.history, user_text)
@@ -154,7 +173,12 @@ def generate_reply(
     # to up to MAX_TOOL_CALLS_PER_TURN domains. A message matching only one
     # domain produces an identical-shape single-step plan, so this is a
     # pure refactor for single-domain requests, not a behaviour change.
-    plan = build_execution_plan(user_text)
+    #
+    # Sprint 80 (DEC-049): pending_domain carries forward an unresolved
+    # workflow from this same conversation's most recent turn, consulted
+    # only when this message's own text is genuinely ambiguous.
+    pending_domain = get_pending_domain(db, conversation.id)
+    plan = build_execution_plan(user_text, pending_domain=pending_domain)
     tools = plan.tools
 
     system = build_system_prompt(context, clarification_hint=plan.clarification_hint)
