@@ -119,13 +119,22 @@ def playground_reply(
     start = time.monotonic()
     try:
         response, retrieved, plan = generate_reply(db, conversation, user_text)
-    except LLMError:
+    except LLMError as exc:
         logger.exception(
             "Demo Chat LLM call failed for business %s; returning fallback reply", business_id
         )
         response = LLMResponse(text=LLM_UNAVAILABLE_TEXT, model="unavailable")
         retrieved = []
-        plan = ExecutionPlan(category=ConversationCategory.CONVERSATION, steps=())
+        # Sprint 80 follow-up: if generate_reply() got as far as computing a
+        # real plan before the LLM call itself failed, app/ai/orchestrator.py
+        # attaches it as exc.plan — use that so the trace still shows what
+        # was actually offered this turn (e.g. action/scheduler/4 tools)
+        # instead of always downgrading to an empty "conversation" plan,
+        # which was misleading Founder Ops on exactly the turns where an
+        # accurate trace mattered most.
+        plan = getattr(exc, "plan", None) or ExecutionPlan(
+            category=ConversationCategory.CONVERSATION, steps=()
+        )
     duration_ms = int((time.monotonic() - start) * 1000)
 
     # Sprint 74 Phase 1 (DEC-043): up to MAX_TOOL_CALLS_PER_TURN entries now,

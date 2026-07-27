@@ -91,6 +91,13 @@ availability" is exactly that case, and previously lost the domain
 entirely, going tools-less and leaving the model to narrate an action it
 had no way to actually take. A confident classification of any kind still
 always wins over an inherited pending domain.
+
+Trace accuracy on LLM failure (Sprint 80 follow-up): if the LLM call itself
+throws (e.g. Groq's tool_use_failed 400 — see app/ai/llm/groq.py), the
+ExecutionPlan computed above is attached to the raised LLMError as
+`exc.plan` rather than lost, so app/ai/playground.py's fallback path can
+record a trace that still reflects what was actually offered this turn
+instead of silently downgrading it to an empty "conversation" plan.
 """
 
 from __future__ import annotations
@@ -102,7 +109,7 @@ from sqlalchemy.orm import Session
 from app.ai.context import RETRIEVAL_K, build_context
 from app.ai.embeddings import EmbeddingProvider
 from app.ai.intent import ConversationCategory, classify_conversation
-from app.ai.llm import LLMProvider, LLMResponse, get_llm_provider
+from app.ai.llm import LLMError, LLMProvider, LLMResponse, get_llm_provider
 from app.ai.plan import ExecutionPlan, build_execution_plan
 from app.ai.prompts import (
     DEMO_SYSTEM_PROMPT_VERSION,
@@ -194,16 +201,27 @@ def generate_reply(
         plan.clarification_hint is None,
         SYSTEM_PROMPT_VERSION,
     )
-    response = llm.generate(system=system, messages=messages, tools=tools)
+    try:
+        response = llm.generate(system=system, messages=messages, tools=tools)
 
-    if response.tool_calls and response.tool_calls[0].name == CHECK_AVAILABILITY:
-        availability_note = execute_check_availability(
-            db, conversation.business_id, response.tool_calls[0]
-        )
-        system_with_availability = build_system_prompt(context, availability_note=availability_note)
-        response = llm.generate(system=system_with_availability, messages=messages, tools=tools)
-        # Deliberately not looped further: if the model calls check_availability
-        # again here, that's returned as-is for the caller, same as any other
-        # tool call — no risk of runaway recursion.
+        if response.tool_calls and response.tool_calls[0].name == CHECK_AVAILABILITY:
+            availability_note = execute_check_availability(
+                db, conversation.business_id, response.tool_calls[0]
+            )
+            system_with_availability = build_system_prompt(
+                context, availability_note=availability_note
+            )
+            response = llm.generate(system=system_with_availability, messages=messages, tools=tools)
+            # Deliberately not looped further: if the model calls check_availability
+            # again here, that's returned as-is for the caller, same as any other
+            # tool call — no risk of runaway recursion.
+    except LLMError as exc:
+        # The plan (category/active_domain/tools offered) was already fully
+        # decided above — only the LLM call itself failed. Attach it to the
+        # exception so a caller's fallback path (app/ai/playground.py) can
+        # still record an accurate ExecutionTrace instead of silently
+        # downgrading a real action turn to an empty "conversation" one.
+        exc.plan = plan
+        raise
 
     return response, context.retrieved_kb, plan

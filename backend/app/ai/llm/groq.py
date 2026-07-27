@@ -5,6 +5,15 @@ LLMProvider interface. Bounded retries on transient errors (connection,
 timeout, 429, 5xx); other 4xx are not retried. SDK imported lazily so the rest
 of the app never hard-depends on it. Requires GROQ_API_KEY.
 
+Sprint 80 follow-up (production smoke test, DEC-049): also bounded-retries
+Groq's `tool_use_failed` 400 — this is Groq's own tool-call parser rejecting
+a completion where the model emitted a function call as literal text (e.g.
+`<function=check_availability(...)>`) instead of the structured tool-calling
+channel, for llama-3.3-70b-versatile in particular. It's a stochastic
+decoding hiccup, not a malformed request on our side (the same tool schemas
+succeed on a retry), so it gets the same bounded-retry treatment as a 5xx
+rather than failing the turn outright. Any other 4xx is still not retried.
+
 Chat format maps directly: our ChatMessage roles ("user"/"assistant") are used
 as-is, with the system prompt prepended as a "system" message.
 """
@@ -110,6 +119,14 @@ class GroqProvider(LLMProvider):
                 if exc.status_code >= 500:
                     last_error = exc
                     logger.warning("Groq 5xx (attempt %d): %s", attempt, exc)
+                    if attempt < self._max_attempts:
+                        time.sleep(0.5 * attempt)
+                        continue
+                    raise LLMError(f"Groq rejected the request: {exc}") from exc
+                error_code = exc.body.get("error", {}).get("code") if isinstance(exc.body, dict) else None
+                if error_code == "tool_use_failed":
+                    last_error = exc
+                    logger.warning("Groq tool_use_failed (attempt %d): %s", attempt, exc)
                     if attempt < self._max_attempts:
                         time.sleep(0.5 * attempt)
                         continue

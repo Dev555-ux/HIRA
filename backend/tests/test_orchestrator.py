@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.ai import processing
 from app.ai.lead_tools import CREATE_LEAD, SET_LEAD_FOLLOW_UP, UPDATE_LEAD_STAGE
-from app.ai.llm.base import LLMProvider, LLMResponse, ToolCall
+from app.ai.llm.base import LLMError, LLMProvider, LLMResponse, ToolCall
 from app.ai.llm.mock import MockProvider
 from app.ai.orchestrator import generate_reply
 from app.ai.tools import (
@@ -570,6 +570,39 @@ def test_generate_reply_executes_check_availability_then_asks_again(db_session, 
 
     assert response.text == "We have a slot at 9am, does that work?"
     assert response.tool_calls is None
+
+
+class _RaisingProvider(LLMProvider):
+    """Simulates the LLM provider itself failing (e.g. Groq's tool_use_failed
+    400) after a real plan has already been decided — see
+    test_generate_reply_attaches_the_already_computed_plan_to_a_raised_llm_error."""
+
+    def generate(self, *, system, messages, max_tokens=None, tools=None):
+        raise LLMError("simulated provider failure")
+
+
+def test_generate_reply_attaches_the_already_computed_plan_to_a_raised_llm_error(db_session):
+    """Sprint 80 follow-up (live production smoke test): the plan
+    (category/active_domain/tools offered) is fully decided before the LLM
+    is ever called — if the LLM call itself then throws, that plan must not
+    be lost. app/ai/playground.py's fallback path relies on exc.plan to
+    keep the ExecutionTrace accurate instead of always downgrading a real
+    action turn to an empty conversation one."""
+    _, conversation = _setup_business_with_kb(db_session)
+
+    try:
+        generate_reply(
+            db_session,
+            conversation,
+            "Book a meeting with John tomorrow at 3 PM.",
+            llm=_RaisingProvider(),
+            embedding=FakeEmbeddingProvider(),
+        )
+        raise AssertionError("expected LLMError to propagate")
+    except LLMError as exc:
+        assert exc.plan.category.value == "action"
+        assert exc.plan.active_domain == "calendar"
+        assert exc.plan.steps[0].domain == "calendar"
 
 
 def test_generate_and_store_reply_persists_pending_outbound(db_session, monkeypatch):

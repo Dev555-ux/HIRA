@@ -162,6 +162,49 @@ def test_playground_reply_falls_back_gracefully_on_llm_error(db_session, monkeyp
     assert messages[1].status == "sent"
 
 
+def test_playground_reply_records_the_real_plan_when_the_llm_call_fails_after_planning(
+    db_session, monkeypatch
+):
+    """Sprint 80 follow-up (live production smoke test): if a real plan was
+    already computed — Business Knowledge exists, so the message went
+    through build_execution_plan and decided to offer calendar tools —
+    before the LLM call itself throws (e.g. Groq's tool_use_failed), the
+    ExecutionTrace must still reflect that plan, not silently downgrade to
+    an empty conversation plan. Previously it always downgraded regardless
+    of what was actually decided, which made Founder Ops' Execution Trace
+    read "No tools were offered for this turn" even on a turn where 4
+    calendar tools genuinely were offered and only the LLM provider call
+    itself failed."""
+    from app.models import ExecutionTrace
+
+    biz = _business(db_session)
+    index_entry(
+        db_session,
+        biz.id,
+        "Services",
+        "We offer teeth cleaning appointments.",
+        provider=FakeEmbeddingProvider(),
+    )
+    monkeypatch.setattr("app.ai.orchestrator.get_llm_provider", lambda name=None: FailingProvider())
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+
+    response, retrieved, body, tool_outcome = playground_reply(
+        db_session, biz.id, "I'd like a teeth cleaning tomorrow around 3 PM"
+    )
+
+    assert body == LLM_UNAVAILABLE_TEXT
+    assert tool_outcome is None
+
+    conversation = get_or_create_playground_conversation(db_session, biz.id)
+    trace = db_session.query(ExecutionTrace).filter_by(conversation_id=conversation.id).one()
+    assert trace.category == "action"
+    assert trace.plan["active_domain"] == "calendar"
+    assert trace.plan["steps"][0]["domain"] == "calendar"
+    assert trace.proposed_tool_calls == []
+
+
 def test_playground_executes_a_proposed_lead_tool_call_for_real(db_session, monkeypatch):
     """Demo Chat sprint: unlike WhatsApp's Assisted Mode (held for approval)
     or the old playground (preview only), a proposed tool call now actually
