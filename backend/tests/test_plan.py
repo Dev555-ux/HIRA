@@ -137,6 +137,88 @@ def test_plan_stops_before_a_domain_that_requires_confirmation():
     assert CREATE_LEAD not in {t.name for t in plan.tools}
 
 
+# --- DEC-051: confirmation continuity for governance-gated actions --------
+
+
+def test_a_governance_gated_ready_action_sets_pending_action():
+    """The action name persists on the plan the moment governance withholds
+    an already-ready action — this is what the next turn's confirmation
+    resumes from."""
+    plan = build_execution_plan("Cancel my appointment for tomorrow.")
+
+    assert plan.steps == ()
+    assert plan.clarification_hint is not None
+    assert plan.pending_action == "calendar_cancel"
+
+
+def test_a_confirmation_that_echoes_the_actions_own_trigger_word_resumes_it():
+    """The exact bug: "yes, cancel it" contains "cancel" — planning.py's own
+    fresh required-field check on that short reply would (correctly, in
+    isolation) find no appointment reference and withhold it again, asking
+    forever. pending_action resumes the already-validated action instead."""
+    plan = build_execution_plan("Yes, cancel it.", pending_action="calendar_cancel")
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].domain == "calendar"
+    assert plan.steps[0].action == "calendar_cancel"
+    assert CANCEL_APPOINTMENT in {t.name for t in plan.tools}
+    assert plan.clarification_hint is None
+    # Resumed and offered this turn — nothing left pending for the *next*
+    # turn to resume, unless governance withholds it again some other way.
+    assert plan.pending_action is None
+
+
+def test_confirmation_continuity_is_generic_not_calendar_cancel_specific():
+    """The same mechanism, proven on a different governance-gated action
+    (calendar_reschedule) — nothing in app/ai/plan.py names calendar_cancel
+    specifically."""
+    setup = build_execution_plan("Reschedule my appointment to tomorrow at 10am.")
+    assert setup.pending_action == "calendar_reschedule"
+
+    plan = build_execution_plan("Yes, reschedule it.", pending_action="calendar_reschedule")
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].action == "calendar_reschedule"
+    assert RESCHEDULE_APPOINTMENT in {t.name for t in plan.tools}
+    assert plan.clarification_hint is None
+
+
+def test_a_confirmation_with_no_pending_action_behaves_exactly_as_before():
+    """No regression to the pre-existing (if imperfect) behaviour when
+    there's nothing to resume — still asks for the missing detail."""
+    plan = build_execution_plan("Yes, cancel it.")
+
+    assert plan.steps == ()
+    assert plan.clarification_hint is not None
+    assert CANCEL_APPOINTMENT not in {t.name for t in plan.tools}
+
+
+def test_a_confirmation_naming_a_different_action_than_pending_is_not_resumed():
+    """A stale pending_action must never bleed into an unrelated action —
+    only an exact action-name match resumes anything."""
+    plan = build_execution_plan("Yes, cancel it.", pending_action="calendar_reschedule")
+
+    assert plan.steps == ()
+    assert plan.clarification_hint is not None
+    assert CANCEL_APPOINTMENT not in {t.name for t in plan.tools}
+
+
+def test_a_confident_new_fully_specified_action_still_goes_through_governance():
+    """A genuinely new, complete request must still pass its own governance
+    check even with a stale pending_action from an unrelated earlier
+    turn — pending_action only ever *resumes*, never bypasses, governance
+    for an action that wasn't already the one pending confirmation."""
+    plan = build_execution_plan(
+        "Reschedule my appointment to tomorrow at 11am.", pending_action="calendar_cancel"
+    )
+
+    # Still policy-gated (requires confirmation), not silently waved through
+    # just because *some* action was pending.
+    assert plan.steps == ()
+    assert plan.clarification_hint is not None
+    assert plan.pending_action == "calendar_reschedule"
+
+
 def test_plan_never_exceeds_the_shared_two_call_cap():
     """Even if intent.py somehow matched more than two domains in the
     future, the plan must stay capped at the same MAX_TOOL_CALLS_PER_TURN

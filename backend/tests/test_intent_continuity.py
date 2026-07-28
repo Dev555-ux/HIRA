@@ -21,7 +21,11 @@ from app.ai.tools import (
     RESCHEDULE_APPOINTMENT,
 )
 from app.models import Business, Conversation, Customer
-from app.services.execution_traces import get_pending_domain, record_execution_trace
+from app.services.execution_traces import (
+    get_pending_action,
+    get_pending_domain,
+    record_execution_trace,
+)
 
 
 # --- Part A: pure classification/planning, no DB, no LLM -------------------
@@ -336,3 +340,93 @@ def test_get_pending_domain_is_scoped_to_its_own_conversation(db_session):
 
     assert get_pending_domain(db_session, conv_a.id) == "calendar"
     assert get_pending_domain(db_session, conv_b.id) is None
+
+
+# --- Part C: get_pending_action (DEC-051) against real ExecutionTrace rows -
+
+
+def test_get_pending_action_returns_none_for_a_conversation_with_no_traces(db_session):
+    biz = _business(db_session)
+    conv = _conversation(db_session, biz)
+    assert get_pending_action(db_session, conv.id) is None
+
+
+def test_get_pending_action_finds_a_governance_gated_ready_action(db_session):
+    """The exact shape of a turn governance withheld pending confirmation:
+    steps empty (nothing offered yet), but pending_action names the
+    already-validated action the next turn's confirmation should resume."""
+    biz = _business(db_session)
+    conv = _conversation(db_session, biz)
+    plan = ExecutionPlan(
+        category=ConversationCategory.ACTION,
+        steps=(),
+        active_domain="calendar",
+        pending_action="calendar_cancel",
+    )
+    _record(db_session, conv, biz, plan, proposed_tool_calls=[])
+
+    assert get_pending_action(db_session, conv.id) == "calendar_cancel"
+
+
+def test_get_pending_action_is_none_once_the_action_was_actually_proposed(db_session):
+    """Self-clearing, same as get_pending_domain: once a write tool is
+    genuinely proposed, there's nothing left to resume."""
+    biz = _business(db_session)
+    conv = _conversation(db_session, biz)
+    step = PlanStep(domain="calendar", action="calendar_cancel", role="scheduler", tools=())
+    plan = ExecutionPlan(
+        category=ConversationCategory.ACTION, steps=(step,), active_domain="calendar"
+    )
+    _record(
+        db_session,
+        conv,
+        biz,
+        plan,
+        proposed_tool_calls=[{"tool_name": CANCEL_APPOINTMENT, "agent_role": "scheduler"}],
+    )
+
+    assert get_pending_action(db_session, conv.id) is None
+
+
+def test_get_pending_action_is_none_when_no_action_was_pending(db_session):
+    """A plain "no tools offered" turn (e.g. planning withheld for missing
+    info, not governance) never has a pending_action to resume."""
+    biz = _business(db_session)
+    conv = _conversation(db_session, biz)
+    plan = ExecutionPlan(category=ConversationCategory.ACTION, steps=(), active_domain="calendar")
+    _record(db_session, conv, biz, plan, proposed_tool_calls=[])
+
+    assert get_pending_action(db_session, conv.id) is None
+
+
+def test_get_pending_action_only_looks_at_the_single_most_recent_turn(db_session):
+    biz = _business(db_session)
+    conv = _conversation(db_session, biz)
+    gated_plan = ExecutionPlan(
+        category=ConversationCategory.ACTION,
+        steps=(),
+        active_domain="calendar",
+        pending_action="calendar_cancel",
+    )
+    _record(db_session, conv, biz, gated_plan, proposed_tool_calls=[])
+
+    conversation_plan = ExecutionPlan(category=ConversationCategory.CONVERSATION, steps=())
+    _record(db_session, conv, biz, conversation_plan, proposed_tool_calls=[])
+
+    assert get_pending_action(db_session, conv.id) is None
+
+
+def test_get_pending_action_is_scoped_to_its_own_conversation(db_session):
+    biz = _business(db_session)
+    conv_a = _conversation(db_session, biz, phone="+15550001111")
+    conv_b = _conversation(db_session, biz, phone="+15550002222")
+    plan = ExecutionPlan(
+        category=ConversationCategory.ACTION,
+        steps=(),
+        active_domain="calendar",
+        pending_action="calendar_cancel",
+    )
+    _record(db_session, conv_a, biz, plan, proposed_tool_calls=[])
+
+    assert get_pending_action(db_session, conv_a.id) == "calendar_cancel"
+    assert get_pending_action(db_session, conv_b.id) is None

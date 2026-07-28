@@ -133,7 +133,7 @@ from app.ai.prompts import (
 )
 from app.ai.tools import READ_TOOL_EXECUTORS, READ_TOOL_NAMES
 from app.models import Conversation
-from app.services.execution_traces import get_pending_domain
+from app.services.execution_traces import get_pending_action, get_pending_domain
 
 logger = logging.getLogger(__name__)
 
@@ -197,8 +197,18 @@ def generate_reply(
     # Sprint 80 (DEC-049): pending_domain carries forward an unresolved
     # workflow from this same conversation's most recent turn, consulted
     # only when this message's own text is genuinely ambiguous.
+    #
+    # DEC-051: pending_action carries forward an already-validated action
+    # that governance withheld pending confirmation — consulted only when
+    # this message's own domain resolves to that same action, so a
+    # confirmation reply that happens to name its own action (e.g. "yes,
+    # cancel it") resumes it instead of failing planning's fresh
+    # required-field check a second time.
     pending_domain = get_pending_domain(db, conversation.id)
-    plan = build_execution_plan(user_text, pending_domain=pending_domain)
+    pending_action = get_pending_action(db, conversation.id)
+    plan = build_execution_plan(
+        user_text, pending_domain=pending_domain, pending_action=pending_action
+    )
     tools = plan.tools
 
     system = build_system_prompt(context, clarification_hint=plan.clarification_hint)

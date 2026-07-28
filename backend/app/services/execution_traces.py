@@ -38,6 +38,7 @@ def _serialize_plan(plan: ExecutionPlan) -> dict:
         ],
         "clarification_hint": plan.clarification_hint,
         "active_domain": plan.active_domain,
+        "pending_action": plan.pending_action,
     }
 
 
@@ -106,6 +107,18 @@ def get_result_messages(db: Session, trace: ExecutionTrace) -> list[Message]:
     return [rows[message_id] for message_id in message_ids if message_id in rows]
 
 
+def _most_recent_trace(db: Session, conversation_id: uuid.UUID) -> ExecutionTrace | None:
+    """Shared by get_pending_domain/get_pending_action — both ask the same
+    "is this conversation mid-workflow" question, just about a different
+    field of the same most-recent trace."""
+    return db.scalars(
+        select(ExecutionTrace)
+        .where(ExecutionTrace.conversation_id == conversation_id)
+        .order_by(ExecutionTrace.created_at.desc())
+        .limit(1)
+    ).first()
+
+
 def get_pending_domain(db: Session, conversation_id: uuid.UUID) -> str | None:
     """Sprint 80 (multi-turn intent continuity, DEC-049): is this
     conversation mid-workflow? Looks at only the single most recent trace —
@@ -123,12 +136,7 @@ def get_pending_domain(db: Session, conversation_id: uuid.UUID) -> str | None:
     Read-only, single indexed query (conversation_id, created_at) — no
     heavier than the read helpers above.
     """
-    trace = db.scalars(
-        select(ExecutionTrace)
-        .where(ExecutionTrace.conversation_id == conversation_id)
-        .order_by(ExecutionTrace.created_at.desc())
-        .limit(1)
-    ).first()
+    trace = _most_recent_trace(db, conversation_id)
     if trace is None:
         return None
     plan = trace.plan or {}
@@ -137,6 +145,30 @@ def get_pending_domain(db: Session, conversation_id: uuid.UUID) -> str | None:
     if trace.proposed_tool_calls:
         return None
     return plan.get("active_domain")
+
+
+def get_pending_action(db: Session, conversation_id: uuid.UUID) -> str | None:
+    """DEC-051: the narrower counterpart to get_pending_domain — was there an
+    action planning.py already found fully specified, that governance then
+    withheld pending the customer's own confirmation (`plan["pending_action"]`
+    set)? If so, app/ai/plan.py::build_execution_plan() resumes that
+    already-validated action directly on the confirmation turn rather than
+    re-deriving it from the (naturally under-specified) confirmation text.
+    Same self-clearing-by-construction design as get_pending_domain: a write
+    tool actually being proposed clears it (proposed_tool_calls non-empty on
+    the next trace), and so does the action simply being resumed and offered
+    this turn (build_execution_plan only sets pending_action again if
+    governance withholds it again, which a resumed action skips).
+    """
+    trace = _most_recent_trace(db, conversation_id)
+    if trace is None:
+        return None
+    plan = trace.plan or {}
+    if plan.get("category") != "action":
+        return None
+    if trace.proposed_tool_calls:
+        return None
+    return plan.get("pending_action")
 
 
 def resolve_outcome(messages: list[Message]) -> str:

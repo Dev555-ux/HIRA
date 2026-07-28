@@ -47,6 +47,29 @@ something to find. A message that confidently classifies as something else
 (a real greeting, a knowledge question, an explicit new action) always
 takes precedence over an inherited pending domain — continuity only ever
 fills a genuine gap, never overrides a clear signal.
+
+Confirmation continuity (DEC-051): a narrower, distinct gap Sprint 80 didn't
+cover — a governance-gated action (calendar_cancel, calendar_reschedule) that
+planning.py already found fully specified gets withheld pending the
+customer's confirmation, and the customer's reply naturally confirms in
+words that echo the action's own trigger keyword ("yes, cancel it"). That
+keyword match sends the confirmation text through app/ai/planning.py's
+required-field check *again*, which — correctly, in isolation — finds the
+short reply itself under-specified (the date/appointment reference was
+supplied in the earlier turn that first made the action ready) and withholds
+it a second time, asking the same question forever. `pending_action`
+(persisted the same way as `pending_domain`, via
+app/services/execution_traces.py::get_pending_action()) fixes this by
+resuming the *already-validated* action directly on the confirmation turn —
+skipping both planning's fresh field re-check and governance's own
+re-evaluation (which would just ask for confirmation again) for that one
+action — rather than re-deriving or re-validating anything from the
+confirmation text itself. A domain-less confirmation ("Sure, please go
+ahead.") already worked before this change via `pending_domain` alone
+(planning finds no trigger keyword, passes every tool through generically);
+this only fixes the case where the confirmation happens to name its own
+action. Generic across every confirmation-gated action, present and future —
+nothing here names calendar_cancel specifically.
 """
 
 from __future__ import annotations
@@ -61,7 +84,7 @@ from app.ai.intent import (
     tool_schemas_for_domain,
 )
 from app.ai.llm.base import ToolSchema
-from app.ai.planning import plan_actions
+from app.ai.planning import ActionPlan, plan_actions
 from app.ai.roles import role_for_tool
 from app.ai.tools import MAX_TOOL_CALLS_PER_TURN
 
@@ -89,6 +112,15 @@ class ExecutionPlan:
     # inherit if it turns out to be an ambiguous continuation. None for any
     # non-ACTION turn, or an ACTION turn where no domain matched at all.
     active_domain: str | None = None
+    # DEC-051: the action name, if any, that planning.py already found fully
+    # specified (ready=True) but governance withheld pending the customer's
+    # own confirmation — distinct from active_domain because it marks an
+    # *already-validated* action, not just "which domain," so the next
+    # turn's confirmation can resume it directly instead of re-deriving it.
+    # None whenever a withhold came from planning (missing information)
+    # rather than governance (needs confirmation), and None once the action
+    # actually gets offered (resumed or freshly EXECUTE_NOW).
+    pending_action: str | None = None
 
     @property
     def tools(self) -> list[ToolSchema]:
@@ -97,7 +129,9 @@ class ExecutionPlan:
         return [tool for step in self.steps for tool in step.tools]
 
 
-def build_execution_plan(text: str, *, pending_domain: str | None = None) -> ExecutionPlan:
+def build_execution_plan(
+    text: str, *, pending_domain: str | None = None, pending_action: str | None = None
+) -> ExecutionPlan:
     """The single entry point app/ai/orchestrator.py calls. Empty-steps
     plans (category != ACTION, or no domain matched, or the very first
     domain isn't ready/governed) behave exactly like "no tools offered"
@@ -111,6 +145,13 @@ def build_execution_plan(text: str, *, pending_domain: str | None = None) -> Exe
     time-marker fallback, e.g. "Actually, create a lead for Priya" pivoting
     away from a pending calendar domain) always takes priority over an
     inherited one, same as any other confident classification.
+
+    `pending_action` (DEC-051) is a separate, narrower axis — it's consulted
+    inside the per-domain loop below, only when *this* domain's fresh
+    plan_actions() result names the exact same action that's pending
+    confirmation. It never affects domain selection above; a message that
+    confidently names a different domain or a different action is handled
+    entirely on its own terms, same as always.
     """
     category = classify_conversation(text)
     if category is None:
@@ -134,23 +175,38 @@ def build_execution_plan(text: str, *, pending_domain: str | None = None) -> Exe
 
     steps: list[PlanStep] = []
     clarification_hint: str | None = None
+    next_pending_action: str | None = None
     for domain, action_plan in zip(domains, plan_actions(text, domains)):
         if not action_plan.ready:
-            clarification_hint = action_plan.clarification_hint
-            break
-        if action_plan.action is not None:
-            # Only a *named*, ready action has a policy to enforce — an
-            # action no ActionProfile recognises yet has none either,
-            # matching plan_action()'s own pre-Sprint-75 pass-through (see
-            # app/ai/orchestrator.py's original docstring, now here).
-            governance = evaluate_execution(action_plan.action)
-            if governance.decision != ExecutionDecision.EXECUTE_NOW:
-                clarification_hint = (
-                    governance.confirmation_prompt
-                    or governance.approval_reason
-                    or governance.explanation
-                )
+            if action_plan.action is not None and action_plan.action == pending_action:
+                # DEC-051: this domain's own action matches what's pending
+                # confirmation — resume the already-validated action rather
+                # than trust this fresh (and here, spuriously negative)
+                # required-field check against the confirmation text itself.
+                action_plan = ActionPlan(ready=True, action=action_plan.action)
+            else:
+                clarification_hint = action_plan.clarification_hint
                 break
+        if action_plan.action is not None:
+            if action_plan.action == pending_action:
+                # Already passed governance in the turn that first asked for
+                # confirmation — this turn *is* that confirmation, so
+                # re-evaluating would only produce the same question again.
+                pass
+            else:
+                # Only a *named*, ready action has a policy to enforce — an
+                # action no ActionProfile recognises yet has none either,
+                # matching plan_action()'s own pre-Sprint-75 pass-through (see
+                # app/ai/orchestrator.py's original docstring, now here).
+                governance = evaluate_execution(action_plan.action)
+                if governance.decision != ExecutionDecision.EXECUTE_NOW:
+                    clarification_hint = (
+                        governance.confirmation_prompt
+                        or governance.approval_reason
+                        or governance.explanation
+                    )
+                    next_pending_action = action_plan.action
+                    break
         tools = tuple(tool_schemas_for_domain(domain))
         role = role_for_tool(tools[0].name) if tools else None
         steps.append(PlanStep(domain=domain, action=action_plan.action, role=role, tools=tools))
@@ -160,4 +216,5 @@ def build_execution_plan(text: str, *, pending_domain: str | None = None) -> Exe
         steps=tuple(steps),
         clarification_hint=clarification_hint,
         active_domain=active_domain,
+        pending_action=next_pending_action,
     )

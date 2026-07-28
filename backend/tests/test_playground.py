@@ -666,3 +666,105 @@ def test_sprint_80_reproduces_and_fixes_the_exact_reported_production_bug(db_ses
         "Sure, please go ahead.",
         turn_2_body,
     ]
+
+
+def test_dec_051_a_cancellation_confirmation_that_echoes_its_own_trigger_word_resumes(
+    db_session, monkeypatch
+):
+    """The follow-up bug found while re-verifying Sprint 80 live: cancel is
+    a governance-gated action (app/ai/governance.py, REQUIRES_CONFIRMATION),
+    so it always asks the customer to confirm first — but the *natural* way
+    to confirm a cancellation ("Yes, cancel it.") contains the word "cancel",
+    which is calendar_cancel's own trigger keyword. That match sent the
+    confirmation text through app/ai/planning.py's required-field check a
+    second time, which correctly-in-isolation found no appointment reference
+    in the four-word reply and withheld the tool again — asking the same
+    question forever, never actually cancelling anything.
+
+    Reproduced end-to-end through the real orchestrator/planning/governance
+    pipeline across three turns: book something real, ask to cancel it
+    (governance withholds pending confirmation), then confirm in the exact
+    words that used to defeat it."""
+    from app.ai.llm.base import ToolCall
+    from app.ai.tools import BOOK_APPOINTMENT, CANCEL_APPOINTMENT
+    from app.models import Appointment, ExecutionTrace
+
+    biz = _business(db_session)
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+    index_entry(
+        db_session,
+        biz.id,
+        "Services",
+        "We offer teeth cleaning appointments.",
+        provider=FakeEmbeddingProvider(),
+    )
+
+    # --- Turn 1: book something real, so there's an upcoming appointment -
+    booking_call = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": "2026-08-06T14:00:00",
+            "ends_at": "2026-08-06T14:30:00",
+            "summary": "Teeth cleaning",
+        },
+    )
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[booking_call]),
+    )
+    playground_reply(db_session, biz.id, "Book a teeth cleaning tomorrow at 2pm.")
+    appointment = db_session.query(Appointment).filter_by(business_id=biz.id).one()
+    assert appointment.status == "booked"
+
+    conversation = get_or_create_playground_conversation(db_session, biz.id)
+
+    # --- Turn 2: ask to cancel — governance withholds pending confirmation
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(
+            fixed_reply="Just to confirm, you'd like to cancel your teeth cleaning tomorrow at 2pm?"
+        ),
+    )
+    _, _, turn_2_body, turn_2_outcome = playground_reply(
+        db_session, biz.id, "Actually please cancel my upcoming appointment."
+    )
+    assert turn_2_outcome is None
+
+    turn_2_trace = (
+        db_session.query(ExecutionTrace)
+        .filter_by(conversation_id=conversation.id)
+        .order_by(ExecutionTrace.created_at.desc())
+        .first()
+    )
+    # Planning found the action fully specified ("upcoming" satisfies
+    # appointment_reference); governance is what withheld it, recording
+    # exactly which already-validated action the next turn should resume.
+    assert turn_2_trace.plan["category"] == "action"
+    assert turn_2_trace.plan["pending_action"] == "calendar_cancel"
+    assert turn_2_trace.proposed_tool_calls == []
+
+    # --- Turn 3: the exact confirmation phrasing that used to defeat this
+    cancel_call = ToolCall(id="1", name=CANCEL_APPOINTMENT, arguments={})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[cancel_call]),
+    )
+    _, _, turn_3_body, turn_3_outcome = playground_reply(db_session, biz.id, "Yes, cancel it.")
+
+    assert turn_3_outcome == {"name": CANCEL_APPOINTMENT, "success": True}
+    assert "cancel" in turn_3_body.lower()
+    db_session.refresh(appointment)
+    assert appointment.status != "booked"
+
+    turn_3_trace = (
+        db_session.query(ExecutionTrace)
+        .filter_by(conversation_id=conversation.id)
+        .order_by(ExecutionTrace.created_at.desc())
+        .first()
+    )
+    assert turn_3_trace.proposed_tool_calls == [
+        {"tool_name": CANCEL_APPOINTMENT, "agent_role": "scheduler"}
+    ]
