@@ -32,7 +32,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { ApiError } from "@/lib/api";
 import { APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
 import type { Appointment, Customer } from "@/lib/types";
-import { toDateTimeInputValue } from "@/lib/utils";
+import { toDateTimeInputValue, toUtcIsoFromDateTimeInput } from "@/lib/utils";
 
 const RANGE_DAYS = 30;
 
@@ -220,7 +220,13 @@ function RescheduleForm({
 
   async function onSubmit(values: RescheduleFormValues) {
     try {
-      await reschedule.mutateAsync({ id: appointment.id, payload: values });
+      await reschedule.mutateAsync({
+        id: appointment.id,
+        payload: {
+          starts_at: toUtcIsoFromDateTimeInput(values.starts_at),
+          ends_at: toUtcIsoFromDateTimeInput(values.ends_at),
+        },
+      });
       toast({ title: "Appointment rescheduled", variant: "success" });
       onDone();
     } catch (err) {
@@ -299,7 +305,12 @@ function CreateAppointmentForm({ onDone }: { onDone: () => void }) {
       return;
     }
     try {
-      await createAppointment.mutateAsync({ customer_id: selectedCustomer.id, ...values });
+      await createAppointment.mutateAsync({
+        customer_id: selectedCustomer.id,
+        summary: values.summary,
+        starts_at: toUtcIsoFromDateTimeInput(values.starts_at),
+        ends_at: toUtcIsoFromDateTimeInput(values.ends_at),
+      });
       toast({ title: "Appointment booked", variant: "success" });
       onDone();
     } catch (err) {

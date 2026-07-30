@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { resolve } from "node:path";
 
 // A11 audit fix note: this API origin is also what the backend's CORS
 // allowlist must accept — see backend/app/main.py's `_CORS_ORIGINS`/
@@ -44,6 +45,9 @@ const CSP = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // The frontend package is the tracing boundary. Without this, Next walks
+  // upward to an unrelated home-directory lockfile and emits a warning.
+  outputFileTracingRoot: resolve(process.cwd()),
   async headers() {
     return [
       {

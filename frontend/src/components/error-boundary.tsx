@@ -11,7 +11,7 @@ interface State {
 }
 
 export class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
+  { children: React.ReactNode; resetKey?: string },
   State
 > {
   constructor(props: { children: React.ReactNode }) {
@@ -24,6 +24,12 @@ export class ErrorBoundary extends React.Component<
   }
 
   reset = () => this.setState({ hasError: false, message: undefined });
+
+  componentDidUpdate(prevProps: Readonly<{ children: React.ReactNode; resetKey?: string }>) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.reset();
+    }
+  }
 
   render() {
     if (this.state.hasError) {

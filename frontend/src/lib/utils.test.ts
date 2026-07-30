@@ -5,6 +5,7 @@ import {
   formatRelativeTime,
   toDateInputValue,
   toDateTimeInputValue,
+  toUtcIsoFromDateTimeInput,
 } from "./utils";
 
 describe("cn", () => {
@@ -99,11 +100,27 @@ describe("toDateInputValue", () => {
 });
 
 describe("toDateTimeInputValue", () => {
-  it("extracts the YYYY-MM-DDTHH:mm portion of an ISO datetime", () => {
-    expect(toDateTimeInputValue("2026-08-01T10:30:00")).toBe("2026-08-01T10:30");
+  it("converts an explicit UTC datetime to a browser-local input value", () => {
+    const value = "2026-08-01T10:30:00Z";
+    const local = new Date(value);
+    const pad = (part: number) => String(part).padStart(2, "0");
+    expect(toDateTimeInputValue(value)).toBe(
+      `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}T${pad(local.getHours())}:${pad(local.getMinutes())}`,
+    );
   });
 
   it("returns an empty string for an invalid date", () => {
     expect(toDateTimeInputValue("not-a-date")).toBe("");
+  });
+});
+
+describe("toUtcIsoFromDateTimeInput", () => {
+  it("converts a browser-local datetime input back to an explicit UTC timestamp", () => {
+    const value = "2026-08-01T10:30";
+    expect(toUtcIsoFromDateTimeInput(value)).toBe(new Date(value).toISOString());
+  });
+
+  it("returns an empty string for an invalid input", () => {
+    expect(toUtcIsoFromDateTimeInput("not-a-date")).toBe("");
   });
 });

@@ -346,17 +346,21 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Not connected")).toBeInTheDocument();
   });
 
-  it("refreshes pending, conversations, and appointments when Refresh is clicked", async () => {
+  it("refreshes every dashboard data source when Refresh is clicked", async () => {
     renderWithProviders(<DashboardPage />);
     await screen.findByText("Nothing pending");
     vi.mocked(api.listPending).mockClear();
+    vi.mocked(api.getOnboardingStatus).mockClear();
     vi.mocked(api.listConversations).mockClear();
+    vi.mocked(api.listCustomers).mockClear();
     vi.mocked(api.listAppointments).mockClear();
 
     await userEvent.click(screen.getByRole("button", { name: /refresh/i }));
 
     expect(api.listPending).toHaveBeenCalled();
+    expect(api.getOnboardingStatus).toHaveBeenCalled();
     expect(api.listConversations).toHaveBeenCalled();
+    expect(api.listCustomers).toHaveBeenCalled();
     expect(api.listAppointments).toHaveBeenCalled();
   });
 });

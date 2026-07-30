@@ -55,10 +55,18 @@ export function toDateInputValue(iso: string | null): string {
 }
 
 // Converts a backend ISO datetime into the "YYYY-MM-DDTHH:mm" value an
-// <input type="datetime-local"> expects. Used for Appointment.starts_at/ends_at
-// (naive timestamps, so no timezone conversion is needed — see DEC-032).
+// <input type="datetime-local"> expects. API values are explicit UTC, while
+// the native control displays local browser time, so convert before rendering.
 export function toDateTimeInputValue(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return iso.slice(0, 16);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// A datetime-local input has no offset, so turn its browser-local value back
+// into the explicit UTC timestamp the API uses for every stored appointment.
+export function toUtcIsoFromDateTimeInput(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }

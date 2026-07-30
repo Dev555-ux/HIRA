@@ -64,12 +64,15 @@ export default function DashboardPage() {
     isError: isPendingError,
     refetch: refetchPending,
   } = usePending();
-  const { data: onboarding } = useOnboardingStatus();
+  const { data: onboarding, isFetching: isFetchingOnboarding, refetch: refetchOnboarding } =
+    useOnboardingStatus();
   // limit: 1 — only meta.total is needed here, not the rows themselves.
   const {
     data: conversationTotals,
     isPending: isLoadingConversationTotals,
     isError: isConversationTotalsError,
+    isFetching: isFetchingConversationTotals,
+    refetch: refetchConversationTotals,
   } = useConversations({ limit: 1 });
   const {
     data: recentConversationsPage,
@@ -81,6 +84,8 @@ export default function DashboardPage() {
     data: customers,
     isPending: isLoadingCustomers,
     isError: isCustomersError,
+    isFetching: isFetchingCustomers,
+    refetch: refetchCustomers,
   } = useCustomers({ limit: 1 });
   // Computed once per mount (matches the Appointments page's own convention)
   // rather than on every render, so the query key — and therefore the
@@ -103,11 +108,20 @@ export default function DashboardPage() {
     () => recentConversationsPage?.data ?? [],
     [recentConversationsPage],
   );
-  const isRefreshing = isFetchingPending || isFetchingConversations || isFetchingAppointments;
+  const isRefreshing =
+    isFetchingPending ||
+    isFetchingOnboarding ||
+    isFetchingConversationTotals ||
+    isFetchingConversations ||
+    isFetchingCustomers ||
+    isFetchingAppointments;
 
   function refreshAll() {
     refetchPending();
+    refetchOnboarding();
+    refetchConversationTotals();
     refetchConversations();
+    refetchCustomers();
     refetchAppointments();
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -56,6 +56,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { data, isPending, isError, error, refetch, isFetching } = useOnboardingStatus();
 
   useEffect(() => {
@@ -128,7 +129,7 @@ export default function DashboardLayout({
 
   return (
     <AppShell>
-      <ErrorBoundary>{children}</ErrorBoundary>
+      <ErrorBoundary resetKey={pathname}>{children}</ErrorBoundary>
     </AppShell>
   );
 }

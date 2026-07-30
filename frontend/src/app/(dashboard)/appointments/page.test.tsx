@@ -34,8 +34,8 @@ function appointment(overrides: Partial<Appointment> = {}): Appointment {
     id: "appt-1",
     customer: { id: "cust-1", display_name: "Alex Rivera", wa_phone: "+15551230000" },
     conversation_id: null,
-    starts_at: "2026-08-05T14:00:00",
-    ends_at: "2026-08-05T15:00:00",
+    starts_at: "2026-08-05T14:00:00Z",
+    ends_at: "2026-08-05T15:00:00Z",
     status: "booked",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -144,8 +144,8 @@ describe("AppointmentsPage", () => {
         expect.any(Function),
         "appt-1",
         expect.objectContaining({
-          starts_at: "2026-08-05T14:00",
-          ends_at: "2026-08-05T15:00",
+          starts_at: "2026-08-05T14:00:00.000Z",
+          ends_at: "2026-08-05T15:00:00.000Z",
         }),
       ),
     );

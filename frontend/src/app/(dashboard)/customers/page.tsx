@@ -62,6 +62,7 @@ export default function CustomersPage() {
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="pl-9"
+          aria-label="Search customers"
           placeholder="Search customers…"
           value={query}
           onChange={(e) => handleSearchChange(e.target.value)}
