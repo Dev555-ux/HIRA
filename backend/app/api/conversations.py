@@ -28,6 +28,7 @@ from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.ai.playground import PLAYGROUND_PHONE
+from app.api.review_metadata import review_metadata_for
 from app.auth.dependencies import Principal, get_current_principal
 from app.core.time import to_iso_utc
 from app.db.session import get_db
@@ -101,6 +102,10 @@ def _serialize_message(message: Message) -> dict:
         "type": message.type,
         "status": message.status,
         "created_at": to_iso_utc(message.created_at),
+        # AI review metadata (reply_id / confidence / grounding /
+        # generation_status); None for inbound customer messages. Additive —
+        # existing fields above are unchanged, so older clients are unaffected.
+        "review": review_metadata_for(message),
     }
 
 
