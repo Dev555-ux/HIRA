@@ -283,8 +283,8 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 - **Category**: Product
 - **Estimated effort**: L
 - **Dependencies**: UI-1
-- **Status**: To Do
-- **Success criteria**: All 17 routes visually consistent with the new design language in both themes; Settings sectioned via Tabs; FAQ uses Accordion; no regression in the 283-test baseline.
+- **Status**: Closed (2026-07-31, Session 60) — investigated, no code changed. See DEC-054.
+- **Success criteria — outcome**: "All 17 routes visually consistent in both themes" **already met** before this task started: an audit found zero hardcoded colours and zero raw palette classes anywhere, so DEC-052's token change had already reached every route (the point of the inside-out sequencing). "Settings sectioned via Tabs" and "FAQ uses Accordion" were both **rejected as regressions**, not deferred — Tabs would break three `?whatsapp=connect` deep links and hide most of Settings from find-in-page; Accordion would turn a static server component into a client one and drop the FAQ answers out of the landing page's crawlable HTML. 283-test baseline unchanged. If Settings' length ever becomes a real complaint, the answer is a sticky anchor-link section nav, not tabs.
 
 ### UI-3 — Phase 4: polish, Tooltip, and command palette
 
