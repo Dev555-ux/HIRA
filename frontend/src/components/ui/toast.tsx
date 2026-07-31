@@ -78,7 +78,7 @@ function Toast({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => void }
     <div
       role="status"
       className={cn(
-        "flex items-start gap-3 rounded-xl border bg-card p-4 text-card-foreground shadow-lg",
+        "flex items-start gap-3 rounded-xl border bg-card p-4 text-card-foreground shadow-e3",
         toast.leaving ? "animate-toast-hide" : "animate-toast-show",
         toast.variant === "success" && "border-success/30",
         toast.variant === "destructive" && "border-destructive/30",

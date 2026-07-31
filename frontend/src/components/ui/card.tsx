@@ -5,10 +5,25 @@ import { cn } from "@/lib/utils";
 // inside a semantic <ol>, or a <details> that needs native disclosure
 // behavior) can still match its exact visual spec via `cn(cardClassName, ...)`
 // instead of re-declaring the class string by hand and drifting from it.
-export const cardClassName = "rounded-xl border bg-card text-card-foreground shadow-sm";
+export const cardClassName = "rounded-xl border bg-card text-card-foreground shadow-e1";
 
-function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn(cardClassName, className)} {...props} />;
+// Opt-in hover lift for clickable cards (DESIGN-MOTION-001 §5.2: E1→E2 + a 1px
+// rise). Off by default so static container cards are unchanged — only cards
+// that are actually interactive should move.
+const interactiveClassName =
+  "transition-[box-shadow,transform] duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:-translate-y-px hover:shadow-e2 active:translate-y-0 active:shadow-e1";
+
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  interactive?: boolean;
+}
+
+function Card({ className, interactive = false, ...props }: CardProps) {
+  return (
+    <div
+      className={cn(cardClassName, interactive && interactiveClassName, className)}
+      {...props}
+    />
+  );
 }
 
 function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
