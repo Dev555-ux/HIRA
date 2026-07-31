@@ -70,4 +70,45 @@ describe("ReviewReplyCard", () => {
     expect(screen.queryByRole("button", { name: /approve & send/i })).toBeDisabled();
     expect(screen.getAllByText(/Sent/i).length).toBeGreaterThan(0);
   });
+
+  it("renders a confidence badge when a real level is supplied", () => {
+    render(<ReviewReplyCard body="hi" confidence="high" />);
+    expect(screen.getByLabelText(/high confidence/i)).toBeInTheDocument();
+  });
+
+  it("shows per-source evidence cards when sources are supplied", () => {
+    render(
+      <ReviewReplyCard
+        body="hi"
+        groundedCount={2}
+        groundingSources={[
+          { title: "Saturday hours", type: "kb", snippet: "9am–2pm" },
+          { title: "Cut + beard", type: "kb", snippet: "45 min" },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Saturday hours")).toBeInTheDocument();
+    expect(screen.getByText("9am–2pm")).toBeInTheDocument();
+    expect(screen.getByText("Cut + beard")).toBeInTheDocument();
+    // The count summary is replaced by the per-source cards.
+    expect(screen.queryByText(/Grounded in 2 knowledge sources/i)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the count summary when sources are empty", () => {
+    render(<ReviewReplyCard body="hi" groundedCount={3} groundingSources={[]} />);
+    expect(screen.getByText(/Grounded in 3 knowledge sources/i)).toBeInTheDocument();
+  });
+
+  it("maps generation_status to the working line: working animates, complete rests", () => {
+    const { container, rerender } = render(
+      <ReviewReplyCard body="hi" generationStatus="working" />,
+    );
+    expect(container.querySelector(".animate-working-line")).toBeInTheDocument();
+
+    rerender(<ReviewReplyCard body="hi" generationStatus="complete" />);
+    expect(container.querySelector(".animate-working-line")).not.toBeInTheDocument();
+
+    rerender(<ReviewReplyCard body="hi" generationStatus="failed" />);
+    expect(container.querySelector(".animate-working-line")).not.toBeInTheDocument();
+  });
 });

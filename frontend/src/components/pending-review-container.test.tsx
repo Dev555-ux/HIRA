@@ -39,13 +39,13 @@ const pendingMessage: Message = {
   created_at: "2026-07-31T10:00:00Z",
 };
 
-function renderContainer() {
+function renderContainer(message: Message = pendingMessage) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
   const utils = render(
     <QueryClientProvider client={qc}>
       <AuthContext.Provider value={mockAuth}>
-        <PendingReviewContainer message={pendingMessage} />
+        <PendingReviewContainer message={message} />
       </AuthContext.Provider>
     </QueryClientProvider>,
   );
@@ -118,5 +118,32 @@ describe("PendingReviewContainer (Inbox review integration)", () => {
     );
     // Still awaiting review — controls remain for a retry.
     expect(screen.getByRole("button", { name: /approve & send/i })).toBeEnabled();
+  });
+
+  it("maps backend review metadata into the card (confidence, grounding, generation)", () => {
+    const withReview: Message = {
+      ...pendingMessage,
+      review: {
+        reply_id: "msg-1",
+        confidence: { score: 0.9, level: "high" },
+        grounding: {
+          retrieved_count: 1,
+          sources: [{ title: "Saturday hours", type: "kb", snippet: "9am–2pm" }],
+        },
+        generation_status: "complete",
+      },
+    };
+    renderContainer(withReview);
+
+    expect(screen.getByLabelText(/high confidence/i)).toBeInTheDocument();
+    expect(screen.getByText("Saturday hours")).toBeInTheDocument();
+  });
+
+  it("renders nothing extra for a payload without review metadata (backward compatible)", () => {
+    renderContainer(); // pendingMessage has no `review`
+    expect(screen.queryByLabelText(/confidence/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Grounded in/i)).not.toBeInTheDocument();
+    // Core review experience still renders.
+    expect(screen.getByText(pendingMessage.body)).toBeInTheDocument();
   });
 });
