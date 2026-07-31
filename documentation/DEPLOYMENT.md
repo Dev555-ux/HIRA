@@ -6,10 +6,70 @@ This is a runbook, not a design doc — see `TECH_STACK.md` (DEC-011) for why Ra
 
 ---
 
+## Architecture at a glance
+
+Four deployed components: three Railway services in one project (Backend API,
+Worker, PostgreSQL) and the Vercel frontend.
+
+```
+   Customer WhatsApp ──▶ Meta Cloud API ──POST /webhooks/whatsapp──┐
+                                                                   ▼
+  ┌───────────────────────── RAILWAY PROJECT "hira" ────────────────────────┐
+  │                                                                          │
+  │   ┌─────────────────┐   enqueue job (same     ┌──────────────────────┐  │
+  │   │  Backend API     │   DB txn as the         │  PostgreSQL          │  │
+  │   │  service         │   inbound message)      │  + pgvector plugin   │  │
+  │   │  uvicorn         │────────────────────────▶│  messages, job_outbox│  │
+  │   │  Dockerfile CMD  │◀───── reads/writes ─────│  kb_entries, ...     │  │
+  │   │  GET /health     │                         └──────────┬───────────┘  │
+  │   └────────┬─────────┘                                    │              │
+  │            │ serves /api/*                     FOR UPDATE SKIP LOCKED     │
+  │            │                                              ▼              │
+  │            │                                   ┌──────────────────────┐  │
+  │            │                                   │  Worker service       │  │
+  │            │                                   │  run_worker.py        │  │
+  │            │                                   │  (no HTTP port)       │  │
+  │            │                                   │  claim → generate AI  │  │
+  │            │                                   │  reply → store        │  │
+  │            │                                   └──────────────────────┘  │
+  └────────────┼─────────────────────────────────────────────────────────────┘
+               │ NEXT_PUBLIC_API_BASE_URL (HTTPS)
+        ┌──────┴──────────────┐
+        │  VERCEL — Next.js    │  founder dashboard: Inbox / review workflow
+        └─────────────────────┘
+```
+
+**Railway service architecture** — all three share the same project, the same
+`DATABASE_URL` (injected by the Postgres plugin), and the same secrets. API and
+Worker build from the **same** `backend/Dockerfile`; they differ only in start
+command and config file:
+
+| Service | Root dir | Config file | Start command | HTTP port | Healthcheck |
+|---|---|---|---|---|---|
+| **Backend API** | `backend/` | `railway.json` | Dockerfile `CMD` (`alembic upgrade head && uvicorn`) | `$PORT` | `/health` |
+| **Worker** | `backend/` | `railway.worker.json` | `python scripts/run_worker.py` | none | none (log-based) |
+| **PostgreSQL** | — (Railway plugin) | — | — | internal | Railway-managed |
+
+**Deployment sequence (do these in order — details in the numbered sections below):**
+1. Create the Railway project (§1)
+2. Add the PostgreSQL plugin + enable `vector` extension (§1)
+3. Deploy the Backend API service, set env vars (§2)
+4. Migrations run automatically on API container start — confirm in logs (§3)
+5. Deploy the Worker service (`railway.worker.json`) (§2b)
+6. Verify the worker connected — its logs show `Outbox worker starting…` (§2b, §3)
+7. Deploy the Frontend to Vercel, set env vars (§8)
+8. Configure domains + CORS (`FRONTEND_URL` back into the API, redeploy) (§8)
+9. Set `USE_TRANSACTIONAL_OUTBOX=true` on **both** API and Worker (§2, §2b)
+10. Run end-to-end validation (§9)
+
+---
+
 ## What already exists, ready to use
 
 - `backend/Dockerfile` — builds and runs the backend (Python 3.12-slim, bakes in the local embedding model, runs `alembic upgrade head` then `uvicorn` on every start, reads `$PORT` dynamically). No changes needed.
-- `backend/railway.json` — build/healthcheck/restart config, already points at `/health`. No changes needed.
+- `backend/railway.json` — build/healthcheck/restart config for the **API** service, already points at `/health`. No changes needed.
+- `backend/railway.worker.json` — build/restart config for the **Worker** service (v0.10.0): overrides the Dockerfile `CMD` with `startCommand: python scripts/run_worker.py`, no healthcheck (the worker binds no HTTP port), `restartPolicyType: ON_FAILURE`. Point the worker service's config path at this file (§2b).
+- `backend/scripts/run_worker.py` — the worker entrypoint; imports `app.ai.tasks` so the `generate_ai_reply` handler is registered before the loop starts.
 - `GET /health` — plain liveness check Railway's own healthcheck uses.
 - `GET /health/whatsapp` (new, Sprint 69) — reports whether inbound WhatsApp traffic has gone quiet longer than `WEBHOOK_STALE_THRESHOLD_MINUTES` (default 60); meant for an external uptime monitor, not Railway's own healthcheck (see step 6).
 - Sentry integration (`app/core/monitoring.py`) — a no-op until `SENTRY_DSN` is set; no code change needed to activate it, just the env var (step 4).
@@ -55,8 +115,80 @@ In the Railway service's **Variables** tab, set every one of these (see `backend
 | `FRONTEND_URL` | the real Vercel production URL from step 8 below (circular dependency — deploy the backend first with a placeholder, then update this once Vercel's URL is known, then redeploy) |
 | `SENTRY_DSN` | from sentry.io (step 4) |
 | `WEBHOOK_STALE_THRESHOLD_MINUTES` | `60` is a reasonable starting point |
+| `USE_TRANSACTIONAL_OUTBOX` | `true` to route inbound-message AI-reply generation through the durable outbox (v0.10.0). **Defaults `false`.** Only set `true` **after** the worker service (section 2b) is running — otherwise jobs enqueue and are never processed, so no AI replies are generated. Set the **same value** on the worker service. Rollback is flipping this back to `false` (webhook reverts to in-process generation, no redeploy). |
 
 `DATABASE_URL` is injected automatically by the Postgres plugin — do not set it manually unless you're pointing at a different database.
+
+## 2b. Deploy the outbox worker (REQUIRED for the AI review workflow)
+
+The transactional outbox (v0.8.0+) splits inbound-message AI-reply generation into
+a *separate long-lived worker process* (`backend/scripts/run_worker.py`). The
+backend `Dockerfile`'s `CMD` runs **only** the API (`uvicorn`) — it does **not**
+run the worker. So with `USE_TRANSACTIONAL_OUTBOX=true` and no worker, every
+inbound WhatsApp message enqueues a `generate_ai_reply` job that is **never
+processed**: no draft is generated and the Inbox review workflow silently breaks.
+
+Deploy the worker as a **second Railway service in the same project**, sharing the
+same Postgres and the same secrets as the API:
+
+1. Railway → the HIRA project → **New → GitHub Repo → `Dev555-ux/HIRA`**, root
+   directory **`backend/`** (same repo/Dockerfile as the API service).
+2. Point this service at the worker config: **Settings → Config-as-code / Railway
+   Config File** → `railway.worker.json`. That file sets the start command
+   (`python scripts/run_worker.py`, overriding the Dockerfile `CMD` so this
+   service runs the worker, not uvicorn) and the restart policy in version
+   control. (Equivalent fallback: skip the config file and set a **Custom Start
+   Command** of `python scripts/run_worker.py` in **Settings → Deploy** directly.)
+3. **Variables:** set the *same* values as the API service — reference the shared
+   `DATABASE_URL`, the LLM/WhatsApp/Clerk/`CALENDAR_ENCRYPTION_KEY` secrets, and
+   **`USE_TRANSACTIONAL_OUTBOX=true`**. The worker needs the WhatsApp + LLM
+   secrets because it is what actually calls the model and (in Autonomous mode)
+   sends replies.
+4. This service has **no HTTP port and no `/health`** — disable its healthcheck
+   (or leave it, Railway tolerates a service that never binds a port). Confirm it
+   started from its **logs**: `Outbox worker starting worker_id=…`.
+5. Optional tuning (env, both defaults are fine to start):
+   `OUTBOX_WORKER_BATCH_SIZE` (5), `OUTBOX_WORKER_POLL_INTERVAL` (0.5s),
+   `OUTBOX_ZOMBIE_TIMEOUT_SECONDS` (300).
+
+Scale throughput by adding replicas of this service — `FOR UPDATE SKIP LOCKED`
+lets multiple workers share the queue without double-claiming.
+
+### Worker service settings & operations
+
+- **Resources (starting point):** the worker builds from the *same* image as the
+  API (the BAAI/bge-small embedding model is baked in — ~130 MB resident — and
+  the worker runs RAG retrieval + the LLM call), so size it like the API:
+  **~0.5 vCPU, 512 MB–1 GB memory** to start. It is I/O-bound (poll → LLM/DB round
+  trips), not CPU-bound; raise memory before CPU if you see pressure. Railway's
+  default service resources are usually enough for a pilot; watch the metrics tab
+  on first real traffic.
+- **Scaling:** stateless and horizontally scalable — add replicas of this one
+  service (Railway → service → Settings → Replicas) or duplicate it. `FOR UPDATE
+  SKIP LOCKED` guarantees no two workers claim the same job. Each worker's
+  `worker_id` (host:pid:uuid) appears in `locked_by`/logs so you can tell them
+  apart. Start with **1**; add more only if `pending`/oldest-pending age climbs
+  (watch Founder Ops metrics).
+- **Restart policy:** `restartPolicyType: ON_FAILURE`, `maxRetries: 10`
+  (`railway.worker.json`). A crash restarts the process; a graceful `SIGTERM` on
+  redeploy exits cleanly (the worker finishes its in-flight job first — see the
+  worker's shutdown handling — so no job is abandoned mid-flight).
+- **Logging:** structured stdout, captured natively by Railway's log viewer.
+  Key lines to look for: `Outbox worker starting …` (boot), `job claimed`,
+  `job completed`, `retry scheduled`, `dead-lettered`, `zombie recovered`. No
+  separate log shipping needed at this scale.
+- **Failure recovery (two layers):** (1) the **process** — Railway restarts it on
+  crash, and on restart the worker's *zombie sweep* returns any job left
+  `processing` past `OUTBOX_ZOMBIE_TIMEOUT_SECONDS` (300s) back to `pending` so no
+  work is lost; (2) the **job** — transient handler failures get exponential-
+  backoff retries up to `max_attempts`, then move to the **dead-letter** state,
+  visible/retryable via Founder Ops (`/api/v1/founder_ops/jobs`). So a worker
+  crash never drops a message, and a poison job never blocks the queue.
+- **Startup ordering:** deploy/verify the API first (it runs the migration that
+  creates `job_outbox`). If the worker happens to start before the table exists,
+  its first query fails and Railway restarts it until the table is present — the
+  restart policy makes the race self-healing, but the deployment sequence avoids
+  it by design (migrations at step 4, worker at step 5).
 
 ## 3. First deploy and verification
 
@@ -138,3 +270,79 @@ Skipping step 2 is exactly the failure mode described above: the older image boo
 3. If rolling back the image and a migration needs undoing, downgrade the database first, confirm `alembic current` (run the same way as step 2 above) matches the older image's expected head, then redeploy the older image.
 4. After any rollback, re-run the smoke test checklist from the Sprint 69 Operations Readiness Audit before considering the incident closed.
 5. Once the real fix ships forward, the next normal deploy's `alembic upgrade head` brings the database back to the latest schema automatically — no special handling needed on the way back up.
+
+### Rollback by component
+
+- **Outbox rollback (fastest kill-switch, no redeploy):** set
+  `USE_TRANSACTIONAL_OUTBOX=false` on the API service. The webhook immediately
+  reverts to generating replies in-process (the pre-v0.10.0 path); no new jobs
+  are enqueued. Do this first if AI replies are misbehaving but the API itself is
+  healthy. Jobs already `pending` will still be drained by the worker (harmless);
+  leave the worker running, or scale it to 0. Flip back to `true` to re-enable.
+- **Worker failures:** a crashing worker never affects the API or message intake
+  — inbound messages are still stored, jobs still enqueue. Symptoms: `pending`
+  count / oldest-pending age climb in Founder Ops; drafts stop appearing.
+  Actions: check the worker logs; if it's a bad worker deploy, redeploy the
+  previous worker deployment (the worker ships no migrations, so an image
+  rollback is always safe for it); or set `USE_TRANSACTIONAL_OUTBOX=false` to
+  fall back to in-process generation while you fix it. Jobs stuck `processing`
+  from a killed worker auto-recover via the zombie sweep.
+- **API failures:** use the forward-fix vs. image-rollback logic above (mind the
+  migration-mismatch rule). The `/health` healthcheck + `ON_FAILURE` restart
+  policy already restart a crashed API container.
+- **Migration failures:** covered above — downgrade the DB *before* rolling back
+  an image that shipped a migration.
+- **Frontend failures:** Vercel keeps every prior deployment — **Instant Rollback**
+  from the Vercel dashboard (Deployments → previous → Promote to Production) is
+  immediate and safe (no schema coupling). The frontend is backward-compatible
+  with older API payloads (review metadata is optional), so a frontend/back-end
+  version skew degrades gracefully rather than breaking.
+
+---
+
+## Appendix: complete environment variable reference
+
+Sources of truth: `backend/.env.example`, `backend/app/core/config.py`,
+`frontend/.env.example`. "Scope" = which deployed component reads it. **API and
+Worker must be given the same values** for every backend variable they share.
+
+### Backend (set on BOTH the API and Worker Railway services)
+
+| Variable | Scope | Required (prod) | Default | Sensitive | Description |
+|---|---|---|---|---|---|
+| `DATABASE_URL` | API, Worker | **Yes** | — | **Yes** | Postgres connection. Injected automatically by the Railway Postgres plugin; don't set by hand. `postgres://`/`postgresql://` are normalized to `postgresql+psycopg://`. |
+| `ENVIRONMENT` | API, Worker | **Yes** | `development` | No | Set to `production` — activates the SEC-1 insecure-default boot guard. |
+| `USE_TRANSACTIONAL_OUTBOX` | API, Worker | **Yes** (v0.10.0) | `false` | No | `true` routes AI-reply generation through the outbox+worker. Set on **both**; worker must exist first. Flip to `false` = instant rollback. |
+| `WHATSAPP_VERIFY_TOKEN` | API | **Yes** | `dev-verify-token` | **Yes** | Any string you choose; enter the same in Meta's webhook config. |
+| `WHATSAPP_APP_SECRET` | API, Worker | **Yes** | `dev-app-secret` | **Yes** | Meta App secret; verifies webhook signatures. |
+| `WHATSAPP_ACCESS_TOKEN` | API, Worker | **Yes** | `dev-access-token` | **Yes** | Meta System User token; used to send replies. |
+| `WHATSAPP_API_BASE` | API, Worker | No | `https://graph.facebook.com` | No | Rarely changed. |
+| `WHATSAPP_GRAPH_VERSION` | API, Worker | No | `v21.0` | No | Meta Graph API version. |
+| `LLM_PROVIDER` | API, Worker | **Yes** | `mock` | No | `groq` or `claude` — backend refuses to boot in prod with `mock`. |
+| `GROQ_API_KEY` / `ANTHROPIC_API_KEY` | API, Worker | If provider matches | `""` | **Yes** | Key for the chosen provider. |
+| `GROQ_MODEL` / `LLM_MODEL` | API, Worker | No | `llama-3.3-70b-versatile` / `claude-sonnet-4-6` | No | Model id per provider. |
+| `LLM_MAX_TOKENS` | API, Worker | No | `1024` | No | Max tokens per reply. |
+| `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` | API, Worker | No | `local_bge` / `BAAI/bge-small-en-v1.5` | No | Local model (baked into the image). Change both together + rebuild. |
+| `CLERK_JWKS_URL`, `CLERK_ISSUER` | API | **Yes** | `""` | No | Clerk **production** instance (not `*.clerk.accounts.dev`). Backend won't boot in prod without both. |
+| `ALLOW_MOCK_AUTH` | API | No | `false` | No | Must be `false`/unset in prod (guarded). |
+| `FOUNDER_CLERK_USER_IDS` | API | If using Founder Ops | `""` | No | Comma-separated Clerk user ids allowed to reach `/api/v1/founder_ops/*`. |
+| `CALENDAR_ENCRYPTION_KEY` | API, Worker | **Yes** | `""` | **Yes** | Fernet key encrypting Calendar tokens **and** per-business WhatsApp creds. Generate once; required to boot in prod. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_OAUTH_REDIRECT_URI` | API | Only if Calendar used now | `""` | **Yes** (secret) | Google OAuth; can be added later. |
+| `FRONTEND_URL` | API | **Yes** | `http://localhost:3000` | No | Real Vercel URL for CORS (circular: deploy backend, then set once Vercel URL is known, redeploy). |
+| `RAILWAY_PUBLIC_DOMAIN` | API | No | `""` | No | Injected by Railway for services with a public domain; used by the WhatsApp connect wizard. |
+| `SENTRY_DSN` | API, Worker | No (recommended) | `""` | **Yes** | Enables Sentry; no-op if unset. |
+| `WEBHOOK_STALE_THRESHOLD_MINUTES` | API | No | `60` | No | `/health/whatsapp` staleness threshold. |
+| `RATE_LIMIT_DEMO_CHAT` / `RATE_LIMIT_KB_UPLOAD` / `RATE_LIMIT_BUSINESS_CREATION` | API | No | `20/minute` / `10/minute` / `5/hour` | No | Per-endpoint rate limits. |
+| `OUTBOX_WORKER_POLL_INTERVAL` | Worker | No | `0.5` | No | Seconds to sleep when a poll finds no work. |
+| `OUTBOX_WORKER_BATCH_SIZE` | Worker | No | `5` | No | Max jobs claimed per poll. |
+| `OUTBOX_ZOMBIE_TIMEOUT_SECONDS` | Worker | No | `300` | No | `processing` longer than this → reclaimed to `pending`. |
+| `OUTBOX_BACKOFF_BASE_SECONDS` / `OUTBOX_BACKOFF_MAX_SECONDS` | Worker | No | `2.0` / `3600.0` | No | Exponential retry backoff base/cap. |
+
+### Frontend (Vercel, Production scope)
+
+| Variable | Required (prod) | Default | Sensitive | Description |
+|---|---|---|---|---|
+| `NEXT_PUBLIC_API_BASE_URL` | **Yes** | `http://localhost:8000` | No | The Railway backend URL. |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | **Yes** | `""` | No | Clerk publishable key (production instance). |
+| `CLERK_SECRET_KEY` | **Yes** | `""` | **Yes** | Clerk secret key (server-side). |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` / `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | No | `/sign-in` / `/sign-up` | No | Point Clerk redirects at our own auth pages. |
