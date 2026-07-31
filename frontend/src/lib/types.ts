@@ -130,6 +130,8 @@ export interface Message {
   created_at: string;
 }
 
+export type HumanReplyResult = Message;
+
 // Leads / CRM pipeline (/api/v1/leads). Sprint 28 — see DEC-031. `stage` is
 // validated against this fixed set at the API boundary, but stored as a plain
 // string on the backend (no DB-level enum), matching Message.status/

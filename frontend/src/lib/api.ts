@@ -33,6 +33,7 @@ import type {
   Lead,
   LeadStage,
   Message,
+  HumanReplyResult,
   OnboardingStatus,
   PaginatedEnvelope,
   PendingReply,
@@ -246,6 +247,13 @@ export const api = {
       `/api/v1/conversations/${id}/messages${buildQuery(params)}`,
       getToken,
     ),
+
+  sendHumanReply: (getToken: GetToken, conversationId: string, body: string) =>
+    apiFetch<ApiEnvelope<HumanReplyResult>>(
+      `/api/v1/conversations/${conversationId}/messages`,
+      getToken,
+      { method: "POST", body: JSON.stringify({ body }) },
+    ).then((r) => r.data),
 
   listEscalations: (
     getToken: GetToken,

@@ -24,6 +24,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,8 @@ from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import get_scoped
 from app.models import Conversation, Customer, Message
+from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError, send_text
+from app.services.replies import WhatsAppWindowExpiredError, send_human_reply
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["conversations"])
 
@@ -41,6 +44,15 @@ DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 DEFAULT_MESSAGE_LIMIT = 50
 MAX_MESSAGE_LIMIT = 200
+MAX_HUMAN_REPLY_LENGTH = 4096
+
+
+class SendHumanReplyRequest(BaseModel):
+    body: str
+
+
+def get_reply_sender():
+    return send_text
 
 
 def _latest_message_previews(
@@ -212,3 +224,32 @@ def list_messages(
         "data": [_serialize_message(m) for m in rows],
         "meta": {"total": total, "limit": limit, "offset": offset},
     }
+
+
+@router.post("/{conversation_id}/messages", status_code=status.HTTP_201_CREATED)
+def send_message(
+    conversation_id: uuid.UUID,
+    payload: SendHumanReplyRequest,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    sender=Depends(get_reply_sender),
+) -> dict:
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="Reply body cannot be blank")
+    if len(body) > MAX_HUMAN_REPLY_LENGTH:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Reply body cannot exceed {MAX_HUMAN_REPLY_LENGTH} characters",
+        )
+    try:
+        message = send_human_reply(
+            db, principal.business_id, conversation_id, body=body, sender=sender
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found") from exc
+    except (WhatsAppNotConnectedError, WhatsAppWindowExpiredError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except WhatsAppSendError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to send reply") from exc
+    return {"data": _serialize_message(message)}

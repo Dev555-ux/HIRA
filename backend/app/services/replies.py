@@ -57,6 +57,63 @@ def _get_pending_reply(db: Session, business_id: uuid.UUID, message_id: uuid.UUI
     return message
 
 
+def send_human_reply(
+    db: Session,
+    business_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    *,
+    body: str,
+    sender: Callable[..., str] = send_text,
+) -> Message:
+    """Send an auditable human-authored reply in an escalated conversation."""
+    conversation = get_scoped(db, Conversation, business_id, conversation_id)
+    if conversation is None or conversation.status != "escalated":
+        raise ValueError("Conversation is not an escalated conversation for this business")
+
+    business = db.get(Business, business_id)
+    customer = db.get(Customer, conversation.customer_id)
+    if not business.whatsapp_phone_number_id or get_stored_credential(db, business_id) is None:
+        raise WhatsAppNotConnectedError("This business has not connected WhatsApp yet")
+    if (
+        conversation.window_expires_at is not None
+        and datetime.now(timezone.utc).replace(tzinfo=None) > conversation.window_expires_at
+    ):
+        raise WhatsAppWindowExpiredError(
+            "The customer's 24-hour WhatsApp service window has closed. "
+            "A template message would be required to reach them now, which isn't supported yet."
+        )
+
+    message = Message(
+        conversation_id=conversation.id,
+        business_id=business_id,
+        direction="outbound",
+        body=body,
+        type="text",
+        status="sending",
+        ai_meta={"sent_by": "human"},
+    )
+    db.add(message)
+    db.commit()
+
+    try:
+        message.wa_message_id = sender(
+            business.whatsapp_phone_number_id,
+            customer.wa_phone,
+            message.body,
+            access_token=get_access_token(get_stored_credential(db, business_id)),
+        )
+    except WhatsAppSendError:
+        message.status = "failed"
+        db.commit()
+        logger.exception("Failed to send human reply %s", message.id)
+        raise
+
+    message.status = "sent"
+    db.commit()
+    logger.info("Sent human reply %s for business %s", message.id, business_id)
+    return message
+
+
 def approve_and_send(
     db: Session,
     business_id: uuid.UUID,

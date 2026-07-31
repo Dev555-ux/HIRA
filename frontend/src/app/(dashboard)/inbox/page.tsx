@@ -19,10 +19,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast";
 import {
   useConversation,
   useConversationMessages,
   useConversations,
+  useSendHumanReply,
 } from "@/hooks/use-conversations";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { CONVERSATION_STATUS_BADGE } from "@/lib/conversations";
@@ -342,7 +345,51 @@ function ConversationDetail({
           !isError &&
           messages.map((message) => <MessageBubble key={message.id} message={message} />)}
       </CardContent>
+      {conversation?.status === "escalated" && (
+        <HumanTakeover conversationId={conversation.id} />
+      )}
     </Card>
+  );
+}
+
+function HumanTakeover({ conversationId }: { conversationId: string }) {
+  const [body, setBody] = useState("");
+  const sendReply = useSendHumanReply();
+  const { toast } = useToast();
+
+  async function handleSend() {
+    try {
+      await sendReply.mutateAsync({ conversationId, body: body.trim() });
+      setBody("");
+      toast({ title: "Reply sent", variant: "success" });
+    } catch (err) {
+      toast({
+        title: "Couldn't send reply",
+        description: err instanceof Error ? err.message : "Something went wrong — please try again.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  return (
+    <div className="border-t p-4">
+      <p className="mb-2 text-sm font-medium">Human takeover</p>
+      <Textarea
+        aria-label="Reply to customer"
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+        maxLength={4096}
+        placeholder="Write a reply to the customer…"
+        rows={3}
+        disabled={sendReply.isPending}
+      />
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">The escalation stays open until you resolve it.</p>
+        <Button size="sm" onClick={handleSend} disabled={sendReply.isPending || !body.trim()}>
+          <MessageSquare /> Send reply
+        </Button>
+      </div>
+    </div>
   );
 }
 
