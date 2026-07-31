@@ -7,6 +7,16 @@ import { cn } from "@/lib/utils";
 // instead of re-declaring the class string by hand and drifting from it.
 export const cardClassName = "rounded-xl border bg-card text-card-foreground shadow-sm";
 
+// Stitch: "Cards — Interaction: transition over 200ms. On hover, the shadow
+// depth increases, and the border color brightens slightly." A separate
+// export, not a Card prop, so only genuinely clickable cards (list rows,
+// nav-like cards) opt in — a static info card must not imply it's
+// interactive just because it happens to render inside <Card>.
+export const interactiveCardClassName = cn(
+  cardClassName,
+  "cursor-pointer transition-[box-shadow,border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-ring/30 hover:shadow-md active:translate-y-0",
+);
+
 function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn(cardClassName, className)} {...props} />;
 }

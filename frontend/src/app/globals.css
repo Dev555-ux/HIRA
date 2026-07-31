@@ -3,15 +3,19 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.75rem;
   --background: hsl(0 0% 100%);
   --foreground: hsl(240 10% 4%);
   --card: hsl(0 0% 100%);
   --card-foreground: hsl(240 10% 4%);
   --popover: hsl(0 0% 100%);
   --popover-foreground: hsl(240 10% 4%);
-  --primary: hsl(240 6% 10%);
-  --primary-foreground: hsl(0 0% 98%);
+  /* Sprint (Stitch merge, Phase 1) — brand accent, replacing the prior
+     monochrome --primary. Value is Stitch's indigo-violet family
+     (DESIGN.md's primary-container #4f46e5 / on-primary-container #dad7ff),
+     tuned to 4.5:1+ against --primary-foreground per its own contrast rule. */
+  --primary: hsl(243 75% 59%);
+  --primary-foreground: hsl(0 0% 100%);
   --secondary: hsl(240 5% 96%);
   --secondary-foreground: hsl(240 6% 10%);
   --muted: hsl(240 5% 96%);
@@ -24,7 +28,18 @@
   --warning: hsl(38 92% 50%);
   --border: hsl(240 6% 90%);
   --input: hsl(240 6% 90%);
-  --ring: hsl(240 5% 65%);
+  --ring: hsl(243 75% 59%);
+  /* Ambient, background-tinted shadows (Stitch: "long and soft... a slight
+     tint of the background color to prevent them from looking dirty or
+     gray") rather than plain black at low alpha. Layered rather than a
+     single blur, for a softer falloff. */
+  --shadow-sm: 0 1px 2px hsl(240 10% 4% / 0.04), 0 1px 1px hsl(240 10% 4% / 0.03);
+  --shadow-md: 0 4px 12px hsl(240 10% 4% / 0.06), 0 2px 4px hsl(240 10% 4% / 0.04);
+  --shadow-lg: 0 12px 32px hsl(240 10% 4% / 0.10), 0 4px 8px hsl(240 10% 4% / 0.05);
+  /* One step brighter than --card — the floating layer (dropdowns,
+     popovers, the sidebar) sits visually above the working surface via
+     tonal layering, matching Stitch's elevation model. */
+  --elevated: hsl(0 0% 100%);
 }
 
 .dark {
@@ -32,10 +47,13 @@
   --foreground: hsl(0 0% 98%);
   --card: hsl(240 8% 6%);
   --card-foreground: hsl(0 0% 98%);
-  --popover: hsl(240 8% 6%);
+  --popover: hsl(240 8% 7%);
   --popover-foreground: hsl(0 0% 98%);
-  --primary: hsl(0 0% 98%);
-  --primary-foreground: hsl(240 6% 10%);
+  /* Lighter, desaturated tint in dark mode (Stitch's own primary/
+     on-primary-container split) — the saturated light-mode indigo would
+     lose contrast and vibrate against a near-black background. */
+  --primary: hsl(243 100% 84%);
+  --primary-foreground: hsl(243 70% 18%);
   --secondary: hsl(240 4% 14%);
   --secondary-foreground: hsl(0 0% 98%);
   --muted: hsl(240 4% 14%);
@@ -48,7 +66,15 @@
   --warning: hsl(38 92% 50%);
   --border: hsl(240 4% 16%);
   --input: hsl(240 4% 18%);
-  --ring: hsl(240 5% 40%);
+  --ring: hsl(243 100% 84%);
+  /* Dark mode: depth comes from tonal layering (surfaces stepping from
+     --background -> --card -> --elevated), not from a shadow that would
+     barely render against near-black — so these stay deliberately subtle,
+     there only to seat overlays (dialog/dropdown) above page content. */
+  --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.20), 0 1px 1px hsl(0 0% 0% / 0.16);
+  --shadow-md: 0 4px 16px hsl(0 0% 0% / 0.32), 0 2px 6px hsl(0 0% 0% / 0.24);
+  --shadow-lg: 0 16px 40px hsl(0 0% 0% / 0.44), 0 4px 10px hsl(0 0% 0% / 0.28);
+  --elevated: hsl(240 6% 10%);
 }
 
 @theme inline {
@@ -73,9 +99,18 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-elevated: var(--elevated);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  /* Stitch's "Outer Containers: 16px-20px" step — cards/panels size up one
+     notch from --radius (buttons/inputs) via rounded-xl, matching its
+     "smaller internal components feel snugly fitted within larger
+     containers" nesting rule. */
+  --radius-xl: calc(var(--radius) + 4px);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

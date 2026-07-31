@@ -12,11 +12,15 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm",
+          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm",
+          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md",
+        // Stitch: "Secondary: transparent background with a thin border.
+        // Subtle hover lift (-1px Y-axis)." -translate-y-px rides the
+        // existing `transform` transition below; active:scale-[0.98]
+        // (also below) still wins on press since it's a separate state.
         outline:
-          "border border-input bg-background hover:bg-accent hover:text-accent-foreground hover:shadow-sm",
+          "border border-input bg-background hover:-translate-y-px hover:bg-accent hover:text-accent-foreground hover:shadow-sm",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",

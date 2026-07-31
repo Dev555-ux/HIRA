@@ -262,6 +262,42 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 
 ---
 
+## UI/Design System
+
+> Added by the Stitch UI merge (Session 58, 2026-07-31). Four-phase plan on branch `feat/premium-ui-foundation`; see DEC-052. Presentation layer only — no auth/API/hooks/routing/business-logic changes in any phase.
+
+### UI-1 — Phase 2: wire new tokens into the app shell
+
+- **Description**: Apply the Phase-1 design tokens/primitives (DEC-052) to `components/layout/{app-shell,sidebar-nav,topbar}.tsx` and `components/layout/user-menu.tsx`. Visual only — flat, hairline-bordered sidebar (not Stitch's glassmorphic floating treatment, rejected as dated relative to Linear/Vercel), existing 12-item nav and route structure unchanged.
+- **Priority**: P2
+- **Category**: Product
+- **Estimated effort**: S
+- **Dependencies**: Phase 1 (done)
+- **Status**: To Do
+- **Success criteria**: Shell renders with brand tokens in both themes on a running backend (this sandbox has none — needs live verification beyond skeleton states); Vitest count unchanged from Phase 1's 283; typecheck/lint/build clean.
+
+### UI-2 — Phase 3: restyle all 17 routes + build Tabs/Accordion
+
+- **Description**: Apply the token/primitive layer page-by-page (12 dashboard + 2 ops + onboarding + marketing + auth shell). Build `ui/tabs.tsx` (`@radix-ui/react-tabs`, already installed) for Settings' 1042-line page, and `ui/accordion.tsx` (`@radix-ui/react-accordion`, already installed) for the marketing FAQ.
+- **Priority**: P2
+- **Category**: Product
+- **Estimated effort**: L
+- **Dependencies**: UI-1
+- **Status**: To Do
+- **Success criteria**: All 17 routes visually consistent with the new design language in both themes; Settings sectioned via Tabs; FAQ uses Accordion; no regression in the 283-test baseline.
+
+### UI-3 — Phase 4: polish, Tooltip, and command palette
+
+- **Description**: Hover/focus/active/disabled/empty/error/success/loading states across interactive elements; `ui/tooltip.tsx` (`@radix-ui/react-tooltip`, already installed) on icon-only buttons; a `cmdk`-based ⌘K command palette for jumping between routes. The palette is a net-new *feature*, not a restyle — founder-approved but flagged in DEC-052 as sitting outside "presentation layer only," so scope it as its own reviewed unit, easy to drop if deprioritized.
+- **Priority**: P3
+- **Category**: Product
+- **Estimated effort**: M
+- **Dependencies**: UI-2
+- **Status**: To Do
+- **Success criteria**: All interactive-element states covered per the original request; tooltips on every icon-only button; command palette navigates all 17 routes, respects `prefers-reduced-motion`, doesn't regress the test baseline.
+
+---
+
 ## Next Sprint
 
 > Begins only after a vertical is selected (TASK-004) and architecture/stack are finalized. High-priority work immediately following the current sprint. Implementation tasks will be added here once validation gates pass — intentionally not pre-populated to avoid speculative MVP scope.
