@@ -25,17 +25,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 border-r md:flex md:flex-col">
+      {/* Desktop sidebar — flat and hairline-bordered, not detached/floating:
+          Stitch's glassmorphic margin-and-blur treatment was deliberately
+          rejected as dated next to Linear/Vercel's flush sidebars (see
+          DEC-052). Depth instead comes from bg-elevated stepping one tone up
+          from the page's bg-background — tonal layering, per Stitch's own
+          elevation model, without a floating/detached shape. */}
+      <aside className="hidden w-60 shrink-0 border-r bg-elevated md:flex md:flex-col">
         <Brand />
         <SidebarNav />
       </aside>
 
-      {/* Mobile navigation */}
+      {/* Mobile navigation — this one genuinely floats above content, so it
+          earns the shadow the desktop sidebar deliberately doesn't get. */}
       <Dialog.Root open={mobileOpen} onOpenChange={setMobileOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 md:hidden data-[state=open]:animate-overlay-show data-[state=closed]:animate-overlay-hide" />
-          <Dialog.Content className="fixed inset-y-0 left-0 z-50 w-64 border-r bg-background md:hidden data-[state=open]:animate-sheet-left-show data-[state=closed]:animate-sheet-left-hide">
+          <Dialog.Content className="fixed inset-y-0 left-0 z-50 w-64 border-r bg-elevated shadow-lg md:hidden data-[state=open]:animate-sheet-left-show data-[state=closed]:animate-sheet-left-hide">
             <Dialog.Title className="sr-only">Navigation</Dialog.Title>
             <Brand
               action={

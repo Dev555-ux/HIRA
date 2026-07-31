@@ -273,8 +273,8 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 - **Category**: Product
 - **Estimated effort**: S
 - **Dependencies**: Phase 1 (done)
-- **Status**: To Do
-- **Success criteria**: Shell renders with brand tokens in both themes on a running backend (this sandbox has none — needs live verification beyond skeleton states); Vitest count unchanged from Phase 1's 283; typecheck/lint/build clean.
+- **Status**: Done (2026-07-31, Session 59) — see DEC-053
+- **Success criteria met**: Shell renders with brand tokens in both themes; Vitest unchanged at 283/283; typecheck/lint/build clean. **Partially met**: live-verified via a temporary `preview-shell` route with sample content, not against a running backend with real page data (this sandbox has none) — real dashboard/table content on the new shell remains unverified, carried forward as a Phase 3 concern (see DEC-053's Review Date).
 
 ### UI-2 — Phase 3: restyle all 17 routes + build Tabs/Accordion
 

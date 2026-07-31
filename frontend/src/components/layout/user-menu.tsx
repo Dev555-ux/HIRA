@@ -23,7 +23,11 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="flex size-9 items-center justify-center rounded-full bg-secondary text-sm font-medium transition-colors hover:bg-secondary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        // Tinted, not solid, brand fill (bg-primary/10 vs. Demo Chat's
+        // solid bg-primary assistant avatar) — a user's own identity marker
+        // isn't a primary action, and full-strength brand here would
+        // compete with the one thing it's meant to be reserved for.
+        className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label="Open user menu"
       >
         {initials}

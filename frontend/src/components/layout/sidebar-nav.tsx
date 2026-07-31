@@ -20,8 +20,12 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             aria-current={active ? "page" : undefined}
             className={cn(
               "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              // Brand-tinted active state (bg-primary/10 + text-primary),
+              // matching the icon-accent convention already used by
+              // StatCard/dashboard/trace-detail — not a new pattern, applied
+              // here to what was previously a plain neutral bg-secondary.
               active
-                ? "bg-secondary text-secondary-foreground"
+                ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             )}
           >
