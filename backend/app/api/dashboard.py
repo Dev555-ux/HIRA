@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.llm import LLMError
 from app.api.calendar import map_calendar_error
+from app.api.review_metadata import review_metadata_for
 from app.auth.dependencies import Principal, get_current_principal
 from app.calendar.providers.base import CalendarError
 from app.core.time import to_iso_utc
@@ -121,6 +122,9 @@ def list_pending(
                 "created_at": to_iso_utc(m.created_at),
                 "customer": _serialize_customer(customers.get(m.conversation_id)),
                 "conversation_preview": previews.get(m.conversation_id),
+                # AI review metadata (reply_id / confidence / grounding /
+                # generation_status). Additive; existing fields unchanged.
+                "review": review_metadata_for(m),
             }
             for m in rows
         ],

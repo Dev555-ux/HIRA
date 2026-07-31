@@ -474,3 +474,34 @@ def test_list_messages_pagination_keeps_oldest_first_order(db_session):
     assert [m["body"] for m in body["data"]] == ["msg-3", "msg-4"]
     assert body["meta"]["total"] == 5
     app.dependency_overrides.clear()
+
+
+def test_message_thread_exposes_ai_review_metadata(db_session):
+    # End-to-end: a pending AI reply's real review metadata reaches the payload.
+    biz, _ = _seed_business(db_session, "clinic", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+15551230000")
+    conv = _conversation(db_session, biz.id, cust.id)
+    db_session.add(
+        Message(
+            conversation_id=conv.id,
+            business_id=biz.id,
+            direction="outbound",
+            body="Yes — Saturday 9–2.",
+            type="text",
+            status="pending_approval",
+            ai_meta={"model": "x", "retrieved_count": 2},
+            created_at=NOW,
+        )
+    )
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get(f"/api/v1/conversations/{conv.id}/messages", headers=_auth())
+
+    assert resp.status_code == 200
+    msg = resp.json()["data"][0]
+    assert msg["review"]["reply_id"] == msg["id"]
+    assert msg["review"]["grounding"] == {"retrieved_count": 2, "sources": []}
+    assert msg["review"]["confidence"] is None
+    assert msg["review"]["generation_status"] == "complete"
+    app.dependency_overrides.clear()

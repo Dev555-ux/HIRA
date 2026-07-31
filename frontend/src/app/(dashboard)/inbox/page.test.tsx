@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "@/components/ui/toast";
 import { AuthContext, type AuthContextValue } from "@/lib/auth-context";
 import type { Conversation, Message } from "@/lib/types";
 import InboxPage from "./page";
@@ -60,7 +61,9 @@ function renderWithProviders(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <AuthContext.Provider value={mockAuth}>{ui}</AuthContext.Provider>
+      <AuthContext.Provider value={mockAuth}>
+        <ToastProvider>{ui}</ToastProvider>
+      </AuthContext.Provider>
     </QueryClientProvider>,
   );
 }
@@ -167,7 +170,11 @@ describe("InboxPage", () => {
     await user.click(await screen.findByText("Alice Smith"));
 
     expect(await screen.findByText("Yes, 9-5!")).toBeInTheDocument();
-    expect(screen.getByText("Pending approval")).toBeInTheDocument();
+    // PR5: a pending_approval AI reply now renders the review experience
+    // (ReviewReplyCard) in the thread, not a plain bubble + "Pending approval"
+    // badge. Other message types are unchanged (see the next test).
+    expect(screen.getByRole("group", { name: /ai reply pending your review/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /approve & send/i })).toBeInTheDocument();
     expect(api.getConversation).toHaveBeenCalledWith(expect.any(Function), "conv-1");
     expect(api.listMessages).toHaveBeenCalledWith(expect.any(Function), "conv-1");
     // WhatsApp badge appears in both the list row and the detail header.
