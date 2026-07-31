@@ -51,6 +51,142 @@
   --ring: hsl(240 5% 40%);
 }
 
+/* ============================================================================
+   DESIGN SYSTEM FOUNDATION — Frontend PR1
+   Token layer that every future screen consumes. Source of truth:
+   DESIGN-MOTION-001 (§3 Motion, §4 Visual Depth) + the HIRA palette above.
+   Strictly ADDITIVE: no existing token value is changed, so existing screens
+   render identically. Theme-varying tokens live here (:root / .dark); theme-
+   invariant, Tailwind-mappable tokens live in the @theme block further down.
+   ============================================================================ */
+:root {
+  /* Motion durations (DESIGN-MOTION-001 §3.1). Routine UI lives in
+     ultra-fast→normal; signature and above are for rare, meaningful moments. */
+  --motion-instant: 0ms;
+  --motion-ultra-fast: 75ms;
+  --motion-fast: 120ms;
+  --motion-normal: 180ms;
+  --motion-slow: 320ms;
+  --motion-signature: 700ms;
+  --motion-narrative: 1200ms;
+  --motion-ambient: 1800ms;
+
+  /* Typography scale — consumed by the .type-* role classes below. Existing
+     screens keep using Tailwind's text-* utilities; these add the semantic
+     roles from the type hierarchy (display / heading / title / body / caption
+     / mono) without touching anything already rendered. */
+  --font-size-display: 2.25rem; /* 36px */
+  --font-size-heading: 1.5rem; /* 24px */
+  --font-size-title: 1.125rem; /* 18px */
+  --font-size-body: 1rem; /* 16px */
+  --font-size-caption: 0.8125rem; /* 13px */
+  --font-size-mono: 0.875rem; /* 14px */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --leading-tight: 1.1;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.02em;
+
+  /* Spacing reference scale (4px base). Tailwind's spacing utilities remain the
+     primary API; these exist for the rare non-Tailwind consumer and to document
+     the scale in one place. */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Border widths */
+  --border-hairline: 1px;
+  --border-thin: 1px;
+  --border-thick: 2px;
+
+  /* Opacity scale — semantic, for states rather than raw numbers. */
+  --opacity-disabled: 0.5;
+  --opacity-muted: 0.64;
+  --opacity-scrim: 0.5;
+  --opacity-hover: 0.08;
+  --opacity-press: 0.12;
+
+  /* Z-index scale — named layers so components never invent their own numbers.
+     Use via z-[var(--z-dialog)] etc. */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 20;
+  --z-dropdown: 30;
+  --z-overlay: 40;
+  --z-dialog: 50;
+  --z-popover: 60;
+  --z-toast: 70;
+  --z-max: 9999;
+
+  /* Focus (DESIGN-MOTION-001 §4.6) — a first-class, colored, visible ring.
+     Exposed as tokens + an opt-in .focus-ring utility below; not imposed
+     globally, so existing components' focus styles are unchanged. */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--ring);
+
+  /* Elevation ladder — LIGHT (DESIGN-MOTION-001 §4.2). One implied light source
+     from above: shadows are cool-grey, low-opacity, offset downward — never
+     pure black, never symmetric. Dark-mode overrides (below) swap to a top-edge
+     highlight since dark shadows vanish on a near-black canvas (§4.1). */
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px 0 rgb(24 24 37 / 0.04);
+  --elevation-2: 0 2px 8px -1px rgb(24 24 37 / 0.06);
+  --elevation-3: 0 8px 24px -4px rgb(24 24 37 / 0.1);
+  --elevation-4: 0 16px 48px -8px rgb(24 24 37 / 0.16);
+  --elevation-5: 0 24px 64px -12px rgb(24 24 37 / 0.22);
+
+  /* AI + review surfaces (DESIGN-MOTION-001 §4.4, §6). Near-threshold tones
+     DERIVED from the neutral system — never new brand hues. The AI surface is
+     the "handled for you" material; the spine is its faint left border; review
+     is the calm "awaiting you" state. */
+  --ai-foreground: var(--foreground);
+  --ai-spine: hsl(240 5% 65%);
+  --ai-surface: hsl(240 20% 99%);
+  --ai-surface-foreground: var(--card-foreground);
+  --review: hsl(240 5% 96%);
+  --review-foreground: hsl(240 6% 10%);
+
+  /* Status foregrounds — pair with the existing --success / --warning fills
+     (which shipped without foreground pairs). Additive; nothing consumes them
+     yet. */
+  --success-foreground: hsl(0 0% 98%);
+  --warning-foreground: hsl(240 6% 10%);
+}
+
+.dark {
+  /* Elevation in dark mode = a lighter top edge (light catching the raised
+     surface) + a soft ambient shadow, per DESIGN-MOTION-001 §4.1. */
+  --elevation-0: none;
+  --elevation-1: inset 0 1px 0 0 rgb(255 255 255 / 0.04);
+  --elevation-2: inset 0 1px 0 0 rgb(255 255 255 / 0.05), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  --elevation-3: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.5);
+  --elevation-4: inset 0 1px 0 0 rgb(255 255 255 / 0.07), 0 16px 48px -8px rgb(0 0 0 / 0.6);
+  --elevation-5: inset 0 1px 0 0 rgb(255 255 255 / 0.09), 0 24px 64px -12px rgb(0 0 0 / 0.7);
+
+  --ai-spine: hsl(240 5% 40%);
+  --ai-surface: hsl(240 8% 7%);
+  --review: hsl(240 4% 14%);
+  --review-foreground: hsl(0 0% 98%);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -73,11 +209,49 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-ai: var(--ai-surface);
+  --color-ai-foreground: var(--ai-surface-foreground);
+  --color-ai-spine: var(--ai-spine);
+  --color-review: var(--review);
+  --color-review-foreground: var(--review-foreground);
+  --radius-xs: calc(var(--radius) - 6px);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-full: 9999px;
+  --shadow-e0: var(--elevation-0);
+  --shadow-e1: var(--elevation-1);
+  --shadow-e2: var(--elevation-2);
+  --shadow-e3: var(--elevation-3);
+  --shadow-e4: var(--elevation-4);
+  --shadow-e5: var(--elevation-5);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+/* Theme-invariant, Tailwind-mappable tokens. A non-inline @theme block so these
+   are emitted as real :root custom properties (usable via var() in the
+   keyframes below) AND generate utilities (ease-*, blur-backdrop-*). Kept out
+   of @theme inline because they never change between light and dark. */
+@theme {
+  /* Motion easing (DESIGN-MOTION-001 §3.2). --ease-out-quart is the house
+     entrance curve already used by the overlay animations below (now
+     referenced by token instead of a repeated literal). */
+  --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-quart: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-in-out-quart: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-standard: ease-out;
+
+  /* Blur — rationed to depth-of-field on dialog/palette backdrops
+     (DESIGN-MOTION-001 §4.5). Distinct names so Tailwind's default blur scale
+     is not overridden. */
+  --blur-backdrop-sm: 8px;
+  --blur-backdrop-md: 12px;
+  --blur-backdrop-lg: 16px;
 }
 
 @layer base {
@@ -203,19 +377,19 @@
   animation: overlay-hide 150ms ease-in;
 }
 @utility animate-dialog-content-show {
-  animation: dialog-content-show 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: dialog-content-show 150ms var(--ease-out-quart);
 }
 @utility animate-dialog-content-hide {
   animation: dialog-content-hide 100ms ease-in;
 }
 @utility animate-popover-show {
-  animation: popover-show 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: popover-show 120ms var(--ease-out-quart);
 }
 @utility animate-popover-hide {
   animation: popover-hide 100ms ease-in;
 }
 @utility animate-toast-show {
-  animation: toast-show 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: toast-show 200ms var(--ease-out-quart);
 }
 @utility animate-toast-hide {
   animation: toast-hide 150ms ease-in forwards;
@@ -240,7 +414,7 @@
   }
 }
 @utility animate-sheet-left-show {
-  animation: sheet-left-show 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: sheet-left-show 200ms var(--ease-out-quart);
 }
 @utility animate-sheet-left-hide {
   animation: sheet-left-hide 150ms ease-in;
@@ -317,6 +491,101 @@
 }
 @utility animate-signature-pulse {
   animation: signature-pulse 1.8s linear infinite;
+}
+
+/* ============================================================================
+   TYPOGRAPHY ROLES (Frontend PR1) — the six-level hierarchy as reusable classes
+   (DESIGN-MOTION-001 companion; type roles). Named .type-* to avoid colliding
+   with Tailwind's text-* font-size utilities. Each role sets size + weight +
+   line-height + tracking from tokens; color is left to the consumer. Additive:
+   no existing element uses these, so nothing already rendered changes.
+   ============================================================================ */
+@layer components {
+  .type-display {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: var(--font-size-display);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+  }
+  .type-heading {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: var(--font-size-heading);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
+  }
+  .type-title {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: var(--font-size-title);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-normal);
+  }
+  .type-body {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-regular);
+    line-height: var(--leading-normal);
+    letter-spacing: var(--tracking-normal);
+  }
+  .type-caption {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-regular);
+    line-height: var(--leading-normal);
+    letter-spacing: var(--tracking-wide);
+  }
+  .type-mono {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: var(--font-size-mono);
+    font-weight: var(--font-weight-regular);
+    line-height: var(--leading-normal);
+    letter-spacing: var(--tracking-normal);
+  }
+}
+
+/* ============================================================================
+   MOTION PRIMITIVES (Frontend PR1) — reusable ONLY. Per the brief, PR1 ships
+   the primitives; no screen is animated with them yet. The existing entrance
+   primitives (fade-in / fade-in-up) already cover motion/entrance; these add
+   the two that were missing: the confidence spring (§3.3, for user-caused
+   positive confirmation — approve/save/toggle-on) and the press feedback
+   (§3.4, motion/press). Both draw from the motion tokens, never raw numbers,
+   and both collapse under the reduced-motion guard below. */
+@keyframes spring-settle {
+  0% {
+    transform: scale(0.96);
+  }
+  60% {
+    transform: scale(1.01);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes press-in {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(0.98);
+  }
+}
+@utility animate-spring-settle {
+  animation: spring-settle var(--motion-normal) var(--ease-out-quart);
+}
+@utility animate-press {
+  animation: press-in var(--motion-ultra-fast) var(--ease-standard) forwards;
+}
+
+/* Focus ring (DESIGN-MOTION-001 §4.6) — opt-in utility for future components to
+   pair with focus-visible (e.g. focus-visible:focus-ring). Deliberately NOT a
+   global :focus-visible override, so existing components' focus styles are
+   untouched (no accessibility regression). */
+@utility focus-ring {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* Global reduced-motion guard (Sprint 46). Every animation/transition in this
