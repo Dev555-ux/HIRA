@@ -13,6 +13,7 @@ export interface PendingReply {
   created_at: string;
   customer: PendingReplyCustomer | null;
   conversation_preview: string | null;
+  review?: ReviewMetadata | null;
 }
 
 export interface ApproveResult {
@@ -121,6 +122,23 @@ export interface Conversation {
   created_at: string;
 }
 
+// AI review metadata (backend: app/api/review_metadata.py). Additive and
+// optional — payloads from before this field shipped simply omit it, so every
+// consumer treats `review` as possibly-undefined.
+export interface GroundingSource {
+  title: string | null;
+  type: string | null;
+  snippet: string | null;
+}
+
+export interface ReviewMetadata {
+  reply_id: string;
+  // null until the pipeline records a real score — never fabricated.
+  confidence: { score: number | null; level: "high" | "medium" | "low" | null } | null;
+  grounding: { retrieved_count: number; sources: GroundingSource[] } | null;
+  generation_status: "complete" | "failed" | "working" | "idle";
+}
+
 export interface Message {
   id: string;
   direction: "inbound" | "outbound";
@@ -128,6 +146,7 @@ export interface Message {
   type: string;
   status: "received" | "pending_approval" | "sending" | "sent" | "failed" | "rejected" | "escalated";
   created_at: string;
+  review?: ReviewMetadata | null;
 }
 
 // Leads / CRM pipeline (/api/v1/leads). Sprint 28 — see DEC-031. `stage` is

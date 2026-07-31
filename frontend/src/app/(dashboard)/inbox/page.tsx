@@ -14,6 +14,7 @@ import { Suspense, useEffect, useState } from "react";
 import { ChannelBadge } from "@/components/channel-badge";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { PendingReviewContainer } from "@/components/pending-review-container";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -340,7 +341,16 @@ function ConversationDetail({
 
         {!isPendingMessages &&
           !isError &&
-          messages.map((message) => <MessageBubble key={message.id} message={message} />)}
+          messages.map((message) =>
+            // Only pending_approval AI replies get the review experience
+            // (ReviewReplyCard); every other message type renders exactly as
+            // before.
+            message.direction === "outbound" && message.status === "pending_approval" ? (
+              <PendingReviewContainer key={message.id} message={message} />
+            ) : (
+              <MessageBubble key={message.id} message={message} />
+            ),
+          )}
       </CardContent>
     </Card>
   );
