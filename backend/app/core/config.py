@@ -159,6 +159,25 @@ class Settings(BaseSettings):
     rate_limit_kb_upload: str = "10/minute"
     rate_limit_business_creation: str = "5/hour"
 
+    # Transactional outbox job engine (Sprint 64, ADR-001 / IMP-001). Master
+    # kill-switch for the durable PostgreSQL job queue that will replace the
+    # in-process FastAPI BackgroundTasks path. Defaults OFF: PR 1 only lands
+    # the job_outbox table and ORM model — no code path reads or writes the
+    # outbox yet, so runtime behaviour is unchanged. The webhook dual-write
+    # branch that consults this flag arrives in a later PR (IMP-001 PR 4).
+    use_transactional_outbox: bool = False
+
+    # Outbox worker tuning (Sprint 64, ADR-001 / IMP-001 §5, PR 3). These are
+    # read only by the standalone worker process (app/jobs/worker.py) — the API
+    # process never touches them — so changing them has no effect until a worker
+    # is actually running, and the worker stays idle while use_transactional_
+    # outbox is False (nothing enqueues jobs yet).
+    outbox_worker_poll_interval: float = 0.5  # seconds to sleep when a poll finds no work
+    outbox_worker_batch_size: int = 5  # max jobs claimed per poll (FOR UPDATE SKIP LOCKED)
+    outbox_zombie_timeout_seconds: int = 300  # PROCESSING longer than this -> reclaimed to PENDING
+    outbox_backoff_base_seconds: float = 2.0  # exponential retry base: base**attempts seconds
+    outbox_backoff_max_seconds: float = 3600.0  # cap on a single retry delay (1 hour)
+
     @model_validator(mode="after")
     def _reject_insecure_production_secrets(self) -> "Settings":
         """SEC-1: whatsapp_verify_token/app_secret/access_token default to

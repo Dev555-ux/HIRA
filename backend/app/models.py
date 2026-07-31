@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.jobs.models import JobOutbox, JobStatus  # noqa: F401  — register on Base.metadata
 
 
 class Business(Base):

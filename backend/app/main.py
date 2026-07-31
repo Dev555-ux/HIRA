@@ -22,6 +22,7 @@ from app.api.conversations import router as conversations_router
 from app.api.customers import router as customers_router
 from app.api.dashboard import router as dashboard_router
 from app.api.escalations import router as escalations_router
+from app.api.founder_ops import outbox_router as outbox_jobs_router
 from app.api.founder_ops import router as founder_ops_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.leads import router as leads_router
@@ -208,6 +209,7 @@ app.include_router(calendar_router)
 app.include_router(appointments_router)
 app.include_router(escalations_router)
 app.include_router(founder_ops_router)
+app.include_router(outbox_jobs_router)
 
 
 @app.get("/health")
