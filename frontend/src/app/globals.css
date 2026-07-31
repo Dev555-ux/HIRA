@@ -579,6 +579,22 @@
   animation: press-in var(--motion-ultra-fast) var(--ease-standard) forwards;
 }
 
+/* The "working line" travelling segment (DESIGN-MOTION-001 §6.1) — a foreground-
+   toned highlight moving along the AI's line when work is flowing. Consumed by
+   the WorkingIndicator primitive; foreground-toned, no glow. Collapses under the
+   reduced-motion guard (the segment simply rests), which still reads as present. */
+@keyframes working-line {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(500%);
+  }
+}
+@utility animate-working-line {
+  animation: working-line var(--motion-ambient) var(--ease-in-out-quart) infinite;
+}
+
 /* Focus ring (DESIGN-MOTION-001 §4.6) — opt-in utility for future components to
    pair with focus-visible (e.g. focus-visible:focus-ring). Deliberately NOT a
    global :focus-visible override, so existing components' focus styles are
