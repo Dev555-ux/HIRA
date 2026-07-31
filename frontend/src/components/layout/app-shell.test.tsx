@@ -95,3 +95,34 @@ describe("AppShell — mobile navigation", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
+
+describe("AppShell — desktop sidebar", () => {
+  it("renders a skip-to-content link targeting the main region", () => {
+    renderShell();
+    const skip = screen.getByRole("link", { name: /skip to main content/i });
+    expect(skip).toHaveAttribute("href", "#main-content");
+  });
+
+  it("collapses and expands via the toggle, updating aria-expanded", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    const toggle = screen.getByRole("button", { name: /collapse sidebar/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(toggle);
+
+    const expandToggle = screen.getByRole("button", { name: /expand sidebar/i });
+    expect(expandToggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("keeps nav links accessible by name even when collapsed", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.click(screen.getByRole("button", { name: /collapse sidebar/i }));
+
+    // Label is visually hidden (sr-only) but stays the link's accessible name.
+    expect(screen.getAllByRole("link", { name: /dashboard/i }).length).toBeGreaterThan(0);
+  });
+});
