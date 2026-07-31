@@ -39,8 +39,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.ai.processing import generate_and_store_reply
+from app.ai.tasks import GENERATE_AI_REPLY_TASK
 from app.core.config import settings
 from app.db.session import get_db
+from app.jobs import enqueue_job
 from app.models import Business, Conversation, Customer, Message
 from app.whatsapp.credentials import get_app_secret, get_stored_credential
 from app.whatsapp.errors import WhatsAppCredentialError
@@ -148,14 +150,28 @@ def receive(
         return Response(status_code=403)
 
     new_inbound = _persist_inbound(db, payload)
-    for conversation_id, message_id, user_text in new_inbound:
-        dispatch(background_tasks, conversation_id, message_id, user_text)
+    if not settings.use_transactional_outbox:
+        # Legacy path: schedule reply generation in-process, after the
+        # webhook's DB transaction has already committed. When the outbox is
+        # enabled the job was instead enqueued *inside* that transaction (see
+        # _persist_inbound), so there is nothing to dispatch here.
+        for conversation_id, message_id, _wa_message_id, user_text in new_inbound:
+            dispatch(background_tasks, conversation_id, message_id, user_text)
     # Always 200 once persisted, so Meta does not retry.
     return Response(status_code=200, content='{"status":"received"}', media_type="application/json")
 
 
 def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
-    """Persist inbound messages; return (conversation_id, message_id, text) for new ones."""
+    """Persist inbound messages; return (conversation_id, message_id,
+    wa_message_id, text) for new ones.
+
+    When `use_transactional_outbox` is enabled, the AI-reply job is enqueued
+    here — *inside* the same transaction that persists the inbound Message and
+    before its commit — so the message and its job land atomically (the whole
+    point of a transactional outbox: no inbound message can be recorded without
+    its reply-generation job, and vice versa). When disabled, nothing is
+    enqueued and reply generation is scheduled by the caller after commit, via
+    the legacy BackgroundTasks path."""
     new_inbound: list[tuple] = []
     now = datetime.now(timezone.utc)
     for entry in payload.get("entry", []):
@@ -200,7 +216,27 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
                 db.flush()
                 conversation.last_message_at = now
                 conversation.window_expires_at = now + SERVICE_WINDOW
-                new_inbound.append((conversation.id, message.id, body))
+
+                if settings.use_transactional_outbox:
+                    # Idempotency key namespaced on the stable WhatsApp message
+                    # id (UNIQUE across redeliveries), so a duplicate webhook
+                    # delivery can never enqueue a second reply job even if it
+                    # somehow got past the wa_message_id dedupe above. enqueue_job
+                    # only flushes inside this transaction — it does not commit —
+                    # so the job rides the same commit as the Message below.
+                    enqueue_job(
+                        db,
+                        business_id=business.id,
+                        task_name=GENERATE_AI_REPLY_TASK,
+                        payload={
+                            "conversation_id": str(conversation.id),
+                            "message_id": str(message.id),
+                            "user_text": body,
+                        },
+                        idempotency_key=f"whatsapp:{wa_message_id}",
+                    )
+
+                new_inbound.append((conversation.id, message.id, wa_message_id, body))
             db.commit()
     return new_inbound
 
