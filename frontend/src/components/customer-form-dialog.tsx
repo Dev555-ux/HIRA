@@ -127,7 +127,11 @@ function CustomerForm({
       <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4" noValidate>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Name</span>
-          <Input placeholder="Jordan Lee" {...register("display_name")} />
+          <Input
+            placeholder="Jordan Lee"
+            aria-invalid={!!errors.display_name}
+            {...register("display_name")}
+          />
           {errors.display_name && (
             <span className="block text-xs text-destructive">{errors.display_name.message}</span>
           )}
@@ -145,7 +149,12 @@ function CustomerForm({
 
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Email</span>
-          <Input type="email" placeholder="jordan@example.com" {...register("email")} />
+          <Input
+            type="email"
+            placeholder="jordan@example.com"
+            aria-invalid={!!errors.email}
+            {...register("email")}
+          />
           {errors.email && (
             <span className="block text-xs text-destructive">{errors.email.message}</span>
           )}

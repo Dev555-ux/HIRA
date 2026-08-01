@@ -293,8 +293,9 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 - **Category**: Product
 - **Estimated effort**: M
 - **Dependencies**: UI-2
-- **Status**: To Do
-- **Success criteria**: All interactive-element states covered per the original request; tooltips on every icon-only button; command palette navigates all 17 routes, respects `prefers-reduced-motion`, doesn't regress the test baseline.
+- **Status**: **Phase 4a Done** (2026-08-01, Session 61 — see DEC-055). **Phase 4b (⌘K palette) still To Do.**
+- **Success criteria — outcome**: Interactive states ✅ — `Button` already covered hover/focus-visible/active/disabled; the real gap was **error** state, and `aria-invalid` styling now exists on `Input`/`Textarea`/`Select` and is wired at all 15 field call sites (previously **zero** `aria-invalid` in the entire codebase despite 11 places rendering red error text). Tooltips ✅ — on 11 icon-only buttons; 4 mobile-only controls (`md:hidden`/`lg:hidden`) deliberately skipped since a tooltip only shows at viewports that cannot hover, plus the user-menu avatar which shows initials rather than an icon. Command palette ❌ **not started** — needs `cmdk` (not installed) and is net-new behavior, so it stays its own reviewable unit. Test baseline held at 283/283.
+- **Open follow-up (Phase 4b or sooner)**: the `aria-describedby` half of the form-error work — associating each error `<span>` with its field by id so assistive tech announces the *message*, not just the invalid state. Phase 4a delivered the attribute and the styling; the message association is still missing.
 
 ---
 

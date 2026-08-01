@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { IconTooltip } from "@/components/ui/tooltip";
 import {
   useCreateKbEntry,
   useDeleteKbEntry,
@@ -268,23 +269,27 @@ export default function KnowledgeBasePage() {
                     {formatRelativeTime(entry.updated_at)}
                   </span>
                   <div className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Edit entry"
-                      onClick={() => setDialogTarget(entry)}
-                    >
-                      <Pencil />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Delete entry"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setDeleteTarget(entry)}
-                    >
-                      <Trash2 />
-                    </Button>
+                    <IconTooltip label="Edit entry">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Edit entry"
+                        onClick={() => setDialogTarget(entry)}
+                      >
+                        <Pencil />
+                      </Button>
+                    </IconTooltip>
+                    <IconTooltip label="Delete entry">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Delete entry"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteTarget(entry)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </IconTooltip>
                   </div>
                 </div>
               </div>
@@ -382,25 +387,29 @@ function DraftBatchCard({
           >
             <p className="text-sm text-muted-foreground">{entry.content}</p>
             <div className="flex shrink-0 gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Approve fact"
-                onClick={() => onApprove(entry.id)}
-                disabled={isPending}
-              >
-                <Check className="text-success" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Reject fact"
-                className="text-destructive hover:text-destructive"
-                onClick={() => onReject(entry.id)}
-                disabled={isPending}
-              >
-                <X />
-              </Button>
+              <IconTooltip label="Approve fact">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Approve fact"
+                  onClick={() => onApprove(entry.id)}
+                  disabled={isPending}
+                >
+                  <Check className="text-success" />
+                </Button>
+              </IconTooltip>
+              <IconTooltip label="Reject fact">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Reject fact"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => onReject(entry.id)}
+                  disabled={isPending}
+                >
+                  <X />
+                </Button>
+              </IconTooltip>
             </div>
           </div>
         ))}
@@ -442,7 +451,7 @@ function KbEntryForm({
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Title</span>
-          <Input placeholder="Office hours" {...register("title")} />
+          <Input placeholder="Office hours" aria-invalid={!!errors.title} {...register("title")} />
           {errors.title && (
             <span className="block text-xs text-destructive">{errors.title.message}</span>
           )}
@@ -452,6 +461,7 @@ function KbEntryForm({
           <span className="text-sm font-medium">Content</span>
           <Textarea
             placeholder="We are open Monday to Friday, 9am to 6pm."
+            aria-invalid={!!errors.content}
             {...register("content")}
           />
           {errors.content && (
@@ -601,7 +611,7 @@ function ImportWebsiteDialog({
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Website URL</span>
-          <Input placeholder="https://example.com" {...register("url")} />
+          <Input placeholder="https://example.com" aria-invalid={!!errors.url} {...register("url")} />
           {errors.url && (
             <span className="block text-xs text-destructive">{errors.url.message}</span>
           )}

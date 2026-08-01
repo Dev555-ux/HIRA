@@ -118,11 +118,15 @@ export default function OnboardingPage() {
         )}
         <form onSubmit={onSubmit} className="space-y-4" noValidate>
           <Field label="Business name" error={errors.name?.message}>
-            <Input placeholder="Acme Dental Clinic" {...register("name")} />
+            <Input
+              placeholder="Acme Dental Clinic"
+              aria-invalid={!!errors.name}
+              {...register("name")}
+            />
           </Field>
 
           <Field label="Industry" error={errors.industry?.message}>
-            <Select defaultValue="" {...register("industry")}>
+            <Select defaultValue="" aria-invalid={!!errors.industry} {...register("industry")}>
               <option value="" disabled>
                 Select one
               </option>
@@ -135,7 +139,12 @@ export default function OnboardingPage() {
           </Field>
 
           <Field label="Business email" error={errors.contactEmail?.message}>
-            <Input type="email" placeholder="hello@acmedental.com" {...register("contactEmail")} />
+            <Input
+              type="email"
+              placeholder="hello@acmedental.com"
+              aria-invalid={!!errors.contactEmail}
+              {...register("contactEmail")}
+            />
           </Field>
 
           <Field label="Country (optional)">

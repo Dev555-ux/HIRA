@@ -16,6 +16,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { IconTooltip } from "@/components/ui/tooltip";
 import { useCustomer, useCustomerTimeline, useDeleteCustomer } from "@/hooks/use-customers";
 import { useCreateLead, useDeleteLead, useUpdateLead } from "@/hooks/use-leads";
 import { ApiError } from "@/lib/api";
@@ -116,23 +117,27 @@ export function CustomerDetailPane({
                 </p>
               </div>
               <div className="flex shrink-0 gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Edit customer"
-                  onClick={() => setIsEditing(true)}
-                >
-                  <Pencil />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Delete customer"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 />
-                </Button>
+                <IconTooltip label="Edit customer">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Edit customer"
+                    onClick={() => setIsEditing(true)}
+                  >
+                    <Pencil />
+                  </Button>
+                </IconTooltip>
+                <IconTooltip label="Delete customer">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Delete customer"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </IconTooltip>
               </div>
             </>
           )}
@@ -188,15 +193,17 @@ function LeadCard({ customerId, lead }: { customerId: string; lead: CustomerLead
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">Lead</CardTitle>
         {lead && (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Delete lead"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setConfirmDelete(true)}
-          >
-            <Trash2 />
-          </Button>
+          <IconTooltip label="Delete lead">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Delete lead"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 />
+            </Button>
+          </IconTooltip>
         )}
       </CardHeader>
       <CardContent>

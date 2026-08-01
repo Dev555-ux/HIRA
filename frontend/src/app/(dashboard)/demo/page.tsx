@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { IconTooltip } from "@/components/ui/tooltip";
 import { useKbEntries } from "@/hooks/use-knowledge-base";
 import { usePlaygroundHistory, useSendPlaygroundMessage } from "@/hooks/use-playground";
 import { ApiError } from "@/lib/api";
@@ -109,14 +110,16 @@ function ChatBubble({
         <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
           <span>{formatMessageTime(message.created_at)}</span>
           {!isUser && (
-            <button
-              type="button"
-              onClick={() => onCopy(message.body)}
-              className="opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-              aria-label="Copy response"
-            >
-              <Copy className="size-3" />
-            </button>
+            <IconTooltip label="Copy response">
+              <button
+                type="button"
+                onClick={() => onCopy(message.body)}
+                className="opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                aria-label="Copy response"
+              >
+                <Copy className="size-3" />
+              </button>
+            </IconTooltip>
           )}
         </div>
       </div>
@@ -347,14 +350,16 @@ export default function DemoChatPage() {
             className="min-h-10 flex-1 resize-none"
             aria-label="Message HIRA"
           />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={sendMessage.isPending || !draft.trim()}
-            aria-label="Send message"
-          >
-            <Send />
-          </Button>
+          <IconTooltip label="Send message">
+            <Button
+              type="submit"
+              size="icon"
+              disabled={sendMessage.isPending || !draft.trim()}
+              aria-label="Send message"
+            >
+              <Send />
+            </Button>
+          </IconTooltip>
         </form>
       </Card>
 

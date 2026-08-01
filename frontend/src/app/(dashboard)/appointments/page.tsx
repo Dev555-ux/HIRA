@@ -246,14 +246,22 @@ function RescheduleForm({
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">New start</span>
-          <Input type="datetime-local" {...register("starts_at")} />
+          <Input
+            type="datetime-local"
+            aria-invalid={!!errors.starts_at}
+            {...register("starts_at")}
+          />
           {errors.starts_at && (
             <span className="block text-xs text-destructive">{errors.starts_at.message}</span>
           )}
         </label>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">New end</span>
-          <Input type="datetime-local" {...register("ends_at")} />
+          <Input
+            type="datetime-local"
+            aria-invalid={!!errors.ends_at}
+            {...register("ends_at")}
+          />
           {errors.ends_at && (
             <span className="block text-xs text-destructive">{errors.ends_at.message}</span>
           )}
@@ -373,7 +381,11 @@ function CreateAppointmentForm({ onDone }: { onDone: () => void }) {
 
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Summary</span>
-          <Input placeholder="e.g. Dental cleaning" {...register("summary")} />
+          <Input
+            placeholder="e.g. Dental cleaning"
+            aria-invalid={!!errors.summary}
+            {...register("summary")}
+          />
           {errors.summary && (
             <span className="block text-xs text-destructive">{errors.summary.message}</span>
           )}
@@ -382,14 +394,22 @@ function CreateAppointmentForm({ onDone }: { onDone: () => void }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block space-y-1.5">
             <span className="text-sm font-medium">Start</span>
-            <Input type="datetime-local" {...register("starts_at")} />
+            <Input
+              type="datetime-local"
+              aria-invalid={!!errors.starts_at}
+              {...register("starts_at")}
+            />
             {errors.starts_at && (
               <span className="block text-xs text-destructive">{errors.starts_at.message}</span>
             )}
           </label>
           <label className="block space-y-1.5">
             <span className="text-sm font-medium">End</span>
-            <Input type="datetime-local" {...register("ends_at")} />
+            <Input
+              type="datetime-local"
+              aria-invalid={!!errors.ends_at}
+              {...register("ends_at")}
+            />
             {errors.ends_at && (
               <span className="block text-xs text-destructive">{errors.ends_at.message}</span>
             )}

@@ -37,6 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { IconTooltip } from "@/components/ui/tooltip";
 import { useCalendarStatus } from "@/hooks/use-calendar";
 import { useKbEntries } from "@/hooks/use-knowledge-base";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
@@ -965,15 +966,17 @@ function CopyableField({
       <span className="text-sm font-medium">{label}</span>
       <div className="flex items-center gap-2">
         <Input readOnly value={value} onFocus={(e) => e.target.select()} className="font-mono text-xs" />
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          aria-label={`Copy ${label}`}
-          onClick={() => onCopy(value)}
-        >
-          <Copy />
-        </Button>
+        <IconTooltip label={`Copy ${label}`}>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            aria-label={`Copy ${label}`}
+            onClick={() => onCopy(value)}
+          >
+            <Copy />
+          </Button>
+        </IconTooltip>
       </div>
     </div>
   );
