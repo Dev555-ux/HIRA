@@ -108,7 +108,12 @@ services:
       - certbot_certs:/etc/letsencrypt:ro
       - certbot_www:/var/www/certbot:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/nginx-health"]
+      # 127.0.0.1, not localhost: this container's /etc/hosts resolves
+      # localhost to ::1 first, and nginx isn't listening on IPv6 on a
+      # Docker bridge network without IPv6 enabled (the common case) —
+      # wget then fails with "Connection refused" even though nginx is
+      # fully healthy over IPv4, which is what all real traffic uses here.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/nginx-health"]
       interval: 15s
       timeout: 5s
       retries: 5
