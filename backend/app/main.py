@@ -226,11 +226,12 @@ def health() -> dict[str, str]:
 def health_whatsapp(db: Session = Depends(get_db)) -> JSONResponse:
     """Webhook liveness signal (Sprint 69, DEPLOY-5) — not "is the server
     up" (that's /health above), but "have we actually heard from Meta
-    recently." Deliberately separate from /health: Railway's own
-    healthcheckPath (railway.json) stays pointed at /health so a quiet
-    webhook (e.g. a pilot business with no messages overnight) never causes
-    a restart loop — this endpoint is meant to be polled by an external
-    uptime monitor (see documentation/DEPLOYMENT.md), not Railway itself.
+    recently." Deliberately separate from /health: the deployment platform's
+    own healthcheck (Railway's healthcheckPath, or docker-compose.prod.yml's
+    api healthcheck on AWS) stays pointed at /health so a quiet webhook
+    (e.g. a pilot business with no messages overnight) never causes a
+    restart loop — this endpoint is meant to be polled by an external uptime
+    monitor (see documentation/DEPLOYMENT_AWS.md), not the platform itself.
 
     Datetimes here are naive/UTC-implied, matching every other timestamp
     column in this app (see DEC-032's note on Appointment timestamps) — no

@@ -1,5 +1,12 @@
 # Deployment Runbook
 
+> **Backend hosting migrated to AWS EC2** — see `documentation/DEPLOYMENT_AWS.md`
+> for the current backend runbook (`railway.json`/`railway.worker.json` have
+> been removed). Everything below about the **Vercel frontend** (§8) still
+> applies unchanged; the Railway-specific sections (§1–§7, §9–§10) describe
+> the now-superseded backend deployment and are kept for historical reference
+> only.
+
 Status: written Sprint 69, **not yet executed**. `PRODUCTION_CHECKLIST.md`'s top blocking item ("Permanent HTTPS deployment... explicitly a founder decision") is what this document exists to close — but closing it means actually running these steps against real accounts, which only the founder can do (new billable infrastructure, real secrets). Nothing in this file has been run against a real Railway/Vercel project as of this writing; do not update `MEMORY.md`'s "Current Deployment" section to say otherwise until you've actually done it.
 
 This is a runbook, not a design doc — see `TECH_STACK.md` (DEC-011) for why Railway/Vercel were chosen, `ARCHITECTURE.md` for the system itself, and `PRODUCTION_CHECKLIST.md` for the full list of what "production-ready" means beyond deployment alone.

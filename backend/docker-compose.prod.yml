@@ -1,0 +1,145 @@
+# Production compose file for a single Ubuntu EC2 instance (AWS migration,
+# replacing Railway — see documentation/DEPLOYMENT_AWS.md for the full
+# runbook). Four services: postgres + api + worker (all internal-only, no
+# host-published ports) behind nginx, which is the only service exposed to
+# the internet.
+#
+# Run with: docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    # Same image CI uses (.github/workflows/ci.yml) so prod matches the
+    # tested pgvector/Postgres version exactly.
+    image: pgvector/pgvector:pg16
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hira}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-hira}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Not published to the host: only api/worker (same Docker network) can
+    # reach it. Nothing external ever touches port 5432 on this instance.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hira} -d ${POSTGRES_DB:-hira}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hira-backend:latest
+    restart: always
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Overrides the Dockerfile's CMD to add --proxy-headers: nginx is a new
+    # hop in front of uvicorn that didn't exist on Railway's edge. Without
+    # this, request.client.host (and slowapi's IP-scoped rate limiting —
+    # app/core/rate_limit.py) would see nginx's container IP for every
+    # request instead of the real client. forwarded-allow-ips='*' is safe
+    # here because uvicorn's port is never published to the host — nginx is
+    # the only thing on the Docker network that can reach it.
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000
+             --proxy-headers --forwarded-allow-ips='*'"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Same tag as `api` — same Dockerfile/context, so this reuses that image
+    # (built once) instead of Compose building and tagging a second, separate
+    # image for an identical Dockerfile (matches the "API and Worker build
+    # from the same image" architecture the Railway setup had).
+    image: hira-backend:latest
+    restart: always
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # No HTTP port, no healthcheck — mirrors railway.worker.json, which the
+    # worker had none of on Railway either (log-based monitoring only; see
+    # documentation/DEPLOYMENT_AWS.md).
+    command: python scripts/run_worker.py
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:alpine
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # Substituted into nginx.conf.template at container start (the
+      # official nginx image's entrypoint runs envsubst on every
+      # /etc/nginx/templates/*.template into /etc/nginx/conf.d/ automatically
+      # — no manual sed/edit of the conf file needed per deploy).
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN must be set in .env, e.g. api.yourdomain.com}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # One-off container for Certbot — deliberately not part of the default
+  # `docker compose up` set (the `tools` profile excludes it), invoked
+  # on-demand via `docker compose run --rm certbot ...` for both initial
+  # issuance and renewal. Shares the same named volumes as nginx so neither
+  # side needs to know Docker's internal host filesystem paths (a real
+  # fragility a host-installed certbot + `/var/lib/docker/volumes/...`
+  # approach would have — breaks under snap-installed Docker, a custom
+  # data-root, rootless Docker, etc.). See documentation/DEPLOYMENT_AWS.md.
+  certbot:
+    image: certbot/certbot
+    profiles: ["tools"]
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+  certbot_certs:
+  certbot_www:
