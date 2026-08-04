@@ -5,6 +5,15 @@ of this dashboard scales with the number of *query round trips* (fixed,
 small), not the number of businesses — the "suitable for future growth"
 requirement this sprint asked for.
 
+The actual aggregation queries live in `app/services/analytics.py`, shared
+with the per-business Analytics page (`app/api/analytics.py`) — every
+function there takes an optional `business_id`; this module always calls
+them with none, for the cross-tenant view. Kept as a separate module (not
+merged into analytics.py) because everything below it — the founder-only
+public functions, the Conversation Replay trace helpers — stays behind
+`get_founder_principal`, a different gate than the tenant-scoped Analytics
+endpoint.
+
 This intentionally does not use `app/db/tenant.py`'s `tenant_query`/
 `get_scoped` — both raise if you don't pass a `business_id`, which is the
 whole point here. This module is the one deliberate, audited hole in an
@@ -15,14 +24,24 @@ app/auth/dependencies.py for how access to it is gated.
 from __future__ import annotations
 
 import uuid
-from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.time import to_iso_utc
-from app.models import Business, Conversation, ExecutionTrace, KbEntry, Message, WhatsAppCredential
+from app.models import Business, Message
+from app.services.analytics import (
+    ai_metrics as _ai_metrics,
+    business_alerts,
+    businesses_with_stored_credential,
+    conversation_counts,
+    iso,
+    kb_stats,
+    message_stats,
+    overall_response_time_seconds,
+    response_time_seconds_by_business,
+    today_totals,
+)
 from app.services.execution_traces import (
     get_result_messages,
     get_trace,
@@ -41,192 +60,23 @@ def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _conversation_counts(db: Session) -> dict[uuid.UUID, int]:
-    rows = db.execute(
-        select(Conversation.business_id, func.count().label("n")).group_by(Conversation.business_id)
-    ).all()
-    return {row.business_id: row.n for row in rows}
-
-
-def _message_stats(db: Session, *, recent_failure_cutoff: datetime) -> dict[uuid.UUID, dict]:
-    """One grouped query for every per-business message-derived metric this
-    dashboard needs — outbound count (AI responses), failure counts
-    (all-time and recent, for the ai_failures alert), and last
-    inbound/outbound/any-direction timestamps (last activity)."""
-    rows = db.execute(
-        select(
-            Message.business_id,
-            func.count().filter(Message.direction == "outbound").label("ai_responses"),
-            func.count().filter(Message.status == "failed").label("failed_responses"),
-            func.count()
-            .filter(Message.status == "failed", Message.created_at >= recent_failure_cutoff)
-            .label("recent_failed_responses"),
-            func.max(Message.created_at)
-            .filter(Message.direction == "inbound")
-            .label("last_inbound_at"),
-            func.max(Message.created_at)
-            .filter(Message.direction == "outbound")
-            .label("last_outbound_at"),
-            func.max(Message.created_at).label("last_activity_at"),
-        ).group_by(Message.business_id)
-    ).all()
-    return {
-        row.business_id: {
-            "ai_responses": row.ai_responses,
-            "failed_responses": row.failed_responses,
-            "recent_failed_responses": row.recent_failed_responses,
-            "last_inbound_at": row.last_inbound_at,
-            "last_outbound_at": row.last_outbound_at,
-            "last_activity_at": row.last_activity_at,
-        }
-        for row in rows
-    }
-
-
-def _response_time_seconds_by_business(db: Session) -> dict[uuid.UUID, float]:
-    """Average seconds between an inbound message and the very next message
-    in that same conversation, when that next message is outbound — the
-    real "AI response time," computed in one window-function query rather
-    than fetched into Python and paired up by hand (which wouldn't scale
-    with message volume). `LAG` requires a subquery since you can't filter
-    directly on a window function in the same SELECT it's defined in.
-    """
-    prev_created_at = func.lag(Message.created_at).over(
-        partition_by=Message.conversation_id, order_by=Message.created_at
-    )
-    prev_direction = func.lag(Message.direction).over(
-        partition_by=Message.conversation_id, order_by=Message.created_at
-    )
-    turns = select(
-        Message.business_id.label("business_id"),
-        Message.direction.label("direction"),
-        Message.created_at.label("created_at"),
-        prev_created_at.label("prev_created_at"),
-        prev_direction.label("prev_direction"),
-    ).subquery()
-
-    rows = db.execute(
-        select(
-            turns.c.business_id,
-            func.avg(func.extract("epoch", turns.c.created_at - turns.c.prev_created_at)).label(
-                "avg_seconds"
-            ),
-        )
-        .where(turns.c.direction == "outbound", turns.c.prev_direction == "inbound")
-        .group_by(turns.c.business_id)
-    ).all()
-    return {row.business_id: float(row.avg_seconds) for row in rows if row.avg_seconds is not None}
-
-
-def _overall_response_time_seconds(db: Session) -> float | None:
-    """Same computation as above, ungrouped — a genuine average across every
-    qualifying turn platform-wide, not an average-of-per-business-averages
-    (which would over-weight low-volume businesses)."""
-    prev_created_at = func.lag(Message.created_at).over(
-        partition_by=Message.conversation_id, order_by=Message.created_at
-    )
-    prev_direction = func.lag(Message.direction).over(
-        partition_by=Message.conversation_id, order_by=Message.created_at
-    )
-    turns = select(
-        Message.direction.label("direction"),
-        Message.created_at.label("created_at"),
-        prev_created_at.label("prev_created_at"),
-        prev_direction.label("prev_direction"),
-    ).subquery()
-
-    result = db.execute(
-        select(func.avg(func.extract("epoch", turns.c.created_at - turns.c.prev_created_at))).where(
-            turns.c.direction == "outbound", turns.c.prev_direction == "inbound"
-        )
-    ).scalar()
-    return float(result) if result is not None else None
-
-
-def _kb_stats(db: Session) -> dict[uuid.UUID, dict]:
-    rows = db.execute(
-        select(
-            KbEntry.business_id,
-            func.count().filter(KbEntry.status == "published").label("published_count"),
-            func.count().filter(KbEntry.status == "draft").label("draft_count"),
-            func.max(KbEntry.updated_at).label("last_updated_at"),
-        ).group_by(KbEntry.business_id)
-    ).all()
-    return {
-        row.business_id: {
-            "published_count": row.published_count,
-            "draft_count": row.draft_count,
-            "last_updated_at": row.last_updated_at,
-        }
-        for row in rows
-    }
-
-
-def _businesses_with_stored_credential(db: Session) -> set[uuid.UUID]:
-    return set(db.scalars(select(WhatsAppCredential.business_id)))
-
-
-def _today_totals(db: Session, *, since: datetime) -> dict[str, int]:
-    row = db.execute(
-        select(
-            func.count().label("messages_today"),
-            func.count().filter(Message.direction == "outbound").label("ai_responses_today"),
-            func.count().filter(Message.status == "failed").label("failed_responses_today"),
-        ).where(Message.created_at >= since)
-    ).one()
-    return {
-        "messages_today": row.messages_today,
-        "ai_responses_today": row.ai_responses_today,
-        "failed_responses_today": row.failed_responses_today,
-    }
-
-
-def _iso(value: datetime | None) -> str | None:
-    return to_iso_utc(value)
-
-
-def _business_alerts(
-    *,
-    whatsapp_connected: bool,
-    kb_published_count: int,
-    recent_failed_responses: int,
-    last_activity_at: datetime | None,
-    now: datetime,
-) -> list[str]:
-    alerts: list[str] = []
-    if not whatsapp_connected:
-        alerts.append("whatsapp_disconnected")
-    if kb_published_count == 0:
-        alerts.append("missing_knowledge_base")
-    if recent_failed_responses > 0:
-        alerts.append("ai_failures")
-    # Only flag staleness for a business that's actually supposed to be
-    # receiving traffic — a brand-new, not-yet-connected business has no
-    # activity by definition and that's not a problem, just early.
-    if whatsapp_connected and (
-        last_activity_at is None or now - last_activity_at > STALE_ACTIVITY_WINDOW
-    ):
-        alerts.append("no_recent_activity")
-    return alerts
-
-
 def get_founder_overview(db: Session) -> dict:
     now = _now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     businesses = list(db.scalars(select(Business).order_by(Business.created_at.desc())))
-    conversation_counts = _conversation_counts(db)
-    message_stats = _message_stats(db, recent_failure_cutoff=now - RECENT_FAILURE_WINDOW)
-    response_times = _response_time_seconds_by_business(db)
-    kb_stats = _kb_stats(db)
-    credentialed = _businesses_with_stored_credential(db)
-    today = _today_totals(db, since=today_start)
+    conv_counts = conversation_counts(db)
+    msg_stats = message_stats(db, recent_failure_cutoff=now - RECENT_FAILURE_WINDOW)
+    response_times = response_time_seconds_by_business(db)
+    kb_by_business = kb_stats(db)
+    credentialed = businesses_with_stored_credential(db)
+    today = today_totals(db, since=today_start)
 
     business_rows = []
     connected_count = 0
     active_count = 0
     for business in businesses:
-        msg = message_stats.get(
+        msg = msg_stats.get(
             business.id,
             {
                 "ai_responses": 0,
@@ -237,7 +87,7 @@ def get_founder_overview(db: Session) -> dict:
                 "last_activity_at": None,
             },
         )
-        kb = kb_stats.get(
+        kb = kb_by_business.get(
             business.id, {"published_count": 0, "draft_count": 0, "last_updated_at": None}
         )
         whatsapp_connected = business.whatsapp_connection_status == "connected"
@@ -252,34 +102,35 @@ def get_founder_overview(db: Session) -> dict:
             {
                 "id": str(business.id),
                 "name": business.name,
-                "created_at": _iso(business.created_at),
+                "created_at": iso(business.created_at),
                 "onboarding_status": business.onboarding_status,
                 "onboarding_complete": knowledge_base_ready and whatsapp_connected,
                 "whatsapp": {
                     "status": business.whatsapp_connection_status,
                     "display_phone_number": business.whatsapp_display_phone_number,
                     "credential_stored": business.id in credentialed,
-                    "last_inbound_at": _iso(msg["last_inbound_at"]),
-                    "last_outbound_at": _iso(msg["last_outbound_at"]),
+                    "last_inbound_at": iso(msg["last_inbound_at"]),
+                    "last_outbound_at": iso(msg["last_outbound_at"]),
                 },
                 "knowledge_base": {
                     "published_count": kb["published_count"],
                     "draft_count": kb["draft_count"],
-                    "last_updated_at": _iso(kb["last_updated_at"]),
+                    "last_updated_at": iso(kb["last_updated_at"]),
                 },
                 "ai_activity": {
-                    "conversations": conversation_counts.get(business.id, 0),
+                    "conversations": conv_counts.get(business.id, 0),
                     "ai_responses": msg["ai_responses"],
                     "failed_responses": msg["failed_responses"],
                     "avg_response_time_seconds": response_times.get(business.id),
                 },
-                "last_activity_at": _iso(msg["last_activity_at"]),
-                "alerts": _business_alerts(
+                "last_activity_at": iso(msg["last_activity_at"]),
+                "alerts": business_alerts(
                     whatsapp_connected=whatsapp_connected,
                     kb_published_count=kb["published_count"],
                     recent_failed_responses=msg["recent_failed_responses"],
                     last_activity_at=msg["last_activity_at"],
                     now=now,
+                    stale_activity_window=STALE_ACTIVITY_WINDOW,
                 ),
             }
         )
@@ -292,7 +143,7 @@ def get_founder_overview(db: Session) -> dict:
             "messages_today": today["messages_today"],
             "ai_responses_today": today["ai_responses_today"],
             "failed_responses_today": today["failed_responses_today"],
-            "avg_response_time_seconds": _overall_response_time_seconds(db),
+            "avg_response_time_seconds": overall_response_time_seconds(db),
         },
         "businesses": business_rows,
     }
@@ -300,81 +151,14 @@ def get_founder_overview(db: Session) -> dict:
 
 def get_ai_metrics(db: Session) -> dict:
     """AI Employee observability for the Founder Ops dashboard (Sprint 76,
-    Objective B) — aggregated from every `ExecutionTrace` row platform-wide.
-    Two bulk queries (traces, then their result Messages), never one per
-    trace — the same "fixed number of round trips" shape as
-    get_founder_overview above, just aggregated in Python rather than SQL
-    since grouping by values *inside* a JSONB array (proposed_tool_calls)
-    doesn't fit a plain GROUP BY.
+    Objective B): employee utilisation, most-used employee/tools, failed
+    tool executions, governance blocks, and average plan length/execution
+    time — aggregated across every business's execution traces. Thin
+    wrapper over `app/services/analytics.py::ai_metrics` (business_id=None,
+    the cross-tenant case) — see that function's docstring for how each
+    figure is computed.
     """
-    traces = list(db.scalars(select(ExecutionTrace)))
-    if not traces:
-        return {
-            "total_turns": 0,
-            "employee_utilisation": {},
-            "most_used_employee": None,
-            "most_used_tools": [],
-            "failed_tool_executions": 0,
-            "governance_blocks": 0,
-            "avg_plan_length": 0.0,
-            "avg_execution_time_ms": 0.0,
-        }
-
-    all_result_ids = {
-        uuid.UUID(message_id) for trace in traces for message_id in trace.result_message_ids
-    }
-    messages_by_id = {}
-    if all_result_ids:
-        messages_by_id = {
-            message.id: message
-            for message in db.scalars(select(Message).where(Message.id.in_(all_result_ids)))
-        }
-
-    employee_counts: Counter[str] = Counter()
-    tool_counts: Counter[str] = Counter()
-    plan_lengths: list[int] = []
-    durations: list[int] = []
-    governance_blocks = 0
-    failed_tool_executions = 0
-
-    for trace in traces:
-        plan_lengths.append(len(trace.plan.get("steps", [])))
-        durations.append(trace.duration_ms)
-        # A proxy, not an exact count: app/ai/plan.py's clarification_hint
-        # covers both "not ready yet" (missing details) and "governance
-        # withheld this" — the two aren't distinguishable from the trace
-        # alone without duplicating governance.py's policy table here. Good
-        # enough for "how often did planning stop early", which is what
-        # this dashboard tile actually needs.
-        if trace.plan.get("clarification_hint") is not None:
-            governance_blocks += 1
-        for call in trace.proposed_tool_calls:
-            tool_name = call.get("tool_name")
-            agent_role = call.get("agent_role")
-            if tool_name:
-                tool_counts[tool_name] += 1
-            if agent_role:
-                employee_counts[agent_role] += 1
-        result_messages = [
-            messages_by_id[uuid.UUID(message_id)]
-            for message_id in trace.result_message_ids
-            if uuid.UUID(message_id) in messages_by_id
-        ]
-        if trace.proposed_tool_calls and resolve_outcome(result_messages) == "failed":
-            failed_tool_executions += 1
-
-    return {
-        "total_turns": len(traces),
-        "employee_utilisation": dict(employee_counts),
-        "most_used_employee": employee_counts.most_common(1)[0][0] if employee_counts else None,
-        "most_used_tools": [
-            {"tool_name": name, "count": count} for name, count in tool_counts.most_common(5)
-        ],
-        "failed_tool_executions": failed_tool_executions,
-        "governance_blocks": governance_blocks,
-        "avg_plan_length": sum(plan_lengths) / len(plan_lengths),
-        "avg_execution_time_ms": sum(durations) / len(durations),
-    }
+    return _ai_metrics(db)
 
 
 def list_traces_for_dashboard(
@@ -420,7 +204,7 @@ def list_traces_for_dashboard(
                 "roles": [step["role"] for step in trace.plan.get("steps", []) if step.get("role")],
                 "outcome": resolve_outcome(result_messages),
                 "duration_ms": trace.duration_ms,
-                "created_at": _iso(trace.created_at),
+                "created_at": iso(trace.created_at),
             }
         )
     return rows
@@ -465,5 +249,5 @@ def get_trace_detail(db: Session, trace_id: uuid.UUID) -> dict | None:
         ],
         "outcome": resolve_outcome(result_messages),
         "duration_ms": trace.duration_ms,
-        "created_at": _iso(trace.created_at),
+        "created_at": iso(trace.created_at),
     }
