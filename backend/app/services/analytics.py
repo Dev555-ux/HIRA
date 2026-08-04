@@ -13,14 +13,29 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.orm import Session
 
 from app.core.time import to_iso_utc
-from app.models import Conversation, ExecutionTrace, KbEntry, Message, WhatsAppCredential
+from app.models import (
+    Appointment,
+    Conversation,
+    Escalation,
+    ExecutionTrace,
+    KbEntry,
+    Lead,
+    Message,
+    WhatsAppCredential,
+)
 from app.services.execution_traces import get_result_messages, get_trace, list_traces, resolve_outcome  # noqa: F401  (re-exported for founder_ops.py's trace endpoints)
+
+# Rough estimate for the "human work saved" AI Impact figure — not a
+# measured benchmark. ponytail: revisit if a real time-and-motion number
+# ever becomes available; until then this is clearly labeled as an estimate
+# wherever it's surfaced.
+MINUTES_SAVED_PER_AI_REPLY = 4
 
 
 def iso(value: datetime | None) -> str | None:
@@ -270,3 +285,99 @@ def ai_metrics(db: Session, business_id: uuid.UUID | None = None) -> dict:
         "avg_plan_length": sum(plan_lengths) / len(plan_lengths),
         "avg_execution_time_ms": sum(durations) / len(durations),
     }
+
+
+def daily_counts(
+    db: Session, model, date_column, *, business_id: uuid.UUID, since: datetime, until: datetime
+) -> dict[date, int]:
+    """One day-bucketed COUNT query for any model with a business_id and a
+    timestamp column. Days with zero rows are simply absent from the
+    result — callers needing a gap-free series use `fill_daily`."""
+    stmt = (
+        select(func.date_trunc("day", date_column).label("day"), func.count().label("n"))
+        .where(model.business_id == business_id, date_column >= since, date_column <= until)
+        .group_by("day")
+    )
+    return {row.day.date(): row.n for row in db.execute(stmt).all()}
+
+
+def fill_daily(counts: dict[date, int], since: datetime, until: datetime) -> list[dict]:
+    """Turns a sparse {date: count} map into a gap-free day-by-day series —
+    charts need every day present, not just the ones with activity."""
+    num_days = (until.date() - since.date()).days
+    return [
+        {
+            "date": (since.date() + timedelta(days=offset)).isoformat(),
+            "count": counts.get(since.date() + timedelta(days=offset), 0),
+        }
+        for offset in range(num_days + 1)
+    ]
+
+
+def trends(db: Session, business_id: uuid.UUID, *, since: datetime, until: datetime) -> dict:
+    """Day-bucketed series for the Analytics page's Trends section: one
+    query per metric (they're different tables, so this can't collapse into
+    a single grouped query), each gap-filled to a full day-by-day series."""
+    return {
+        "conversations": fill_daily(
+            daily_counts(db, Conversation, Conversation.created_at, business_id=business_id, since=since, until=until),
+            since,
+            until,
+        ),
+        "messages": fill_daily(
+            daily_counts(db, Message, Message.created_at, business_id=business_id, since=since, until=until),
+            since,
+            until,
+        ),
+        "leads": fill_daily(
+            daily_counts(db, Lead, Lead.created_at, business_id=business_id, since=since, until=until),
+            since,
+            until,
+        ),
+        "appointments": fill_daily(
+            daily_counts(db, Appointment, Appointment.created_at, business_id=business_id, since=since, until=until),
+            since,
+            until,
+        ),
+    }
+
+
+def ai_impact(db: Session, business_id: uuid.UUID, *, since: datetime, until: datetime) -> dict:
+    """The mandatory AI Impact section: what the AI Employee actually did
+    for this business in the selected range, in business terms rather than
+    engineering terms."""
+
+    def count(model, *filters) -> int:
+        stmt = select(func.count()).select_from(model).where(
+            model.business_id == business_id, model.created_at.between(since, until), *filters
+        )
+        return db.scalar(stmt) or 0
+
+    ai_responses = count(Message, Message.direction == "outbound")
+    kb_grounded_replies = count(
+        Message,
+        Message.direction == "outbound",
+        Message.ai_meta["retrieved_count"].astext.cast(Integer) > 0,
+    )
+
+    return {
+        "conversations_handled": count(Conversation),
+        "human_escalations": count(Escalation),
+        "leads_created": count(Lead),
+        "appointments_booked": count(Appointment),
+        "kb_grounded_replies": kb_grounded_replies,
+        "ai_responses": ai_responses,
+        "estimated_hours_saved": round(ai_responses * MINUTES_SAVED_PER_AI_REPLY / 60, 1),
+    }
+
+
+def status_breakdown(db: Session, model, status_column, business_id: uuid.UUID) -> dict[str, int]:
+    """Generic current-state breakdown (conversation status, lead stage,
+    appointment status, lead source, ...) — grouped count on whichever
+    column the caller passes, always scoped to one business."""
+    stmt = (
+        select(status_column, func.count())
+        .where(model.business_id == business_id)
+        .group_by(status_column)
+    )
+    return dict(db.execute(stmt).all())
