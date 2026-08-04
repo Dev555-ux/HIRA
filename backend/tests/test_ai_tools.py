@@ -27,7 +27,7 @@ from app.calendar.service import AppointmentService
 from app.models import Business, Customer
 from app.services.leads import create_lead as service_create_lead
 
-NOW = datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
 
 
 def _business_customer(db):

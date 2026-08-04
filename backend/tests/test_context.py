@@ -13,7 +13,7 @@ from app.models import Business, Conversation, Customer, Message
 from app.services.leads import create_lead
 from tests.test_knowledge_base import FakeEmbeddingProvider
 
-NOW = datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
 
 
 def _conversation(db, *, display_name="Alex Rivera"):
