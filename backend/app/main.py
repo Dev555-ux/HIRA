@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 
+from app.api.analytics import router as analytics_router
 from app.api.appointments import router as appointments_router
 from app.api.calendar import router as calendar_router
 from app.api.conversations import router as conversations_router
@@ -198,6 +199,7 @@ app.add_middleware(RequestLoggingMiddleware)
 init_rate_limiting(app)
 app.include_router(whatsapp_router)
 app.include_router(whatsapp_api_router)
+app.include_router(analytics_router)
 app.include_router(dashboard_router)
 app.include_router(knowledge_base_router)
 app.include_router(onboarding_router)
