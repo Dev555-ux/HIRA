@@ -33,12 +33,6 @@ import { describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
 const PREVIEW_ROWS = 5;
 const ACTIVITY_ROWS = 6;
 
-// Shared, restrained hover treatment for this page's content cards (Sprint
-// 46) — a ~2px lift and a slightly deeper shadow, nothing else. Kept as one
-// constant so all four cards below move identically rather than each
-// hand-rolling a slightly different value.
-const CARD_HOVER = "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md";
-
 function customerLabel(customer: { display_name: string | null; wa_phone: string } | null): string {
   return customer?.display_name || customer?.wa_phone || "Unknown customer";
 }
@@ -240,7 +234,7 @@ export default function DashboardPage() {
 
       {/* Primary row: what needs action now, and what's coming up next. */}
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
-        <Card className={`lg:col-span-2 ${CARD_HOVER}`}>
+        <Card interactive className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-base">Needs your attention</CardTitle>
             <Button asChild size="sm" variant="ghost">
@@ -294,7 +288,7 @@ export default function DashboardPage() {
         </Card>
 
         <div className="flex flex-col gap-4">
-          <Card className={CARD_HOVER}>
+          <Card interactive>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="text-base">Upcoming appointments</CardTitle>
               <Button asChild size="sm" variant="ghost">
@@ -350,7 +344,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className={`bg-muted/30 ${CARD_HOVER}`}>
+          <Card interactive className="bg-muted/30">
             <CardHeader>
               <CardTitle className="text-base">WhatsApp status</CardTitle>
             </CardHeader>
@@ -370,7 +364,7 @@ export default function DashboardPage() {
           approvals, and bookings — a retrospective "what happened" view,
           distinct from "Needs your attention"'s prescriptive "what to do
           now." */}
-      <Card className={`mt-8 ${CARD_HOVER}`}>
+      <Card interactive className="mt-8">
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Recent activity</CardTitle>
           <Button asChild size="sm" variant="ghost">
