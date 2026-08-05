@@ -16,7 +16,13 @@ export function StatCard({
   loading?: boolean;
 }) {
   return (
-    <Card className="group transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md">
+    // IMPLEMENTATION-ROADMAP-001 M3: the hand-rolled hover (raw shadow-md,
+    // a bespoke border-color fade, a 2px lift on a magic 200ms duration) is
+    // replaced by Card's own `interactive` prop — the same token-driven
+    // lift/shadow-e1↔e2 treatment every other interactive card in the app
+    // uses, instead of a second, slightly different implementation of the
+    // same idea living only here.
+    <Card interactive className="group">
       <CardContent className="p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
