@@ -277,6 +277,34 @@ def test_post_dedupes_repeated_message_id(db_session):
     app.dependency_overrides.clear()
 
 
+def test_persist_inbound_alerts_on_a_change_for_an_unrecognized_business(db_session, monkeypatch):
+    """WA-1: `receive()` already verified this delivery's signature against
+    PN1's connected business before `_persist_inbound` ever runs — so a
+    second `change` entry inside the same delivery naming an unrecognized
+    phone_number_id is unexpected, not routine unauthenticated noise, and
+    must be surfaced via capture_message rather than silently skipped."""
+    captured = []
+    monkeypatch.setattr("app.webhooks.whatsapp.capture_message", captured.append)
+    _connected_business(db_session, phone_number_id="PN1")
+    client, dispatched = _client(db_session)
+
+    payload = _inbound_payload("PN1", "wamid.1")
+    payload["entry"][0]["changes"].append(_inbound_payload("PN-unknown", "wamid.2")["entry"][0]["changes"][0])
+    body = json.dumps(payload).encode()
+
+    resp = client.post(
+        "/webhooks/whatsapp",
+        content=body,
+        headers={"X-Hub-Signature-256": _sign(body), "Content-Type": "application/json"},
+    )
+
+    assert resp.status_code == 200
+    assert len(dispatched) == 1  # only PN1's message was persisted/dispatched
+    assert len(captured) == 1
+    assert "PN-unknown" in captured[0]
+    app.dependency_overrides.clear()
+
+
 def test_get_or_create_customer_recovers_from_concurrent_insert_race(db_session, monkeypatch):
     """Two overlapping webhook deliveries for the same phone number can both
     pass the existence check before either flushes. Simulates that by

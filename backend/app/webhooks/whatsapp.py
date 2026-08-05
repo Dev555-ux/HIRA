@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 from app.ai.processing import generate_and_store_reply
 from app.ai.tasks import GENERATE_AI_REPLY_TASK
 from app.core.config import settings
+from app.core.monitoring import capture_message
 from app.db.session import get_db
 from app.jobs import enqueue_job
 from app.models import Business, Conversation, Customer, Message
@@ -185,6 +186,19 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
                 select(Business).where(Business.whatsapp_phone_number_id == phone_number_id)
             ).first()
             if business is None:
+                # WA-1: the top-level `receive()` already verified this
+                # delivery's signature against a known, connected business
+                # before we ever got here — so a `change` entry inside it for
+                # a *different*, unrecognized phone_number_id is unexpected
+                # (a multi-change delivery spanning businesses is not a
+                # pattern Meta documents), not routine noise like an
+                # unauthenticated scanner hitting the endpoint. Worth
+                # surfacing rather than swallowing silently.
+                capture_message(
+                    f"WhatsApp webhook: ignoring a change for unrecognized "
+                    f"phone_number_id={phone_number_id!r} inside an "
+                    f"otherwise-authenticated delivery."
+                )
                 continue  # unknown number — ignore gracefully
 
             names = {
