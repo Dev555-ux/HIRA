@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusPill } from "@/components/ui/status-pill";
 import {
   Dialog,
   DialogContent,
@@ -364,11 +365,10 @@ function DraftBatchCard({
     <Card className="border-warning/40 bg-warning/5">
       <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
         <div className="flex items-center gap-2">
-          <Clock className="size-4 text-warning" />
           <CardTitle className="text-sm">
-            {batch.entries.length} {factWord} imported from {batch.entries[0]?.title} — pending
-            your review
+            {batch.entries.length} {factWord} imported from {batch.entries[0]?.title}
           </CardTitle>
+          <StatusPill state="waiting">Pending your review</StatusPill>
         </div>
         <Button size="sm" onClick={onApproveAll} disabled={isPending}>
           <Check /> Approve all
