@@ -10,11 +10,11 @@ import { z } from "zod";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useToast } from "@/components/ui/toast";
 import {
   useCalendarSettings,
@@ -140,7 +140,9 @@ function ConnectionCard() {
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">HIRA Calendar</CardTitle>
         {!isPending && !isError && (
-          <Badge variant="success">{status?.connected ? "Google Sync Enabled" : "Active"}</Badge>
+          <StatusPill state="success">
+            {status?.connected ? "Google Sync Enabled" : "Active"}
+          </StatusPill>
         )}
       </CardHeader>
       <CardContent>

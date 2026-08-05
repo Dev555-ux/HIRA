@@ -8,7 +8,6 @@ import { z } from "zod";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -20,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useToast } from "@/components/ui/toast";
 import {
   useAppointments,
@@ -30,7 +30,7 @@ import {
 import { useCustomers } from "@/hooks/use-customers";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { ApiError } from "@/lib/api";
-import { APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
+import { APPOINTMENT_STATUS, APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
 import type { Appointment, Customer } from "@/lib/types";
 import { toDateTimeInputValue, toUtcIsoFromDateTimeInput } from "@/lib/utils";
 
@@ -151,7 +151,9 @@ function AppointmentRow({ appointment }: { appointment: Appointment }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
+          <StatusPill state={APPOINTMENT_STATUS[appointment.status]}>
+            {statusBadge.label}
+          </StatusPill>
           {appointment.status !== "cancelled" && (
             <>
               <Button variant="outline" size="sm" onClick={() => setIsRescheduling(true)}>
