@@ -7,14 +7,14 @@ import { EmptyState } from "@/components/empty-state";
 import { NewLeadDialog } from "@/components/new-lead-dialog";
 import { PageHeader } from "@/components/page-header";
 import { PaginationFooter } from "@/components/pagination-footer";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLeads } from "@/hooks/use-leads";
-import { STAGE_BADGE_VARIANT, STAGE_LABEL, LEAD_STAGES } from "@/lib/leads";
+import { STAGE_LABEL, STAGE_STATUS, LEAD_STAGES } from "@/lib/leads";
 import type { Lead, LeadStage } from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
@@ -228,9 +228,9 @@ function LeadList({
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={STAGE_BADGE_VARIANT[lead.stage]}>
+                    <StatusPill state={STAGE_STATUS[lead.stage]}>
                       {STAGE_LABEL[lead.stage]}
-                    </Badge>
+                    </StatusPill>
                     {lead.estimated_value !== null && (
                       <span className="text-xs text-muted-foreground">
                         ${lead.estimated_value.toLocaleString()}

@@ -8,18 +8,18 @@ import { z } from "zod";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CustomerFormDialog } from "@/components/customer-form-dialog";
 import { EmptyState } from "@/components/empty-state";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useCustomer, useCustomerTimeline, useDeleteCustomer } from "@/hooks/use-customers";
 import { useCreateLead, useDeleteLead, useUpdateLead } from "@/hooks/use-leads";
 import { ApiError } from "@/lib/api";
-import { LEAD_STAGES, STAGE_BADGE_VARIANT } from "@/lib/leads";
+import { LEAD_STAGES, STAGE_STATUS } from "@/lib/leads";
 import type { CustomerLead, LeadEventType, TimelineItem, TimelineLeadEventItem } from "@/lib/types";
 import { cn, formatRelativeTime, toDateInputValue } from "@/lib/utils";
 
@@ -313,9 +313,9 @@ function LeadForm({
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
       {lead && (
         <div className="flex items-center justify-between gap-2">
-          <Badge variant={STAGE_BADGE_VARIANT[lead.stage]} className="w-fit">
+          <StatusPill state={STAGE_STATUS[lead.stage]} className="w-fit">
             {LEAD_STAGES.find((s) => s.value === lead.stage)?.label ?? lead.stage}
-          </Badge>
+          </StatusPill>
           <span className="text-xs text-muted-foreground">
             Created {formatRelativeTime(lead.created_at)}
           </span>

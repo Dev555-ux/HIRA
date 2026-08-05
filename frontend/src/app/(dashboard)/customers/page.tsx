@@ -7,14 +7,14 @@ import { CustomerFormDialog, type CustomerDialogTarget } from "@/components/cust
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { PaginationFooter } from "@/components/pagination-footer";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useCustomers } from "@/hooks/use-customers";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { STAGE_LABEL } from "@/lib/leads";
+import { STAGE_LABEL, STAGE_STATUS } from "@/lib/leads";
 import type { Customer } from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
@@ -196,9 +196,9 @@ function CustomerList({
                     {customer.conversation_count === 1 ? "" : "s"}
                   </p>
                   {customer.lead && (
-                    <Badge variant="secondary" className="w-fit">
+                    <StatusPill state={STAGE_STATUS[customer.lead.stage]} className="w-fit">
                       {STAGE_LABEL[customer.lead.stage] ?? customer.lead.stage}
-                    </Badge>
+                    </StatusPill>
                   )}
                 </button>
               </li>
