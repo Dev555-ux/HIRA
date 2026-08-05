@@ -4,11 +4,17 @@ import { cn } from "@/lib/utils";
 // AI + review surfaces (DESIGN-MOTION-001 §4.4, §6.9). Generic building blocks
 // for future screens — deliberately NOT wired into any page yet.
 
-// Anything authored/handled by the AI sits on a distinct material: a faint left
-// spine + near-threshold tint, so "your employee handled this" reads without a
-// loud brand colour. Exported class so non-div consumers can match it exactly.
+// Anything authored/handled by the AI sits on a distinct material: a
+// near-threshold tint plus a left spine in the brand color — the one place
+// Cobalt marks authorship rather than interactivity (IMPLEMENTATION-
+// ROADMAP-001 M4; DESIGN-SCREENBOOK-002 §1's "Cobalt Thread"). This is a
+// deliberate split from WorkingIndicator's body-language line, which stays
+// neutral by design (see that file) — the spine says "this is AI-authored,"
+// the line says "this is what the AI is doing right now," and only one of
+// those two ever needed the brand color. Exported class so non-div
+// consumers can match it exactly.
 export const aiSurfaceClassName =
-  "rounded-lg border border-l-2 border-border border-l-ai-spine bg-ai text-ai-foreground shadow-e1";
+  "rounded-lg border border-l-2 border-border border-l-brand bg-ai text-ai-foreground shadow-e1";
 
 function AISurface({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn(aiSurfaceClassName, className)} {...props} />;
