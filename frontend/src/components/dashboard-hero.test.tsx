@@ -78,4 +78,42 @@ describe("DashboardHero", () => {
     expect(link).toHaveAttribute("href", "/demo");
     await user.tab();
   });
+
+  it("has no promoted review CTA when pendingCount is 0 or omitted", () => {
+    render(
+      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} />,
+    );
+    expect(screen.queryByRole("link", { name: /review/i })).not.toBeInTheDocument();
+  });
+
+  it("promotes a singular 'Review 1 reply' CTA to /pending when pendingCount is 1", () => {
+    render(
+      <DashboardHero
+        name="Dev"
+        summary="Summary."
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+        pendingCount={1}
+      />,
+    );
+    const link = screen.getByRole("link", { name: /review 1 reply/i });
+    expect(link).toHaveAttribute("href", "/pending");
+    expect(link).not.toHaveTextContent("replies");
+  });
+
+  it("promotes a plural 'Review N replies' CTA when pendingCount is many", () => {
+    render(
+      <DashboardHero
+        name="Dev"
+        summary="Summary."
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+        pendingCount={4}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /review 4 replies/i })).toHaveAttribute(
+      "href",
+      "/pending",
+    );
+  });
 });

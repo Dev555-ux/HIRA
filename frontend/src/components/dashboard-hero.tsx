@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquareText, RefreshCw } from "lucide-react";
+import { ArrowRight, MessageSquareText, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -40,11 +40,16 @@ export function DashboardHero({
   summary,
   isRefreshing,
   onRefresh,
+  pendingCount = 0,
 }: {
   name: string;
   summary: string;
   isRefreshing: boolean;
   onRefresh: () => void;
+  /** When > 0, promotes a "Review N replies" primary CTA ahead of the
+   *  existing actions (DESIGN-SCREENBOOK-002 §4). Optional/defaulted so
+   *  every existing caller and test is unaffected. */
+  pendingCount?: number;
 }) {
   const [greeting, setGreeting] = useState("Welcome back");
 
@@ -60,7 +65,15 @@ export function DashboardHero({
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{summary}</p>
       </div>
-      <div className="flex shrink-0 gap-2">
+      <div className="flex shrink-0 flex-wrap gap-2">
+        {pendingCount > 0 && (
+          <Button asChild size="sm">
+            <Link href="/pending">
+              Review {pendingCount} {pendingCount === 1 ? "reply" : "replies"}
+              <ArrowRight />
+            </Link>
+          </Button>
+        )}
         <Button variant="outline" size="sm" onClick={onRefresh}>
           <RefreshCw className={isRefreshing ? "animate-spin" : ""} />
           Refresh

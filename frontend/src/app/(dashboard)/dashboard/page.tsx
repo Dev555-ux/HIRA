@@ -182,6 +182,7 @@ export default function DashboardPage() {
         summary={summary}
         isRefreshing={isRefreshing}
         onRefresh={refreshAll}
+        pendingCount={pendingCount}
       />
 
       {onboarding?.business && onboarding.business.onboarding_status !== "live" && (
