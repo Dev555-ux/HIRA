@@ -2,12 +2,15 @@
 
 import { AlertTriangle, ArrowLeft, Bot, ListTree, MessageSquare, Wrench } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
+import { aiSurfaceClassName } from "@/components/ui/ai-surface";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useFounderTraceDetail } from "@/hooks/use-founder-ops";
 import type { TraceOutcome } from "@/lib/types";
+import { TRACE_OUTCOME_STATE } from "@/lib/traces";
 import { formatRelativeTime } from "@/lib/utils";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -21,14 +24,14 @@ function roleLabel(role: string): string {
   return ROLE_LABEL[role] ?? role;
 }
 
-const OUTCOME_BADGE: Record<TraceOutcome, { label: string; variant: BadgeProps["variant"] }> = {
-  sent: { label: "Sent", variant: "success" },
-  pending_approval: { label: "Pending approval", variant: "warning" },
-  sending: { label: "Sending", variant: "secondary" },
-  failed: { label: "Failed", variant: "destructive" },
-  rejected: { label: "Rejected", variant: "destructive" },
-  escalated: { label: "Escalated", variant: "warning" },
-  no_result: { label: "No result", variant: "secondary" },
+const OUTCOME_LABEL: Record<TraceOutcome, string> = {
+  sent: "Sent",
+  pending_approval: "Pending approval",
+  sending: "Sending",
+  failed: "Failed",
+  rejected: "Rejected",
+  escalated: "Escalated",
+  no_result: "No result",
 };
 
 // Sprint 76, Objective C: Conversation Replay — read-only inspection of one
@@ -91,9 +94,9 @@ export function TraceDetailPane({
                 <p className="truncate text-sm font-medium">
                   {trace.business_name ?? "Unknown business"}
                 </p>
-                <Badge variant={OUTCOME_BADGE[trace.outcome].variant}>
-                  {OUTCOME_BADGE[trace.outcome].label}
-                </Badge>
+                <StatusPill state={TRACE_OUTCOME_STATE[trace.outcome]}>
+                  {OUTCOME_LABEL[trace.outcome]}
+                </StatusPill>
               </div>
               <p className="text-xs text-muted-foreground">
                 {formatRelativeTime(trace.created_at)} · {trace.duration_ms}ms · {trace.category}
@@ -118,7 +121,7 @@ export function TraceDetailPane({
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className={aiSurfaceClassName}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
                 <ListTree className="size-4" /> Execution plan
@@ -160,7 +163,7 @@ export function TraceDetailPane({
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className={aiSurfaceClassName}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Wrench className="size-4" /> Tool execution
@@ -186,7 +189,7 @@ export function TraceDetailPane({
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className={aiSurfaceClassName}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Bot className="size-4" /> Final response

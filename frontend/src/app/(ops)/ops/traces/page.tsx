@@ -6,24 +6,26 @@ import { useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { TraceDetailPane } from "@/components/trace-detail";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useFounderTraces } from "@/hooks/use-founder-ops";
 import type { FounderTraceRow, TraceOutcome } from "@/lib/types";
+import { TRACE_OUTCOME_STATE } from "@/lib/traces";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
 
-const OUTCOME_BADGE: Record<TraceOutcome, { label: string; variant: BadgeProps["variant"] }> = {
-  sent: { label: "Sent", variant: "success" },
-  pending_approval: { label: "Pending", variant: "warning" },
-  sending: { label: "Sending", variant: "secondary" },
-  failed: { label: "Failed", variant: "destructive" },
-  rejected: { label: "Rejected", variant: "destructive" },
-  escalated: { label: "Escalated", variant: "warning" },
-  no_result: { label: "No result", variant: "secondary" },
+const OUTCOME_LABEL: Record<TraceOutcome, string> = {
+  sent: "Sent",
+  pending_approval: "Pending",
+  sending: "Sending",
+  failed: "Failed",
+  rejected: "Rejected",
+  escalated: "Escalated",
+  no_result: "No result",
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -156,9 +158,9 @@ function TraceList({
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant={OUTCOME_BADGE[trace.outcome].variant}>
-                      {OUTCOME_BADGE[trace.outcome].label}
-                    </Badge>
+                    <StatusPill state={TRACE_OUTCOME_STATE[trace.outcome]}>
+                      {OUTCOME_LABEL[trace.outcome]}
+                    </StatusPill>
                     {trace.roles.map((role, i) => (
                       <Badge key={`${role}-${i}`} variant="secondary">
                         {ROLE_LABEL[role] ?? role}

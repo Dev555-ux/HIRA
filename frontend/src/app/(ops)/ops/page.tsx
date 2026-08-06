@@ -17,10 +17,12 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
+import type { ActivityState } from "@/components/ui/activity-dot";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useFounderAiMetrics, useFounderOverview } from "@/hooks/use-founder-ops";
 import { ApiError } from "@/lib/api";
 import type { FounderAlert, FounderBusinessRow } from "@/lib/types";
@@ -33,14 +35,33 @@ const ALERT_LABEL: Record<FounderAlert, string> = {
   no_recent_activity: "No recent activity",
 };
 
-const WHATSAPP_BADGE: Record<
-  FounderBusinessRow["whatsapp"]["status"],
-  { label: string; variant: BadgeProps["variant"] }
-> = {
-  connected: { label: "Connected", variant: "success" },
-  pending_verification: { label: "Needs attention", variant: "warning" },
-  not_connected: { label: "Not connected", variant: "secondary" },
+// IMPLEMENTATION-ROADMAP-001 M9: StatusPill's status->dot-color mapping,
+// single consumer (this file). Preserves WHATSAPP_BADGE's exact colors:
+// connected=success, pending_verification=warning, not_connected=secondary.
+const WHATSAPP_STATUS_STATE: Record<FounderBusinessRow["whatsapp"]["status"], ActivityState> = {
+  connected: "success",
+  pending_verification: "waiting",
+  not_connected: "idle",
 };
+
+const WHATSAPP_LABEL: Record<FounderBusinessRow["whatsapp"]["status"], string> = {
+  connected: "Connected",
+  pending_verification: "Needs attention",
+  not_connected: "Not connected",
+};
+
+// Onboarding's label depends on two fields (onboarding_complete AND
+// onboarding_status) but its color only ever depended on onboarding_complete
+// — "Live" and "Setting up" were always the same secondary/grey. Preserved
+// exactly: only "Complete" gets the success dot.
+function onboardingState(b: FounderBusinessRow): ActivityState {
+  return b.onboarding_complete ? "success" : "idle";
+}
+
+function onboardingLabel(b: FounderBusinessRow): string {
+  if (b.onboarding_complete) return "Complete";
+  return b.onboarding_status === "live" ? "Live" : "Setting up";
+}
 
 function formatDuration(seconds: number | null): string {
   if (seconds == null) return "—";
@@ -195,14 +216,12 @@ export default function FounderOpsPage() {
                       </p>
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <Badge variant={b.onboarding_complete ? "success" : "secondary"}>
-                        {b.onboarding_complete ? "Complete" : b.onboarding_status === "live" ? "Live" : "Setting up"}
-                      </Badge>
+                      <StatusPill state={onboardingState(b)}>{onboardingLabel(b)}</StatusPill>
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <Badge variant={WHATSAPP_BADGE[b.whatsapp.status].variant}>
-                        {WHATSAPP_BADGE[b.whatsapp.status].label}
-                      </Badge>
+                      <StatusPill state={WHATSAPP_STATUS_STATE[b.whatsapp.status]}>
+                        {WHATSAPP_LABEL[b.whatsapp.status]}
+                      </StatusPill>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {b.whatsapp.display_phone_number ?? "No number yet"}
                       </p>
