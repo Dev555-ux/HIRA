@@ -13,16 +13,18 @@ import { useMemo } from "react";
 import { DashboardHero } from "@/components/dashboard-hero";
 import { EmptyState } from "@/components/empty-state";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
+import { ReviewReplyCard } from "@/components/review-reply-card";
 import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 import { useAppointments } from "@/hooks/use-appointments";
 import { useAuthContext } from "@/lib/auth-context";
 import { useConversations } from "@/hooks/use-conversations";
 import { useCustomers } from "@/hooks/use-customers";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
-import { usePending } from "@/hooks/use-pending";
+import { useApprove, usePending, useReject, useUpdateDraft } from "@/hooks/use-pending";
 import type { Appointment, PendingReply } from "@/lib/types";
 import { APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
 import { describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
@@ -262,27 +264,11 @@ export default function DashboardPage() {
                 className="border-0 py-12"
               />
             ) : (
-              <ul className="divide-y">
-                {pending!.slice(0, PREVIEW_ROWS).map((p: PendingReply) => {
-                  const name = customerLabel(p.customer);
-                  return (
-                    <li key={p.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="min-w-0 truncate text-sm font-medium">{name}</span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {formatRelativeTime(p.created_at)}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{p.body}</p>
-                      </div>
-                      <Badge variant="warning" className="shrink-0">
-                        Pending
-                      </Badge>
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="space-y-4">
+                {pending!.slice(0, PREVIEW_ROWS).map((p: PendingReply) => (
+                  <DashboardReviewCard key={p.id} reply={p} />
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -437,6 +423,54 @@ function StatusRow({
       <Badge variant={variant ?? (ok ? "success" : "secondary")}>
         {note ?? (ok ? "Operational" : "Off")}
       </Badge>
+    </div>
+  );
+}
+
+// M10: inline review, wired directly to the same use-pending.ts hooks (and
+// PENDING_KEY cache) this page's own "Pending approvals" KPI and this list
+// already read from — approve/reject optimistically remove the row and
+// decrement the KPI in the same tick, no waiting on a network round-trip or
+// the next poll. Deliberately not PendingReviewContainer (Inbox's Message +
+// usePendingReplyActions/CONVERSATIONS_KEY combination): reusing it here
+// would leave this list and the KPI tile disagreeing until the next 15s
+// poll. Customer name renders above the card since ReviewReplyCard has no
+// slot for it (correct for Inbox, where the conversation itself already
+// establishes who — this list spans multiple customers at once).
+function DashboardReviewCard({ reply }: { reply: PendingReply }) {
+  const { toast } = useToast();
+  const approve = useApprove();
+  const reject = useReject();
+  const updateDraft = useUpdateDraft();
+
+  const pending = approve.isPending || reject.isPending || updateDraft.isPending;
+  const onError = (action: string) => () =>
+    toast({ title: `Couldn't ${action} the reply`, description: "Please try again.", variant: "destructive" });
+
+  const review = reply.review;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-sm font-medium">{customerLabel(reply.customer)}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {formatRelativeTime(reply.created_at)}
+        </span>
+      </div>
+      <ReviewReplyCard
+        body={reply.body}
+        status={approve.isPending ? "sending" : "waiting"}
+        confidence={review?.confidence?.level ?? undefined}
+        groundedCount={review?.grounding?.retrieved_count ?? undefined}
+        groundingSources={review?.grounding?.sources ?? undefined}
+        generationStatus={review?.generation_status}
+        pending={pending}
+        onApprove={() => approve.mutate(reply.id, { onError: onError("approve") })}
+        onReject={() => reject.mutate(reply.id, { onError: onError("reject") })}
+        onEdit={(nextBody) =>
+          updateDraft.mutate({ id: reply.id, body: nextBody }, { onError: onError("save") })
+        }
+      />
     </div>
   );
 }

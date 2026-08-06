@@ -15,6 +15,9 @@ vi.mock("@/lib/api", () => ({
     listConversations: vi.fn(),
     listCustomers: vi.fn(),
     listAppointments: vi.fn(),
+    approveMessage: vi.fn(),
+    rejectMessage: vi.fn(),
+    updateDraft: vi.fn(),
   },
 }));
 
@@ -65,6 +68,13 @@ describe("DashboardPage", () => {
       meta: { total: 0, limit: 1, offset: 0 },
     });
     vi.mocked(api.listAppointments).mockResolvedValue([]);
+    vi.mocked(api.approveMessage).mockResolvedValue({ id: "msg-1", status: "sent" });
+    vi.mocked(api.rejectMessage).mockResolvedValue({ id: "msg-1", status: "rejected" });
+    vi.mocked(api.updateDraft).mockResolvedValue({
+      id: "msg-1",
+      body: "revised",
+      status: "pending_approval",
+    });
   });
 
   it("shows real conversation and customer totals from existing list endpoints", async () => {
@@ -128,7 +138,10 @@ describe("DashboardPage", () => {
       },
     ]);
     renderWithProviders(<DashboardPage />);
-    expect(await screen.findByText("Awaiting your review")).toBeInTheDocument();
+    // "Awaiting your review" also appears in the inline ReviewReplyCard's own
+    // StatusPill (M10) — scope to the KPI tile specifically.
+    const kpi = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-xl")!;
+    expect(await within(kpi).findByText("Awaiting your review")).toBeInTheDocument();
   });
 
   it("shows the pending-approval count and customer name", async () => {
@@ -362,5 +375,106 @@ describe("DashboardPage", () => {
     expect(api.listConversations).toHaveBeenCalled();
     expect(api.listCustomers).toHaveBeenCalled();
     expect(api.listAppointments).toHaveBeenCalled();
+  });
+
+  // M10: inline review wired directly on the Dashboard (not via
+  // PendingReviewContainer/CONVERSATIONS_KEY — see DashboardReviewCard's own
+  // comment) — these confirm the same use-pending.ts mutations Inbox and
+  // /pending already rely on behave identically when triggered from here,
+  // and that this section and the KPI tile never disagree afterward.
+  describe("inline review (M10)", () => {
+    const reply = {
+      id: "msg-1",
+      conversation_id: "conv-1",
+      body: "Yes, we're open!",
+      created_at: new Date().toISOString(),
+      customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
+      conversation_preview: null,
+    };
+
+    it("approve removes the card and decrements the KPI in the same tick", async () => {
+      // Once for the initial load; onSettled's invalidation refetches
+      // afterward, and the (mocked) backend now correctly reflects the
+      // approval — same as a real server response.
+      vi.mocked(api.listPending).mockResolvedValueOnce([reply]).mockResolvedValue([]);
+      const user = userEvent.setup();
+      renderWithProviders(<DashboardPage />);
+
+      await screen.findByText("Yes, we're open!");
+      const kpiBefore = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-xl")!;
+      expect(await within(kpiBefore).findByText("1")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /approve & send/i }));
+
+      // Optimistic PENDING_KEY update — no waiting on the network or the poll.
+      await waitFor(() => expect(screen.queryByText("Yes, we're open!")).not.toBeInTheDocument());
+      expect(api.approveMessage).toHaveBeenCalledWith(expect.any(Function), "msg-1");
+      const kpiAfter = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-xl")!;
+      expect(await within(kpiAfter).findByText("0")).toBeInTheDocument();
+    });
+
+    it("reject removes the card via the same optimistic PENDING_KEY update", async () => {
+      vi.mocked(api.listPending).mockResolvedValueOnce([reply]).mockResolvedValue([]);
+      const user = userEvent.setup();
+      renderWithProviders(<DashboardPage />);
+
+      await screen.findByText("Yes, we're open!");
+      await user.click(screen.getByRole("button", { name: /reject/i }));
+
+      await waitFor(() => expect(screen.queryByText("Yes, we're open!")).not.toBeInTheDocument());
+      expect(api.rejectMessage).toHaveBeenCalledWith(expect.any(Function), "msg-1");
+    });
+
+    it("edit saves the revised draft in place, without removing the card", async () => {
+      vi.mocked(api.listPending).mockResolvedValue([reply]);
+      const user = userEvent.setup();
+      renderWithProviders(<DashboardPage />);
+
+      await screen.findByText("Yes, we're open!");
+      await user.click(screen.getByRole("button", { name: /edit/i }));
+      const box = screen.getByLabelText(/edit reply/i);
+      await user.clear(box);
+      await user.type(box, "revised");
+      await user.click(screen.getByRole("button", { name: /save/i }));
+
+      await waitFor(() =>
+        expect(api.updateDraft).toHaveBeenCalledWith(expect.any(Function), "msg-1", "revised"),
+      );
+      // Still awaiting review, still visible — an edit doesn't remove the card.
+      // "Jordan Lee" also appears in Recent activity (existing behavior,
+      // unrelated to this change), so scope to "Needs your attention".
+      const section = (await screen.findByText("Needs your attention")).closest<HTMLElement>(".rounded-xl")!;
+      expect(within(section).getByText("Jordan Lee")).toBeInTheDocument();
+    });
+
+    it("surfaces a destructive toast when approve fails, leaving the card reviewable", async () => {
+      vi.mocked(api.listPending).mockResolvedValue([reply]);
+      vi.mocked(api.approveMessage).mockRejectedValueOnce(new Error("network"));
+      const user = userEvent.setup();
+      renderWithProviders(<DashboardPage />);
+
+      await screen.findByText("Yes, we're open!");
+      await user.click(screen.getByRole("button", { name: /approve & send/i }));
+
+      await waitFor(() => expect(screen.getByText("Yes, we're open!")).toBeInTheDocument());
+      expect(screen.getByRole("button", { name: /approve & send/i })).toBeEnabled();
+    });
+
+    it("previews only the first PREVIEW_ROWS pending replies", async () => {
+      const replies = Array.from({ length: 7 }, (_, i) => ({
+        ...reply,
+        id: `msg-${i}`,
+        conversation_id: `conv-${i}`,
+        body: `Reply body ${i}`,
+        customer: { id: `cust-${i}`, display_name: `Customer ${i}`, wa_phone: "+15551230000" },
+      }));
+      vi.mocked(api.listPending).mockResolvedValue(replies);
+      renderWithProviders(<DashboardPage />);
+
+      await screen.findByText("Reply body 0");
+      expect(screen.getByText("Reply body 4")).toBeInTheDocument();
+      expect(screen.queryByText("Reply body 5")).not.toBeInTheDocument();
+      expect(screen.queryByText("Reply body 6")).not.toBeInTheDocument();
+    });
   });
 });
