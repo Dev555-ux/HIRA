@@ -7,7 +7,8 @@ their inputs; support strongly typed (Pydantic) payloads; and dedupe on
 there is nothing to exercise beyond creation.
 
 Uses the shared `db_session` fixture (a real Postgres session, schema built via
-Base.metadata.create_all), matching tests/jobs/test_models.py.
+the real Alembic migration chain — see tests/conftest.py), matching
+tests/jobs/test_models.py.
 """
 
 import uuid

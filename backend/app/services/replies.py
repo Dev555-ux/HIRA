@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -31,9 +31,10 @@ from app.ai.prompts import SYSTEM_PROMPT_VERSION
 from app.ai.roles import RECEPTIONIST, role_for_tool
 from app.ai.tools import execute_tool_call, response_to_message_fields
 from app.calendar.providers.base import CalendarError
+from app.core.config import settings
 from app.db.tenant import get_scoped
 from app.models import Business, Conversation, Customer, Escalation, Message
-from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError, send_text
+from app.services.messaging import WhatsAppNotConnectedError, send_text
 from app.whatsapp.credentials import get_access_token, get_stored_credential
 
 
@@ -78,8 +79,16 @@ def approve_and_send(
     checked after claiming but before any tool call, so a booking can't
     execute with no way left to tell the customer it happened. Raises
     CalendarError (after marking the message failed) if a proposed tool call
-    fails to execute (e.g. the slot was taken meanwhile). Raises
-    WhatsAppSendError (after marking the message failed) if the send fails.
+    fails to execute (e.g. the slot was taken meanwhile). Raises whatever the
+    send raised (after marking the message failed and committing) if the
+    send fails — almost always WhatsAppSendError (every failure mode
+    app/services/messaging.py::send_text can anticipate is normalized to
+    it), but this function never assumes that's the only possibility: once
+    the message is claimed (below), every exit path — including an
+    unexpected exception type from `sender` — leaves it in a terminal state
+    (failed) before propagating, never stuck at "sending" (Critical audit
+    fix #2; see app/jobs/handlers.py::recover_stale_sending_messages for the
+    scheduled backstop covering anything that got stuck before this fix).
 
     Concurrency: two requests approving the same message race between this
     load and the eventual commit. Before any side effect (tool execution or
@@ -142,6 +151,14 @@ def approve_and_send(
             name=message.ai_meta["tool_name"],
             arguments=message.ai_meta["tool_arguments"],
         )
+        # Critical audit fix: a human explicitly clicking Approve on this
+        # exact pending tool call *is* the confirmation governance requires
+        # (DEC-032/DEC-033 already gate every Assisted-Mode tool call behind
+        # this review, governed or not) — human_approved=True satisfies
+        # app/ai/tools.py::execute_tool_call's confirmation gate regardless
+        # of any conversation-level pending_action state, which may have
+        # since moved on if the customer sent more messages while this item
+        # sat in the queue.
         result = execute_tool_call(
             db,
             business_id,
@@ -149,6 +166,7 @@ def approve_and_send(
             customer_id=customer.id,
             conversation_id=conversation.id,
             commit=False,
+            human_approved=True,
         )
         if not result.success:
             message.status = "failed"
@@ -170,10 +188,48 @@ def approve_and_send(
             message.body,
             access_token=get_access_token(credential),
         )
-    except WhatsAppSendError:
+    except Exception:
+        # Critical audit fix #2: previously `except WhatsAppSendError` only.
+        # app/services/messaging.py::send_text now normalizes every failure
+        # mode it can anticipate into WhatsAppSendError, but this message was
+        # already durably committed to status="sending" by the claim step
+        # above — the one guarantee this function must never break is that
+        # every path out of here leaves the message in a terminal state, not
+        # stuck at "sending" forever with no approve/reject/retry path back
+        # to it. Catching broadly (not just WhatsAppSendError) is what makes
+        # that a guarantee rather than a best effort: a `sender` this codebase
+        # doesn't control (tests inject their own; a future integration
+        # might) can always raise something send_text's own normalization
+        # never sees.
+        #
+        # Reuses the exact compensation this function already applies to its
+        # own final commit below (Section A4/Part C) rather than a second
+        # implementation: if persisting "failed" itself fails, the tool call
+        # already executed for real (booked/rescheduled/cancelled on the
+        # external calendar) with nothing local pointing to it, so
+        # on_commit_failure — set above only when a tool call ran with
+        # commit=False — cleans that up before the original exception
+        # propagates. When this commit succeeds (the common case), the
+        # tool's effect (e.g. the Appointment row) lands together with the
+        # failed message in the same transaction, exactly as intended by
+        # commit=False in the first place — nothing is orphaned.
         message.status = "failed"
-        db.commit()
-        logger.exception("Failed to send reply %s; marked failed", message_id)
+        message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "whatsapp_send_failed"}
+        try:
+            db.commit()
+        except Exception:
+            if on_commit_failure is not None:
+                on_commit_failure()
+            logger.exception(
+                "Failed to persist failed status for reply %s (business %s) after a send "
+                "error; compensating for any already-executed tool call",
+                message_id,
+                business_id,
+            )
+            raise
+        logger.exception(
+            "Failed to send reply %s (business %s); marked failed", message_id, business_id
+        )
         raise
 
     message.status = "sent"
@@ -324,3 +380,114 @@ def escalate_reply(
     db.refresh(escalation)
     logger.info("Escalated reply %s for business %s", message_id, business_id)
     return message, escalation
+
+
+def recover_stale_sending_messages(
+    db: Session,
+    *,
+    timeout_seconds: int | None = None,
+    batch_size: int = 500,
+) -> int:
+    """Critical audit fix #2, Part D: return Messages stuck in "sending" past
+    `timeout_seconds` (default `settings.stale_sending_message_timeout_seconds`)
+    to a terminal state. Meant to run periodically from a long-running worker
+    process (see app/jobs/worker.py::OutboxWorker.run_once, which calls this
+    every poll cycle alongside its own recover_zombies() — the same
+    "scheduled sweep inside an already-running process" shape, reused rather
+    than standing up a second scheduling mechanism for one more cleanup job).
+
+    Why this is still needed after approve_and_send()'s own broadened
+    exception handling (Part B above): that fix guarantees every *live*
+    approve_and_send() call resolves "sending" to a terminal status before
+    returning, including on an unexpected exception. It cannot guarantee
+    anything about a process that's killed outright (OOM, a host failure, a
+    deploy that SIGKILLs mid-request) — nothing raises in that case for any
+    exception handler to catch. This sweep is the backstop for exactly that
+    residual case, the same relationship app/jobs/worker.py's zombie sweep
+    has to its own per-job exception handling.
+
+    Query shape mirrors OutboxWorker.recover_zombies(): a partial index
+    (app/models.py's ix_messages_sending_updated, on (status, updated_at)
+    WHERE status='sending') keeps this a small, targeted scan regardless of
+    how large the messages table grows, and `FOR UPDATE SKIP LOCKED` makes
+    it safe to run from more than one worker process at once — two
+    concurrent sweeps split the stale set instead of double-processing any
+    one row. `batch_size` bounds how much work one call takes on, so a
+    worker loop calling this every poll cycle never stalls behind an
+    unusually large backlog.
+
+    Idempotent by construction: recovering a message changes its status
+    away from "sending", so it simply won't be selected by a later call —
+    there is no separate "already processed" flag to maintain, and no
+    partial-recovery state a re-run could double-apply.
+
+    Recovers to "failed", deliberately never back to "pending_approval":
+    nothing in this module's approval flow (see execute_tool_call) guards
+    against re-executing an already-executed tool call, so silently
+    re-queuing for a human to re-approve would risk a duplicate
+    booking/reschedule/cancellation if the original attempt's tool call had
+    in fact already gone through before its process died. A message whose
+    `type == "tool_call"` also gets an Escalation (reason="external_failure",
+    an existing, documented Escalation.reason value — see app/models.py):
+    this sweep has no way to confirm or rule out whether the tool's external
+    side effect (e.g. a calendar booking) already happened before the crash
+    — the local Appointment row it would have referenced was only flushed,
+    never committed, so a crash mid-attempt leaves no local trace either
+    way — so it surfaces that ambiguity to a human rather than guessing.
+
+    Returns the number of messages recovered (a plain count — the caller
+    logs/exposes it as a metric the same way OutboxWorker.recover_zombies()'s
+    own return value already is).
+    """
+    timeout = (
+        timeout_seconds
+        if timeout_seconds is not None
+        else settings.stale_sending_message_timeout_seconds
+    )
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=timeout)
+
+    stale = list(
+        db.scalars(
+            select(Message)
+            .where(Message.status == "sending", Message.updated_at < cutoff)
+            .order_by(Message.updated_at)
+            .limit(batch_size)
+            .with_for_update(skip_locked=True)
+        )
+    )
+    if not stale:
+        return 0
+
+    for message in stale:
+        stuck_for = datetime.now(timezone.utc).replace(tzinfo=None) - message.updated_at
+        message.status = "failed"
+        message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "stale_sending_recovered"}
+        logger.warning(
+            "Recovered stale sending message %s (business=%s conversation=%s type=%s "
+            "stuck_for=%ss) -> failed",
+            message.id,
+            message.business_id,
+            message.conversation_id,
+            message.type,
+            int(stuck_for.total_seconds()),
+        )
+        if message.type == "tool_call":
+            db.add(
+                Escalation(
+                    business_id=message.business_id,
+                    conversation_id=message.conversation_id,
+                    reason="external_failure",
+                    status="open",
+                )
+            )
+            logger.error(
+                "Stale sending message %s was a tool call (%s) for business %s — escalated "
+                "for manual review; an external side effect may have already occurred with "
+                "no local record of it",
+                message.id,
+                (message.ai_meta or {}).get("tool_name"),
+                message.business_id,
+            )
+
+    db.commit()
+    return len(stale)

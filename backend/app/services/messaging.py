@@ -45,6 +45,16 @@ def send_text(
     a caller can't accidentally fall through to a shared global token. Each
     business now has its own stored, encrypted access token
     (app/whatsapp/credentials.py); callers resolve it before calling this.
+
+    Critical audit fix #2: every failure this function can encounter — an
+    HTTP error status, a dropped connection, a timeout, or a 2xx response
+    whose body doesn't parse the way Meta's API contract promises (not
+    valid JSON, missing/renamed fields, an empty "messages" list, an
+    unexpected shape) — surfaces as exactly one exception type,
+    WhatsAppSendError. Callers (app/services/replies.py,
+    app/ai/processing.py) can treat "any exception from this function" as
+    "the send failed," full stop, without a partial except clause silently
+    missing a failure mode this function could raise.
     """
     url = (
         f"{settings.whatsapp_api_base}/{settings.whatsapp_graph_version}/{phone_number_id}/messages"
@@ -72,15 +82,50 @@ def send_text(
                     raise WhatsAppSendError(
                         f"Meta rejected message: {resp.status_code} {resp.text}"
                     )
-                data = resp.json()
-                wa_message_id = data["messages"][0]["id"]
 
-                return wa_message_id
-            except (httpx.TransportError, _RetryableSendError) as exc:
+                try:
+                    data = resp.json()
+                    return data["messages"][0]["id"]
+                except (ValueError, KeyError, IndexError, TypeError) as exc:
+                    # A 2xx status means Meta most likely already accepted
+                    # (and sent) this message — retrying here, like the 4xx
+                    # case above, would risk re-POSTing and duplicating a
+                    # message the customer may have already received, so
+                    # this fails immediately rather than going through the
+                    # retry path below. ValueError covers json.JSONDecodeError
+                    # (resp.json() raises a subclass of it) as well as a
+                    # non-dict body; KeyError/IndexError/TypeError cover a
+                    # 200 with an unexpected shape (a renamed/missing field,
+                    # an empty "messages" list, "messages" not being a list
+                    # at all, ...).
+                    raise WhatsAppSendError(
+                        f"Meta returned {resp.status_code} but the response body was not "
+                        f"a well-formed send confirmation: {exc!r}"
+                    ) from exc
+            except (httpx.RequestError, _RetryableSendError) as exc:
+                # httpx.RequestError (not just its TransportError subclass):
+                # every network/transport-shaped failure httpx itself can
+                # raise from client.post() — timeouts, connection errors,
+                # protocol errors — plus DecodingError (a corrupt
+                # transport-level response body, distinct from the JSON
+                # parsing failure above) and TooManyRedirects. All of these
+                # mean the request itself never definitively completed, so
+                # retrying is safe the same way a 5xx is.
                 last_error = exc
                 if attempt < max_attempts:
                     time.sleep(0.2 * attempt)
         raise WhatsAppSendError(f"Failed to send after {max_attempts} attempts: {last_error}")
+    except WhatsAppSendError:
+        raise
+    except Exception as exc:
+        # Safety net: no failure mode reaching this function should ever
+        # surface to a caller as anything other than WhatsAppSendError —
+        # see this function's own docstring. Anything not already
+        # anticipated above (an httpx internal this module didn't name, a
+        # bug in this function itself) still becomes one, rather than
+        # leaking a raw exception a caller has no reason to know how to
+        # handle (Critical audit fix #2, Part A).
+        raise WhatsAppSendError(f"Unexpected error sending WhatsApp message: {exc!r}") from exc
     finally:
         if owns_client:
             client.close()

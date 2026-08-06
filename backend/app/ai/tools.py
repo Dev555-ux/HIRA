@@ -36,6 +36,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.ai.governance import ExecutionDecision, evaluate_execution
 from app.ai.lead_tools import (
     LEAD_TOOL_NAMES,
     LEAD_TOOL_SCHEMAS,
@@ -187,6 +188,23 @@ def confirmation_message_for(tool_call: ToolCall, result: ToolExecutionResult) -
 MAX_TOOL_CALLS_PER_TURN = 2
 
 
+# Critical audit fix (governance bypass): every tool name here is checked
+# against app/ai/governance.py's policy for the mapped action *inside*
+# execute_tool_call — the one real chokepoint where a proposed action
+# becomes a write (see this module's own docstring) — instead of relying
+# only on app/ai/plan.py offering/withholding the tool schema in the first
+# place. app/ai/plan.py's classification is deliberately permissive (a
+# domain match with no specific action still offers every tool in that
+# domain — see its own tests) and was never meant to be the sole safety net
+# for a destructive action; this dict is. A future destructive tool becomes
+# governed by adding one entry here, pointing at its
+# app/ai/governance.py::_POLICIES action name — no other code changes.
+GOVERNED_TOOL_ACTIONS: dict[str, str] = {
+    RESCHEDULE_APPOINTMENT: "calendar_reschedule",
+    CANCEL_APPOINTMENT: "calendar_cancel",
+}
+
+
 def response_to_message_fields(response: LLMResponse) -> list[tuple[str, str, dict]]:
     """[(type, body, extra_ai_meta), ...] for storing an LLMResponse as one or
     more Message rows — one entry per proposed action, capped at
@@ -246,6 +264,8 @@ def execute_tool_call(
     customer_id: uuid.UUID,
     conversation_id: uuid.UUID | None,
     commit: bool = True,
+    pending_action: str | None = None,
+    human_approved: bool = False,
 ) -> ToolExecutionResult:
     """Executes a write tool (calendar or CRM) for real.
 
@@ -259,7 +279,43 @@ def execute_tool_call(
     own Message update in one atomic commit instead. reschedule_appointment
     and cancel_appointment are unaffected — out of scope for A4, they keep
     committing internally regardless of `commit`.
+
+    Governance (critical audit fix): for a tool in GOVERNED_TOOL_ACTIONS,
+    this refuses to execute unless the caller proves confirmation — either
+    `human_approved=True` (a human explicitly approved this exact tool call
+    in Assisted Mode's dashboard, which is itself a valid confirmation, and
+    satisfies even a REQUIRES_HUMAN_APPROVAL-tier policy) or `pending_action`
+    equals the tool's mapped action (the conversation already went through
+    governance.py's REQUIRES_CONFIRMATION flow in a prior turn — see
+    app/services/execution_traces.py::get_pending_action). Callers fetch
+    `pending_action` themselves (a cheap, read-only lookup); this function
+    only judges it, never derives it from `tool_call` or from how the
+    calling turn was classified — that independence from intent
+    classification is the entire point of gating here rather than only in
+    app/ai/plan.py.
     """
+    governed_action = GOVERNED_TOOL_ACTIONS.get(tool_call.name)
+    if governed_action is not None and not human_approved:
+        decision = evaluate_execution(governed_action).decision
+        confirmed_by_customer = (
+            decision == ExecutionDecision.REQUIRES_CONFIRMATION
+            and pending_action == governed_action
+        )
+        if decision != ExecutionDecision.EXECUTE_NOW and not confirmed_by_customer:
+            logger.warning(
+                "Refused to execute %s for business %s: governance policy for '%s' is "
+                "%s and no confirmation (human approval or a matching prior-turn "
+                "pending_action) was established.",
+                tool_call.name,
+                business_id,
+                governed_action,
+                decision.value,
+            )
+            return ToolExecutionResult(
+                False,
+                "This action needs to be confirmed with the customer before it can be completed.",
+            )
+
     if tool_call.name in LEAD_TOOL_NAMES:
         return execute_lead_tool_call(
             db, business_id, tool_call, customer_id=customer_id, commit=commit

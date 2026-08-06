@@ -144,7 +144,21 @@ class Conversation(Base):
 
 class Message(Base):
     __tablename__ = "messages"
-    __table_args__ = (Index("ix_messages_conversation_created", "conversation_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+        # Critical audit fix #2, Part D: backs
+        # app/services/replies.py::recover_stale_sending_messages' sweep for
+        # Messages stuck in "sending" past a timeout — partial, same
+        # reasoning as app/jobs/models.py's ix_job_outbox_zombie, since
+        # "sending" is always a tiny, transient slice of a table that
+        # otherwise grows unboundedly with every inbound/outbound message.
+        Index(
+            "ix_messages_sending_updated",
+            "status",
+            "updated_at",
+            postgresql_where=text("status = 'sending'"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(
@@ -162,6 +176,13 @@ class Message(Base):
     )  # received | pending_approval | sending | sent | failed | rejected | escalated
     ai_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Critical audit fix #2, Part D: the only way to tell how long a Message
+    # has been sitting in its *current* status (specifically "sending" —
+    # see recover_stale_sending_messages above) — created_at reflects when
+    # the row was first written (e.g. when an Assisted-Mode draft entered
+    # the pending-approval queue), which can be arbitrarily long before a
+    # human later approves it and it briefly moves through "sending".
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
 class KbEntry(Base):
@@ -341,7 +362,26 @@ class ExecutionTrace(Base):
     """
 
     __tablename__ = "execution_traces"
-    __table_args__ = (Index("ix_execution_traces_business_created", "business_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_execution_traces_business_created", "business_id", "created_at"),
+        # Critical audit fix #3, Part C: backs
+        # app/ai/processing.py::generate_reply_into_session's idempotency
+        # check ("has this trigger already been processed?") — without it,
+        # that check would be a full scan of a table that grows with every
+        # customer turn forever. Partial + unique, not just an index: NULL
+        # coexists many times over (same reasoning as Business.
+        # whatsapp_phone_number_id / Message.wa_message_id elsewhere in this
+        # file), but a *real* trigger_message_id can back at most one
+        # committed trace — this is the actual, DB-enforced backstop against
+        # ever durably recording two replies for the same inbound message,
+        # not just an optimization.
+        Index(
+            "uq_execution_traces_trigger_message_id",
+            "trigger_message_id",
+            unique=True,
+            postgresql_where=text("trigger_message_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     business_id: Mapped[uuid.UUID] = mapped_column(

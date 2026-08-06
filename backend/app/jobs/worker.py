@@ -184,6 +184,7 @@ class OutboxWorker:
         decide whether to sleep.
         """
         self.recover_zombies()
+        self.recover_stale_sending_messages()
 
         claimed_ids = self._claim_batch()
         if not claimed_ids:
@@ -417,6 +418,33 @@ class OutboxWorker:
                 self.worker_id,
             )
         return len(recovered_ids)
+
+    def recover_stale_sending_messages(self) -> int:
+        """Critical audit fix #2, Part D: sweep for Messages stuck in
+        "sending" past their timeout — the same shape as recover_zombies()
+        above (same reason to run it every poll cycle: this worker process
+        is already the one long-running, continuously-scheduled loop in
+        this codebase — see scripts/run_worker.py), applied to a different
+        table's own "claimed but never resolved" state. All the actual
+        logic (the query, the terminal-state transition, the tool_call
+        escalation) lives in app/services/replies.py, right next to the
+        approve_and_send() state machine it recovers — this just supplies
+        the periodic trigger, via this worker's own session lifecycle.
+
+        Imported locally, not at module level: app/jobs/__init__.py imports
+        this module eagerly (`from app.jobs.worker import OutboxWorker`),
+        and app/models.py imports app.jobs.models at module scope too — a
+        top-level import here of app.services.replies (which pulls in the
+        whole app.ai.* chain, which imports app.models for its own ORM
+        classes) closes a real cycle back through app.models while it's
+        still mid-definition. Deferring the import to call time breaks that
+        cycle without changing app/jobs/__init__.py's or app/models.py's own
+        existing import shape.
+        """
+        from app.services.replies import recover_stale_sending_messages
+
+        with self._session() as db:
+            return recover_stale_sending_messages(db)
 
     # ------------------------------------------------------------------ shutdown
 

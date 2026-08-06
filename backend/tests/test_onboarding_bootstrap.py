@@ -185,9 +185,10 @@ def test_seed_facts_inserts_and_is_idempotent(db_session, monkeypatch):
 
 
 def test_bootstrap_seed_business_wires_business_module(db_session, monkeypatch):
-    # `db_session` only exists here to create the schema (create_all/drop_all);
-    # bootstrap.seed_business() opens its own session via the monkeypatched
-    # SessionLocal, matching how app.ai.processing is tested (test_orchestrator.py).
+    # `db_session` only exists here to ensure the (migrated) schema is in
+    # place before this test runs; bootstrap.seed_business() opens its own
+    # session via the monkeypatched SessionLocal, matching how
+    # app.ai.processing is tested (test_orchestrator.py).
     test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
     monkeypatch.setattr(bootstrap, "SessionLocal", test_sessionmaker)
 

@@ -2,10 +2,11 @@
 
 import threading
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
@@ -23,6 +24,7 @@ from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError
 from app.services.replies import (
     approve_and_send,
     escalate_reply,
+    recover_stale_sending_messages,
     regenerate_draft,
     reject_reply,
     update_draft,
@@ -451,7 +453,17 @@ def test_approve_tool_call_executes_then_sends(db_session, monkeypatch):
 def test_approve_tool_call_marks_failed_when_execution_fails(db_session, monkeypatch):
     biz, _, msg = _pending_tool_call_reply(db_session)
 
-    def _fails(db, business_id, tool_call, *, customer_id, conversation_id, commit=True):
+    def _fails(
+        db,
+        business_id,
+        tool_call,
+        *,
+        customer_id,
+        conversation_id,
+        commit=True,
+        pending_action=None,
+        human_approved=False,
+    ):
         from app.ai.tools import ToolExecutionResult
 
         return ToolExecutionResult(False, "slot no longer available")
@@ -554,7 +566,15 @@ def test_concurrent_approve_tool_call_executes_tool_exactly_once(db_session, mon
     call_lock = threading.Lock()
 
     def fake_execute_tool_call(
-        db, business_id, tool_call, *, customer_id, conversation_id, commit=True
+        db,
+        business_id,
+        tool_call,
+        *,
+        customer_id,
+        conversation_id,
+        commit=True,
+        pending_action=None,
+        human_approved=False,
     ):
         with call_lock:
             call_count["n"] += 1
@@ -726,3 +746,255 @@ def test_escalate_reply_is_tenant_scoped(db_session):
 
     with pytest.raises(ValueError):
         escalate_reply(db_session, other_business_id, msg.id)
+
+
+# --- Critical audit fix #2, Part B/C: safe failure handling on send --------
+
+
+def test_approve_and_send_marks_failed_on_a_non_whatsapp_send_error(db_session):
+    """Previously only `except WhatsAppSendError` — any other exception from
+    `sender` propagated uncaught, leaving the message stuck at "sending"
+    forever (the message was already durably committed to "sending" by the
+    claim step). This is a plain-text reply, so there's no tool call and
+    nothing to orphan — just the core guarantee: any exception, not just
+    WhatsAppSendError, must still leave the message in a terminal state."""
+    biz, _, msg = _pending_reply(db_session)
+    message_id, business_id = msg.id, biz.id
+
+    def broken_sender(*_args, **_kwargs):
+        raise KeyError("some_unexpected_bug_in_a_custom_sender")
+
+    with pytest.raises(KeyError):
+        approve_and_send(db_session, business_id, message_id, sender=broken_sender)
+
+    db_session.expire_all()
+    recovered = db_session.get(Message, message_id)
+    assert recovered.status == "failed"
+    assert recovered.ai_meta["failure_reason"] == "whatsapp_send_failed"
+
+
+def test_approve_and_send_marks_failed_without_orphaning_a_real_booking(db_session, monkeypatch):
+    """The exact scenario the audit named: a tool call already executed for
+    real (flushed, commit=False) before the send fails with something other
+    than WhatsAppSendError. The message must end up "failed" *and* the
+    already-executed booking must not be lost — reusing this function's
+    existing compensation path (Section A4/Part C), the two land together
+    in the same commit rather than needing a second implementation."""
+    biz, customer, msg = _pending_tool_call_reply(db_session)
+    message_id, business_id = msg.id, biz.id
+    monkeypatch.setattr(
+        "app.ai.tools.get_appointment_service",
+        lambda db, business_id: AppointmentService(
+            db, business_id, MockCalendarProvider(), calendar_id="primary"
+        ),
+    )
+
+    def broken_sender(*_args, **_kwargs):
+        raise TimeoutError("a transport-level failure that isn't WhatsAppSendError")
+
+    with pytest.raises(TimeoutError):
+        approve_and_send(db_session, business_id, message_id, sender=broken_sender)
+
+    db_session.expire_all()
+    recovered = db_session.get(Message, message_id)
+    assert recovered.status == "failed"
+    assert recovered.ai_meta["failure_reason"] == "whatsapp_send_failed"
+    # The booking that already executed is not orphaned — it landed in the
+    # same commit as the message's failed status.
+    appointments = db_session.scalars(select(Appointment)).all()
+    assert len(appointments) == 1
+    assert recovered.ai_meta["tool_result"] == "Appointment booked."
+
+
+def test_approve_and_send_compensates_when_the_failure_commit_itself_fails(db_session, monkeypatch):
+    """Rarer, harder case: the send fails with a non-WhatsAppSendError *and*
+    persisting "failed" also fails (e.g. a transient DB blip). Reuses the
+    exact on_commit_failure compensation this module's final commit already
+    relies on (see test_assisted_mode_final_commit_failure_leaves_no_orphaned_appointment
+    above) rather than a second implementation — the already-booked external
+    calendar event must be cancelled, not left dangling with nothing local
+    pointing to it."""
+    biz, customer, msg = _pending_tool_call_reply(db_session)
+    message_id, business_id = msg.id, biz.id
+    provider = MockCalendarProvider()
+    monkeypatch.setattr(
+        "app.ai.tools.get_appointment_service",
+        lambda db, business_id: AppointmentService(
+            db, business_id, provider, calendar_id="primary"
+        ),
+    )
+
+    original_commit = db_session.commit
+    commit_calls = {"n": 0}
+
+    def flaky_commit():
+        commit_calls["n"] += 1
+        if commit_calls["n"] == 2:  # 1 = the claim commit, 2 = the failed-send commit
+            raise SQLAlchemyError("simulated DB failure while persisting the failed status")
+        return original_commit()
+
+    monkeypatch.setattr(db_session, "commit", flaky_commit)
+
+    def broken_sender(*_args, **_kwargs):
+        raise ConnectionResetError("dropped mid-request")
+
+    with pytest.raises(SQLAlchemyError):
+        approve_and_send(db_session, business_id, message_id, sender=broken_sender)
+
+    monkeypatch.setattr(db_session, "commit", original_commit)
+    db_session.rollback()
+
+    # No orphaned local Appointment row (its flushed insert rolled back).
+    assert db_session.scalars(select(Appointment)).all() == []
+    # ...and the external calendar event it had already created for real was
+    # cleaned up via the reused on_commit_failure compensation.
+    assert all(e.status == "cancelled" for e in provider._events.values())
+
+
+# --- Critical audit fix #2, Part D: stale "sending" recovery ----------------
+
+
+def _stuck_sending_reply(db, *, message_type="text", stuck_for_seconds=None, business_phone=None):
+    """A Message already claimed into "sending" (mirrors approve_and_send's
+    own claim step), backdated past the default recovery timeout unless a
+    different `stuck_for_seconds` is given. business_phone defaults to a
+    fresh value each call so multiple calls in one test (a mixed-batch
+    sweep) don't collide on businesses.whatsapp_phone_number_id's unique
+    constraint."""
+    business_phone = business_phone or f"PN-{uuid.uuid4().hex[:8]}"
+    biz = Business(name="Clinic A", whatsapp_phone_number_id=business_phone)
+    db.add(biz)
+    db.flush()
+    customer = Customer(business_id=biz.id, wa_phone="+15551230000")
+    db.add(customer)
+    db.flush()
+    conv = Conversation(business_id=biz.id, customer_id=customer.id)
+    db.add(conv)
+    db.flush()
+    ai_meta = (
+        {"tool_name": BOOK_APPOINTMENT, "tool_arguments": {}}
+        if message_type == "tool_call"
+        else None
+    )
+    msg = Message(
+        conversation_id=conv.id,
+        business_id=biz.id,
+        direction="outbound",
+        body="Yes, we're open 9-5 on weekdays.",
+        type=message_type,
+        status="sending",
+        ai_meta=ai_meta,
+    )
+    db.add(msg)
+    db.flush()
+
+    if stuck_for_seconds is None:
+        stuck_for_seconds = settings.stale_sending_message_timeout_seconds + 60
+    backdated = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        seconds=stuck_for_seconds
+    )
+    # A direct Core UPDATE, bypassing the ORM's onupdate=func.now() default,
+    # to simulate "this row has genuinely sat in sending for a while" —
+    # exactly the state a process dying mid-send would leave behind.
+    db.execute(update(Message).where(Message.id == msg.id).values(updated_at=backdated))
+    db.commit()
+    db.refresh(msg)
+    return biz, conv, msg
+
+
+def test_recover_stale_sending_messages_recovers_a_stuck_text_message(db_session):
+    _, _, msg = _stuck_sending_reply(db_session, message_type="text")
+
+    recovered_count = recover_stale_sending_messages(db_session)
+
+    assert recovered_count == 1
+    db_session.expire_all()
+    recovered = db_session.get(Message, msg.id)
+    assert recovered.status == "failed"
+    assert recovered.ai_meta["failure_reason"] == "stale_sending_recovered"
+    assert db_session.scalars(select(Escalation)).all() == []  # text messages aren't escalated
+
+
+def test_recover_stale_sending_messages_escalates_a_stuck_tool_call_message(db_session):
+    """A tool_call message might have already executed a real external side
+    effect before its process died — this sweep can't know either way, so
+    it must flag a human rather than silently guessing."""
+    biz, conv, msg = _stuck_sending_reply(db_session, message_type="tool_call")
+
+    recovered_count = recover_stale_sending_messages(db_session)
+
+    assert recovered_count == 1
+    db_session.expire_all()
+    recovered = db_session.get(Message, msg.id)
+    assert recovered.status == "failed"
+    escalations = db_session.scalars(select(Escalation)).all()
+    assert len(escalations) == 1
+    assert escalations[0].business_id == biz.id
+    assert escalations[0].conversation_id == conv.id
+    assert escalations[0].reason == "external_failure"
+    assert escalations[0].status == "open"
+
+
+def test_recover_stale_sending_messages_ignores_messages_within_the_timeout(db_session):
+    _, _, msg = _stuck_sending_reply(db_session, stuck_for_seconds=5)  # well under the timeout
+
+    recovered_count = recover_stale_sending_messages(db_session)
+
+    assert recovered_count == 0
+    db_session.expire_all()
+    still_sending = db_session.get(Message, msg.id)
+    assert still_sending.status == "sending"
+
+
+@pytest.mark.parametrize("other_status", ["pending_approval", "sent", "failed", "rejected"])
+def test_recover_stale_sending_messages_ignores_non_sending_messages(db_session, other_status):
+    _, _, msg = _stuck_sending_reply(db_session)
+    db_session.execute(update(Message).where(Message.id == msg.id).values(status=other_status))
+    db_session.commit()
+
+    recovered_count = recover_stale_sending_messages(db_session)
+
+    assert recovered_count == 0
+
+
+def test_recover_stale_sending_messages_respects_a_custom_timeout(db_session):
+    """timeout_seconds overrides settings.stale_sending_message_timeout_seconds."""
+    _, _, msg = _stuck_sending_reply(db_session, stuck_for_seconds=30)
+
+    assert recover_stale_sending_messages(db_session, timeout_seconds=60) == 0
+    assert recover_stale_sending_messages(db_session, timeout_seconds=10) == 1
+    db_session.expire_all()
+    assert db_session.get(Message, msg.id).status == "failed"
+
+
+def test_recover_stale_sending_messages_is_idempotent_on_repeat_calls(db_session):
+    """The core retry-idempotency guarantee: recovering a message moves it
+    out of status="sending", so a second sweep (the normal case for a
+    periodic worker cycle) is a safe no-op for it — no double recovery, no
+    duplicate escalation."""
+    _, _, msg = _stuck_sending_reply(db_session, message_type="tool_call")
+
+    first_pass = recover_stale_sending_messages(db_session)
+    second_pass = recover_stale_sending_messages(db_session)
+
+    assert first_pass == 1
+    assert second_pass == 0
+    escalations = db_session.scalars(select(Escalation)).all()
+    assert len(escalations) == 1  # not duplicated by the second pass
+
+
+def test_recover_stale_sending_messages_handles_a_mixed_batch(db_session):
+    """One sweep recovers every stale message across every business it
+    touches, and leaves fresh/non-"sending" ones alone — the shape a real
+    periodic sweep actually runs against."""
+    _, _, stale_text = _stuck_sending_reply(db_session, message_type="text")
+    _, _, stale_tool_call = _stuck_sending_reply(db_session, message_type="tool_call")
+    _, _, fresh = _stuck_sending_reply(db_session, stuck_for_seconds=5)
+
+    recovered_count = recover_stale_sending_messages(db_session)
+
+    assert recovered_count == 2
+    db_session.expire_all()
+    assert db_session.get(Message, stale_text.id).status == "failed"
+    assert db_session.get(Message, stale_tool_call.id).status == "failed"
+    assert db_session.get(Message, fresh.id).status == "sending"

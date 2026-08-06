@@ -339,11 +339,48 @@ def test_execute_reschedule_finds_upcoming_appointment(db_session, monkeypatch):
     )
 
     result = execute_tool_call(
-        db_session, biz.id, tool_call, customer_id=customer.id, conversation_id=None
+        db_session,
+        biz.id,
+        tool_call,
+        customer_id=customer.id,
+        conversation_id=None,
+        human_approved=True,
     )
 
     assert result.success is True
     assert result.appointment_id == appointment.id
+
+
+def test_execute_reschedule_without_confirmation_is_refused(db_session, monkeypatch):
+    """Critical audit fix: reschedule is governance-gated (REQUIRES_CONFIRMATION)
+    — executing it with neither human_approved nor a matching pending_action
+    must be refused before it ever reaches the calendar provider."""
+    biz, customer = _business_customer(db_session)
+    service = _mock_appointment_service(db_session, biz.id)
+    starts_at = NOW + timedelta(hours=2)
+    ends_at = starts_at + timedelta(minutes=30)
+    service.book_appointment(
+        customer_id=customer.id,
+        conversation_id=None,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        summary="Dental cleaning",
+    )
+    monkeypatch.setattr("app.ai.tools.get_appointment_service", lambda db, business_id: service)
+    new_starts_at = starts_at + timedelta(hours=3)
+    new_ends_at = new_starts_at + timedelta(minutes=30)
+    tool_call = ToolCall(
+        id="1",
+        name=RESCHEDULE_APPOINTMENT,
+        arguments={"starts_at": new_starts_at.isoformat(), "ends_at": new_ends_at.isoformat()},
+    )
+
+    result = execute_tool_call(
+        db_session, biz.id, tool_call, customer_id=customer.id, conversation_id=None
+    )
+
+    assert result.success is False
+    assert "confirm" in result.message.lower()
 
 
 def test_execute_reschedule_without_upcoming_appointment_fails_gracefully(db_session, monkeypatch):
@@ -362,7 +399,12 @@ def test_execute_reschedule_without_upcoming_appointment_fails_gracefully(db_ses
     )
 
     result = execute_tool_call(
-        db_session, biz.id, tool_call, customer_id=customer.id, conversation_id=None
+        db_session,
+        biz.id,
+        tool_call,
+        customer_id=customer.id,
+        conversation_id=None,
+        human_approved=True,
     )
 
     assert result.success is False
@@ -385,11 +427,105 @@ def test_execute_cancel_appointment(db_session, monkeypatch):
     tool_call = ToolCall(id="1", name=CANCEL_APPOINTMENT, arguments={})
 
     result = execute_tool_call(
-        db_session, biz.id, tool_call, customer_id=customer.id, conversation_id=None
+        db_session,
+        biz.id,
+        tool_call,
+        customer_id=customer.id,
+        conversation_id=None,
+        human_approved=True,
     )
 
     assert result.success is True
     assert result.appointment_id == appointment.id
+
+
+def test_execute_cancel_without_confirmation_is_refused(db_session, monkeypatch):
+    """Critical audit fix: same as reschedule above — cancel_appointment is
+    REQUIRES_CONFIRMATION and must never execute without proof of it, even
+    when there *is* a real upcoming appointment to cancel."""
+    biz, customer = _business_customer(db_session)
+    service = _mock_appointment_service(db_session, biz.id)
+    starts_at = NOW + timedelta(hours=2)
+    ends_at = starts_at + timedelta(minutes=30)
+    appointment = service.book_appointment(
+        customer_id=customer.id,
+        conversation_id=None,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        summary="Dental cleaning",
+    )
+    monkeypatch.setattr("app.ai.tools.get_appointment_service", lambda db, business_id: service)
+    tool_call = ToolCall(id="1", name=CANCEL_APPOINTMENT, arguments={})
+
+    result = execute_tool_call(
+        db_session, biz.id, tool_call, customer_id=customer.id, conversation_id=None
+    )
+
+    assert result.success is False
+    assert "confirm" in result.message.lower()
+    # The refusal happened before any write — the appointment is untouched.
+    db_session.refresh(appointment)
+    assert appointment.status == "booked"
+
+
+def test_execute_cancel_with_matching_pending_action_succeeds(db_session, monkeypatch):
+    """The AI-mediated confirmation path (DEC-051): a matching pending_action
+    from a prior turn satisfies governance without a human in the loop."""
+    biz, customer = _business_customer(db_session)
+    service = _mock_appointment_service(db_session, biz.id)
+    starts_at = NOW + timedelta(hours=2)
+    ends_at = starts_at + timedelta(minutes=30)
+    appointment = service.book_appointment(
+        customer_id=customer.id,
+        conversation_id=None,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        summary="Dental cleaning",
+    )
+    monkeypatch.setattr("app.ai.tools.get_appointment_service", lambda db, business_id: service)
+    tool_call = ToolCall(id="1", name=CANCEL_APPOINTMENT, arguments={})
+
+    result = execute_tool_call(
+        db_session,
+        biz.id,
+        tool_call,
+        customer_id=customer.id,
+        conversation_id=None,
+        pending_action="calendar_cancel",
+    )
+
+    assert result.success is True
+    assert result.appointment_id == appointment.id
+
+
+def test_execute_cancel_with_mismatched_pending_action_is_refused(db_session, monkeypatch):
+    """A pending_action for a *different* action (e.g. the customer confirmed
+    a reschedule, not a cancel) must not authorize cancel_appointment."""
+    biz, customer = _business_customer(db_session)
+    service = _mock_appointment_service(db_session, biz.id)
+    starts_at = NOW + timedelta(hours=2)
+    ends_at = starts_at + timedelta(minutes=30)
+    service.book_appointment(
+        customer_id=customer.id,
+        conversation_id=None,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        summary="Dental cleaning",
+    )
+    monkeypatch.setattr("app.ai.tools.get_appointment_service", lambda db, business_id: service)
+    tool_call = ToolCall(id="1", name=CANCEL_APPOINTMENT, arguments={})
+
+    result = execute_tool_call(
+        db_session,
+        biz.id,
+        tool_call,
+        customer_id=customer.id,
+        conversation_id=None,
+        pending_action="calendar_reschedule",
+    )
+
+    assert result.success is False
+    assert "confirm" in result.message.lower()
 
 
 def test_execute_tool_call_with_bad_arguments_fails_gracefully(db_session, monkeypatch):

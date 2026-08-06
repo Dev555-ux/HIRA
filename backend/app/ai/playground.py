@@ -34,7 +34,7 @@ from app.ai.plan import ExecutionPlan
 from app.ai.roles import RECEPTIONIST, role_for_tool
 from app.ai.tools import confirmation_message_for, execute_tool_call, response_to_message_fields
 from app.models import Conversation, Customer, KbEntry, Message
-from app.services.execution_traces import record_execution_trace
+from app.services.execution_traces import get_pending_action, record_execution_trace
 
 logger = logging.getLogger(__name__)
 
@@ -175,12 +175,17 @@ def playground_reply(
                 name=extra_ai_meta["tool_name"],
                 arguments=extra_ai_meta["tool_arguments"],
             )
+            # Critical audit fix: Demo Chat has no human reviewer either (see
+            # this module's docstring), so it needs the same confirmation
+            # proof Autonomous Mode's _auto_send provides — see
+            # app/ai/processing.py for the full reasoning.
             result = execute_tool_call(
                 db,
                 business_id,
                 tool_call,
                 customer_id=conversation.customer_id,
                 conversation_id=conversation.id,
+                pending_action=get_pending_action(db, conversation.id),
             )
             ai_meta["tool_result"] = result.message
             tool_outcome = {"name": tool_call.name, "success": result.success}

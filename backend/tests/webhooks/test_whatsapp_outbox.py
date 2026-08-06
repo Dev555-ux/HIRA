@@ -214,13 +214,17 @@ class TestWorkerExecution:
         expected_message = uuid.UUID(job.payload["message_id"])
 
         # Stub the deep AI work; we're testing the outbox->handler wiring, not
-        # generation internals (covered by the AI test suite).
+        # generation internals (covered by the AI test suite). The handler now
+        # calls generate_reply_into_session(db, ...) through the worker's own
+        # session (Critical audit fix #3) rather than the self-contained
+        # generate_and_store_reply, so the stub's signature takes `db` too.
         calls: list[tuple] = []
 
-        def fake_generate(conversation_id, message_id, user_text, **kw):
+        def fake_generate(db, conversation_id, message_id, user_text, **kw):
             calls.append((conversation_id, message_id, user_text))
+            return []
 
-        monkeypatch.setattr(ai_tasks, "generate_and_store_reply", fake_generate)
+        monkeypatch.setattr(ai_tasks, "generate_reply_into_session", fake_generate)
 
         # Release the webhook's transaction so the worker's own session can claim.
         db_session.rollback()
@@ -248,7 +252,7 @@ class TestWorkerExecution:
         ran_inline: list[str] = []
         monkeypatch.setattr(
             ai_tasks,
-            "generate_and_store_reply",
+            "generate_reply_into_session",
             lambda *a, **k: ran_inline.append("ran"),
         )
 

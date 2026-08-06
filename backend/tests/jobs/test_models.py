@@ -5,10 +5,11 @@ ORM model (columns / server defaults), its indexes, and the Alembic migration
 that creates the table. No enqueue, worker, or webhook behaviour exists yet, so
 there is nothing runtime to exercise here — those arrive in later PRs.
 
-The ORM tests use the shared `db_session` fixture (schema built via
-Base.metadata.create_all). The migration test runs the real migration's
-upgrade()/downgrade() against Postgres inside a rolled-back transaction, so it
-exercises the actual DDL without polluting the shared test database.
+The ORM tests use the shared `db_session` fixture (schema built via the real
+Alembic migration chain — see tests/conftest.py). The migration test runs the
+real migration's upgrade()/downgrade() against Postgres inside a rolled-back
+transaction, so it exercises the actual DDL without polluting the shared test
+database.
 """
 
 import importlib.util
@@ -149,9 +150,15 @@ class TestJobOutboxMigration:
         assert module.down_revision == "71b629d0085b"
 
     def test_migration_leaves_a_single_head(self):
+        # Pinned to the current chain tip, not literally c8f2e91a4b3d (this
+        # PR's own migration) — bumped whenever a later migration is
+        # appended (most recently 82bc3b6617e7, High-priority audit fix: CI
+        # tests against real migrations — the two indexes it adds are
+        # exactly the drift the new alembic-built test schema surfaced),
+        # same maintenance this assertion has always implied.
         cfg = Config(str(BACKEND_DIR / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["c8f2e91a4b3d"]
+        assert script.get_heads() == ["82bc3b6617e7"]
 
     def test_upgrade_then_downgrade_round_trips(self):
         module = _load_migration_module()
@@ -159,6 +166,18 @@ class TestJobOutboxMigration:
         conn = engine.connect()
         trans = conn.begin()
         try:
+            # High-priority audit fix (CI tests against real migrations):
+            # the shared test database is now built by the *real* migration
+            # chain once per session (tests/conftest.py), so job_outbox
+            # (and businesses) already exist here — unlike before, when
+            # this ran against a database Base.metadata.create_all() never
+            # touched. Drop them within this same rolled-back transaction
+            # first, so module.upgrade() below still starts from the clean
+            # "table doesn't exist yet" state it's actually testing —
+            # trans.rollback() at the end restores the session-wide schema
+            # exactly as it was, unaffected by any of this.
+            conn.execute(text("DROP TABLE IF EXISTS job_outbox CASCADE"))
+            conn.execute(text("DROP TYPE IF EXISTS job_status CASCADE"))
             # job_outbox.business_id is an FK onto businesses(id); the migration
             # assumes that table already exists in the real chain.
             Base.metadata.tables["businesses"].create(conn, checkfirst=True)

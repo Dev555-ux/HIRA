@@ -178,6 +178,17 @@ class Settings(BaseSettings):
     outbox_backoff_base_seconds: float = 2.0  # exponential retry base: base**attempts seconds
     outbox_backoff_max_seconds: float = 3600.0  # cap on a single retry delay (1 hour)
 
+    # Stale "sending" message recovery (Critical audit fix #2, Part D). A
+    # normal send completes in seconds (app/services/messaging.py::send_text
+    # itself times out well under a minute even across all its retries); a
+    # Message still claimed "sending" past this many seconds means the
+    # process handling it died mid-send (the one failure mode ordinary
+    # exception handling in app/services/replies.py::approve_and_send can't
+    # catch, since nothing raises when a process is killed outright) — see
+    # app/services/replies.py::recover_stale_sending_messages. Deliberately
+    # configurable, same reasoning as outbox_zombie_timeout_seconds above.
+    stale_sending_message_timeout_seconds: int = 300
+
     @model_validator(mode="after")
     def _reject_insecure_production_secrets(self) -> "Settings":
         """SEC-1: whatsapp_verify_token/app_secret/access_token default to
