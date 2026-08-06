@@ -3,11 +3,13 @@
 import { AlertTriangle, ArrowRight, CheckCircle2, RefreshCw, UserMinus, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import type { ActivityState } from "@/components/ui/activity-dot";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -44,6 +46,16 @@ const REASON_LABEL: Record<EscalationReason, string> = {
   external_failure: "Message failed to send",
   automation_failed: "Autonomous action couldn't complete",
   other: "Other",
+};
+
+// M8: StatusPill's status→dot-color mapping, single consumer (this file),
+// so kept local rather than a new lib/escalations.ts. Preserves today's
+// exact colors: open used the amber "warning" Badge, resolved used the
+// neutral "secondary" one (never green/success — closing an escalation
+// isn't a celebratory outcome here, it's just no-longer-active).
+const ESCALATION_STATUS_STATE: Record<Escalation["status"], ActivityState> = {
+  open: "waiting",
+  resolved: "idle",
 };
 
 export default function EscalationsPage() {
@@ -191,11 +203,9 @@ function EscalationCard({ escalation }: { escalation: Escalation }) {
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{name}</span>
-            {escalation.status === "resolved" ? (
-              <Badge variant="secondary">Resolved</Badge>
-            ) : (
-              <Badge variant="warning">{REASON_LABEL[escalation.reason]}</Badge>
-            )}
+            <StatusPill state={ESCALATION_STATUS_STATE[escalation.status]}>
+              {escalation.status === "resolved" ? "Resolved" : REASON_LABEL[escalation.reason]}
+            </StatusPill>
             {escalation.assigned_to && (
               <Badge variant="outline">
                 {isMine ? "Assigned to you" : `Assigned to ${escalation.assigned_to.email}`}
