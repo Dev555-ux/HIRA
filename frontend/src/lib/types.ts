@@ -637,3 +637,75 @@ export interface FounderTraceDetail {
   duration_ms: number;
   created_at: string;
 }
+
+// Analytics (Analytics Phase 1, GET /api/v1/analytics/dashboard). One
+// business-scoped request powers the whole page — see app/services/
+// analytics.py, the same aggregation module Founder Ops draws from
+// (business_id-scoped here vs. cross-tenant there). Unlike most endpoints
+// in this app, the response is NOT wrapped in {"data": ...} — the handler
+// returns this shape directly (confirmed by its own tests asserting these
+// as the top-level response keys).
+export type AnalyticsRange = "7d" | "30d" | "90d";
+
+export interface AnalyticsOverview {
+  total_conversations: number;
+  messages_today: number;
+  ai_responses_today: number;
+  failed_responses_today: number;
+  avg_response_time_seconds: number | null;
+}
+
+export interface AnalyticsBusinessHealth {
+  onboarding_status: Business["onboarding_status"];
+  trial_ends_at: string | null;
+  created_at: string;
+  whatsapp: {
+    status: Business["whatsapp_connection_status"];
+    display_phone_number: string | null;
+  };
+  knowledge_base: {
+    published_count: number;
+    draft_count: number;
+    last_updated_at: string | null;
+  };
+  alerts: FounderAlert[];
+  conversations_by_status: Record<string, number>;
+  leads_by_stage: Record<string, number>;
+  leads_by_source: Record<string, number>;
+  appointments_by_status: Record<string, number>;
+}
+
+export interface AnalyticsTrendPoint {
+  date: string;
+  count: number;
+}
+
+export interface AnalyticsTrends {
+  conversations: AnalyticsTrendPoint[];
+  messages: AnalyticsTrendPoint[];
+  leads: AnalyticsTrendPoint[];
+  appointments: AnalyticsTrendPoint[];
+}
+
+export interface AnalyticsAiImpact {
+  conversations_handled: number;
+  human_escalations: number;
+  leads_created: number;
+  appointments_booked: number;
+  kb_grounded_replies: number;
+  ai_responses: number;
+  estimated_hours_saved: number;
+}
+
+export interface AnalyticsDashboard {
+  range: AnalyticsRange;
+  overview: AnalyticsOverview;
+  business_health: AnalyticsBusinessHealth;
+  trends: AnalyticsTrends;
+  ai_impact: AnalyticsAiImpact;
+  // Byte-for-byte the same shape as FounderAiMetrics (both come from
+  // app/services/analytics.py's ai_metrics()) — reused directly rather than
+  // duplicated, so AiMetricsSummary (components/ai-metrics-section.tsx) can
+  // render either without a translation layer.
+  ai_performance: FounderAiMetrics;
+}

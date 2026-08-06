@@ -11,9 +11,9 @@ import {
   MessagesSquare,
   RefreshCw,
   ShieldOff,
-  Wrench,
 } from "lucide-react";
 import Link from "next/link";
+import { AiMetricsSummary } from "@/components/ai-metrics-section";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -25,15 +25,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/ui/status-pill";
 import { useFounderAiMetrics, useFounderOverview } from "@/hooks/use-founder-ops";
 import { ApiError } from "@/lib/api";
-import type { FounderAlert, FounderBusinessRow } from "@/lib/types";
+import { ALERT_LABEL } from "@/lib/alerts";
+import type { FounderBusinessRow } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/utils";
-
-const ALERT_LABEL: Record<FounderAlert, string> = {
-  whatsapp_disconnected: "WhatsApp disconnected",
-  missing_knowledge_base: "No Knowledge Base",
-  ai_failures: "AI failures",
-  no_recent_activity: "No recent activity",
-};
 
 // IMPLEMENTATION-ROADMAP-001 M9: StatusPill's status->dot-color mapping,
 // single consumer (this file). Preserves WHATSAPP_BADGE's exact colors:
@@ -285,21 +279,12 @@ export default function FounderOpsPage() {
   );
 }
 
-const ROLE_LABEL: Record<string, string> = {
-  receptionist: "Receptionist",
-  scheduler: "Scheduler",
-  sales_executive: "Sales Executive",
-  bookkeeper: "Bookkeeper",
-};
-
-function roleLabel(role: string): string {
-  return ROLE_LABEL[role] ?? role;
-}
-
 // Sprint 76, Objective B: AI Employee observability tiles. Fetched
 // separately from the overview above (its own loading/error state) so a
 // problem computing AI metrics can never take down the rest of the
-// dashboard, which has nothing to do with it.
+// dashboard, which has nothing to do with it. Rendering itself lives in
+// AiMetricsSummary (M14) — shared with Analytics, which shows the same
+// ai_performance shape business-scoped rather than cross-tenant.
 function AiMetricsSection() {
   const { data, isPending, isError } = useFounderAiMetrics();
 
@@ -315,85 +300,7 @@ function AiMetricsSection() {
         </Button>
       </CardHeader>
       <CardContent>
-        {isError ? (
-          <p className="text-sm text-muted-foreground">Couldn&apos;t load AI metrics.</p>
-        ) : isPending || !data ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 w-full" />
-            ))}
-          </div>
-        ) : data.total_turns === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No AI turns recorded yet — this fills in once customers start messaging.
-          </p>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <StatCard label="Turns traced" value={data.total_turns} icon={Activity} />
-              <StatCard
-                label="Most-used employee"
-                value={data.most_used_employee ? roleLabel(data.most_used_employee) : "—"}
-                icon={Bot}
-              />
-              <StatCard
-                label="Avg plan length"
-                value={data.avg_plan_length.toFixed(1)}
-                icon={ListTree}
-                hint="Steps per turn"
-              />
-              <StatCard
-                label="Avg execution time"
-                value={`${Math.round(data.avg_execution_time_ms)}ms`}
-                icon={Clock}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Most-used tools
-                </p>
-                {data.most_used_tools.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No tool calls yet.</p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {data.most_used_tools.map((tool) => (
-                      <li
-                        key={tool.tool_name}
-                        className="flex items-center justify-between gap-2 text-sm"
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <Wrench className="size-3.5 text-muted-foreground" />
-                          {tool.tool_name}
-                        </span>
-                        <span className="tabular-nums text-muted-foreground">{tool.count}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Reliability
-                </p>
-                <ul className="space-y-1.5 text-sm">
-                  <li className="flex items-center justify-between gap-2">
-                    <span>Failed tool executions</span>
-                    <Badge variant={data.failed_tool_executions > 0 ? "destructive" : "secondary"}>
-                      {data.failed_tool_executions}
-                    </Badge>
-                  </li>
-                  <li className="flex items-center justify-between gap-2">
-                    <span>Plans stopped early (governance/readiness)</span>
-                    <Badge variant={data.governance_blocks > 0 ? "warning" : "secondary"}>
-                      {data.governance_blocks}
-                    </Badge>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
+        <AiMetricsSummary data={data} isPending={isPending} isError={isError} />
       </CardContent>
     </Card>
   );

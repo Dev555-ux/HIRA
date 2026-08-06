@@ -1,5 +1,7 @@
 import { API_BASE_URL } from "./config";
 import type {
+  AnalyticsDashboard,
+  AnalyticsRange,
   ApiEnvelope,
   ApproveResult,
   Appointment,
@@ -438,4 +440,11 @@ export const api = {
     apiFetch<ApiEnvelope<FounderTraceDetail>>(`/api/v1/founder/traces/${id}`, getToken).then(
       (r) => r.data,
     ),
+
+  // Analytics Phase 1 (Analytics rebuild) — tenant-scoped, one request per
+  // range change. Unlike everything else above, the backend returns this
+  // shape unwrapped (no {"data": ...} envelope — confirmed in app/api/
+  // analytics.py and its own tests), so no `.then((r) => r.data)` here.
+  getAnalyticsDashboard: (getToken: GetToken, range: AnalyticsRange) =>
+    apiFetch<AnalyticsDashboard>(`/api/v1/analytics/dashboard${buildQuery({ range })}`, getToken),
 };
