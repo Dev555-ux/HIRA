@@ -1,13 +1,14 @@
 "use client";
 
 import { Flag, RefreshCw, Send, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { ReviewSurface } from "@/components/ui/ai-surface";
 import { Button } from "@/components/ui/button";
+import { StatusPill } from "@/components/ui/status-pill";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { WorkingIndicator, type WorkingState } from "@/components/ui/working-indicator";
 import {
   useApprove,
   useEscalate,
@@ -18,7 +19,7 @@ import {
 import { ApiError } from "@/lib/api";
 import { MAX_DRAFT_LENGTH } from "@/lib/config";
 import type { PendingReply } from "@/lib/types";
-import { formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
 type ConfirmableAction = "regenerate" | "reject" | "escalate";
 
@@ -49,13 +50,26 @@ function errorMessage(err: unknown): string {
   return err instanceof ApiError ? err.message : "Something went wrong — please try again.";
 }
 
-export function PendingReplyCard({ reply }: { reply: PendingReply }) {
+/** Imperative surface for /pending's keyboard queue (M12) — the page owns
+ *  "which card is active" and dispatches into it, without duplicating any of
+ *  this component's own mutation/confirm-dialog logic. */
+export interface PendingReplyCardHandle {
+  approve: () => void;
+  reject: () => void;
+  focusEditor: () => void;
+}
+
+export const PendingReplyCard = forwardRef<
+  PendingReplyCardHandle,
+  { reply: PendingReply; active?: boolean }
+>(function PendingReplyCard({ reply, active = false }, ref) {
   const { toast } = useToast();
   const approve = useApprove();
   const updateDraft = useUpdateDraft();
   const reject = useReject();
   const regenerate = useRegenerate();
   const escalate = useEscalate();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Same "local override synced from server data" pattern as Settings'
   // AiReplyModeCard: null means "show the server value," a string means the
@@ -126,93 +140,115 @@ export function PendingReplyCard({ reply }: { reply: PendingReply }) {
     }
   }
 
+  useImperativeHandle(ref, () => ({
+    approve: handleApprove,
+    reject: () => requestAction("reject"),
+    focusEditor: () => textareaRef.current?.focus(),
+  }));
+
   const customerName = reply.customer?.display_name?.trim() || reply.customer?.wa_phone;
+  const workingState: WorkingState = regenerate.isPending
+    ? "working"
+    : isBusy
+      ? "waiting"
+      : "idle";
 
   return (
-    <Card>
-      <CardContent className="space-y-4 p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold">{customerName ?? "Unknown customer"}</p>
-            {reply.customer?.display_name && (
-              <p className="text-xs text-muted-foreground">{reply.customer.wa_phone}</p>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Badge variant="warning">Pending approval</Badge>
-            <span className="text-xs text-muted-foreground">
-              {formatRelativeTime(reply.created_at)}
-            </span>
-          </div>
+    <ReviewSurface
+      role="group"
+      aria-label={`Pending reply for ${customerName ?? "unknown customer"}`}
+      className={cn(
+        "space-y-4 p-5",
+        active && "ring-2 ring-ring ring-offset-2 ring-offset-background",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">{customerName ?? "Unknown customer"}</p>
+          {reply.customer?.display_name && (
+            <p className="text-xs text-muted-foreground">{reply.customer.wa_phone}</p>
+          )}
         </div>
-
-        {reply.conversation_preview && (
-          <div className="rounded-md bg-muted/50 p-3">
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Customer said
-            </p>
-            <p className="line-clamp-2 text-sm text-muted-foreground">
-              {reply.conversation_preview}
-            </p>
-          </div>
-        )}
-
-        <div className="space-y-1.5">
-          <Textarea
-            value={draft}
-            onChange={(e) => setDraftOverride(e.target.value)}
-            disabled={isBusy}
-            maxLength={MAX_DRAFT_LENGTH}
-            rows={4}
-            aria-label="AI-drafted reply"
-            className="text-sm leading-relaxed"
-          />
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{isDirty ? "Edited — not yet saved" : "AI draft"}</span>
-            <span>
-              {draft.length} / {MAX_DRAFT_LENGTH}
-            </span>
-          </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <StatusPill state="waiting">Pending approval</StatusPill>
+          <span className="text-xs text-muted-foreground">
+            {formatRelativeTime(reply.created_at)}
+          </span>
         </div>
+      </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={isBusy || isEmpty} onClick={handleApprove}>
-            <Send />
-            {updateDraft.isPending
-              ? "Saving…"
-              : approve.isPending
-                ? "Sending…"
-                : "Approve & send"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isBusy}
-            onClick={() => requestAction("regenerate")}
-          >
-            <RefreshCw className={regenerate.isPending ? "animate-spin" : ""} />
-            Regenerate
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isBusy}
-            onClick={() => requestAction("reject")}
-          >
-            <X />
-            Reject
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isBusy}
-            onClick={() => requestAction("escalate")}
-          >
-            <Flag />
-            Escalate
-          </Button>
+      <WorkingIndicator
+        state={workingState}
+        label={regenerate.isPending ? "Regenerating…" : isBusy ? "Working…" : "Idle"}
+      />
+
+      {reply.conversation_preview && (
+        <div className="rounded-md bg-muted/50 p-3">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Customer said
+          </p>
+          <p className="line-clamp-2 text-sm text-muted-foreground">
+            {reply.conversation_preview}
+          </p>
         </div>
-      </CardContent>
+      )}
+
+      <div className="space-y-1.5">
+        <Textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={(e) => setDraftOverride(e.target.value)}
+          disabled={isBusy}
+          maxLength={MAX_DRAFT_LENGTH}
+          rows={4}
+          aria-label="AI-drafted reply"
+          className="text-sm leading-relaxed"
+        />
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>{isDirty ? "Edited — not yet saved" : "AI draft"}</span>
+          <span>
+            {draft.length} / {MAX_DRAFT_LENGTH}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" disabled={isBusy || isEmpty} onClick={handleApprove}>
+          <Send />
+          {updateDraft.isPending
+            ? "Saving…"
+            : approve.isPending
+              ? "Sending…"
+              : "Approve & send"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isBusy}
+          onClick={() => requestAction("regenerate")}
+        >
+          <RefreshCw className={regenerate.isPending ? "animate-spin" : ""} />
+          Regenerate
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isBusy}
+          onClick={() => requestAction("reject")}
+        >
+          <X />
+          Reject
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isBusy}
+          onClick={() => requestAction("escalate")}
+        >
+          <Flag />
+          Escalate
+        </Button>
+      </div>
 
       <ConfirmDialog
         open={confirmAction !== null}
@@ -223,6 +259,6 @@ export function PendingReplyCard({ reply }: { reply: PendingReply }) {
         onConfirm={() => confirmAction && runAction(confirmAction)}
         isPending={isBusy}
       />
-    </Card>
+    </ReviewSurface>
   );
-}
+});
