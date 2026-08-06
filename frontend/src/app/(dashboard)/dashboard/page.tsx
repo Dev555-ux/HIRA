@@ -15,9 +15,9 @@ import { EmptyState } from "@/components/empty-state";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { ReviewReplyCard } from "@/components/review-reply-card";
 import { StatCard } from "@/components/stat-card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useToast } from "@/components/ui/toast";
 import { useAppointments } from "@/hooks/use-appointments";
 import { useAuthContext } from "@/lib/auth-context";
@@ -26,7 +26,8 @@ import { useCustomers } from "@/hooks/use-customers";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useApprove, usePending, useReject, useUpdateDraft } from "@/hooks/use-pending";
 import type { Appointment, PendingReply } from "@/lib/types";
-import { APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
+import { APPOINTMENT_STATUS, APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
+import { VARIANT_TO_STATE } from "@/lib/status";
 import { describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
 
 // How many rows each preview widget shows before "View all" takes over —
@@ -320,9 +321,9 @@ export default function DashboardPage() {
                             {formatAppointmentRange(appt.starts_at, appt.ends_at)}
                           </p>
                         </div>
-                        <Badge variant={badge.variant} className="shrink-0">
+                        <StatusPill state={APPOINTMENT_STATUS[appt.status]} className="shrink-0">
                           {badge.label}
-                        </Badge>
+                        </StatusPill>
                       </li>
                     );
                   })}
@@ -418,12 +419,13 @@ function StatusRow({
   note?: string;
   variant?: "success" | "warning" | "secondary";
 }) {
+  const resolvedVariant = variant ?? (ok ? "success" : "secondary");
   return (
     <div className="flex items-center justify-between">
       <span>{label}</span>
-      <Badge variant={variant ?? (ok ? "success" : "secondary")}>
+      <StatusPill state={VARIANT_TO_STATE[resolvedVariant]}>
         {note ?? (ok ? "Operational" : "Off")}
-      </Badge>
+      </StatusPill>
     </div>
   );
 }

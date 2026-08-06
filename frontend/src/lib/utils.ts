@@ -23,6 +23,21 @@ export function describeWhatsAppConnection(
   }
 }
 
+// M15A: the business owner's own "is my AI live" view — Settings' AI
+// Employee card and Analytics' Business Health card both describe this same
+// field; this is the one place that describes it now. Deliberately distinct
+// from Ops's onboardingState/onboardingLabel (app/(ops)/ops/page.tsx),
+// which answers a different, founder-only question ("is this account fully
+// complete" — WhatsApp connected AND a knowledge base published, not just
+// onboarding_status) and stays its own presentation.
+export function describeOnboardingStatus(
+  status: Business["onboarding_status"] | undefined,
+): { label: string; variant: "success" | "secondary" } {
+  return status === "live"
+    ? { label: "Live", variant: "success" }
+    : { label: "Setting up", variant: "secondary" };
+}
+
 // Per-message chat timestamp ("2:34 PM"), distinct from formatRelativeTime's
 // "10m ago" — a persistent transcript reads better with a fixed clock time
 // than a relative one that changes every time you look at it.

@@ -6,7 +6,6 @@ import { AiMetricsSummary } from "@/components/ai-metrics-section";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
-import type { ActivityState } from "@/components/ui/activity-dot";
 import { aiSurfaceClassName } from "@/components/ui/ai-surface";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +17,7 @@ import { ALERT_LABEL } from "@/lib/alerts";
 import { APPOINTMENT_STATUS_BADGE } from "@/lib/appointments";
 import { CONVERSATION_STATUS_BADGE } from "@/lib/conversations";
 import { STAGE_LABEL } from "@/lib/leads";
+import { VARIANT_TO_STATE } from "@/lib/status";
 import type {
   AnalyticsBusinessHealth,
   AnalyticsRange,
@@ -25,22 +25,13 @@ import type {
   Conversation,
   LeadStage,
 } from "@/lib/types";
-import { describeWhatsAppConnection } from "@/lib/utils";
+import { describeOnboardingStatus, describeWhatsAppConnection } from "@/lib/utils";
 
 const RANGE_OPTIONS: { label: string; value: AnalyticsRange }[] = [
   { label: "7d", value: "7d" },
   { label: "30d", value: "30d" },
   { label: "90d", value: "90d" },
 ];
-
-// Same success/warning/secondary -> ActivityState translation M6-M13
-// already established (StatusPill's color source of truth, never a raw
-// Badge for a live status).
-const VARIANT_TO_STATE: Record<"success" | "warning" | "secondary", ActivityState> = {
-  success: "success",
-  warning: "waiting",
-  secondary: "idle",
-};
 
 function formatDuration(seconds: number | null): string {
   if (seconds == null) return "—";
@@ -280,6 +271,7 @@ function AiImpactStat({
 
 function BusinessHealthCard({ health }: { health: AnalyticsBusinessHealth }) {
   const whatsapp = describeWhatsAppConnection(health.whatsapp.status);
+  const onboarding = describeOnboardingStatus(health.onboarding_status);
 
   return (
     <Card>
@@ -288,8 +280,11 @@ function BusinessHealthCard({ health }: { health: AnalyticsBusinessHealth }) {
         <StatusPill state={VARIANT_TO_STATE[whatsapp.variant]}>WhatsApp {whatsapp.label}</StatusPill>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-          <span>Onboarding · {health.onboarding_status === "live" ? "Live" : "Setting up"}</span>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            Onboarding ·{" "}
+            <StatusPill state={VARIANT_TO_STATE[onboarding.variant]}>{onboarding.label}</StatusPill>
+          </span>
           <span>
             Knowledge base · {health.knowledge_base.published_count} published
             {health.knowledge_base.draft_count > 0 && `, ${health.knowledge_base.draft_count} draft`}

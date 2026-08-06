@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useToast } from "@/components/ui/toast";
 import { useCalendarStatus } from "@/hooks/use-calendar";
 import { useKbEntries } from "@/hooks/use-knowledge-base";
@@ -50,8 +51,9 @@ import {
 } from "@/hooks/use-whatsapp";
 import { ApiError } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
+import { VARIANT_TO_STATE } from "@/lib/status";
 import type { AiReplyMode, Business } from "@/lib/types";
-import { cn, describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
+import { cn, describeOnboardingStatus, describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
 
 // Verify-step polling (Sprint 71, Task B) — faster than the app-wide
 // POLL_INTERVAL_MS (15s, meant for passive background dashboard refresh)
@@ -191,9 +193,9 @@ export default function SettingsPage() {
               label="Status"
               value={
                 calendarStatus ? (
-                  <Badge variant="success">
+                  <StatusPill state="success">
                     {calendarStatus.connected ? "Google Sync Enabled" : "Active"}
-                  </Badge>
+                  </StatusPill>
                 ) : (
                   <Skeleton className="h-5 w-20" />
                 )
@@ -212,9 +214,9 @@ export default function SettingsPage() {
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={MessageCircle} />
             <CardTitle className="text-base">WhatsApp</CardTitle>
-            <Badge variant={whatsapp.variant} className="ml-auto">
+            <StatusPill state={VARIANT_TO_STATE[whatsapp.variant]} className="ml-auto">
               {whatsapp.label}
-            </Badge>
+            </StatusPill>
           </CardHeader>
           <CardContent className="space-y-3">
             {whatsappConnected ? (
@@ -382,7 +384,7 @@ function AiEmployeeCard({
   kbCount?: number;
 }) {
   const { data: settings } = useSettings();
-  const isLive = business?.onboarding_status === "live";
+  const onboarding = describeOnboardingStatus(business?.onboarding_status);
 
   return (
     <Card className={CARD_HOVER}>
@@ -395,9 +397,9 @@ function AiEmployeeCard({
           label="Status"
           value={
             business ? (
-              <Badge variant={isLive ? "success" : "secondary"}>
-                {isLive ? "Live" : "Setting up"}
-              </Badge>
+              <StatusPill state={VARIANT_TO_STATE[onboarding.variant]}>
+                {onboarding.label}
+              </StatusPill>
             ) : (
               <Skeleton className="h-5 w-16" />
             )

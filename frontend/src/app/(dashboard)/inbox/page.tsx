@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import {
   useConversation,
   useConversationMessages,
@@ -27,6 +28,7 @@ import {
 } from "@/hooks/use-conversations";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { CONVERSATION_STATUS_BADGE } from "@/lib/conversations";
+import { VARIANT_TO_STATE } from "@/lib/status";
 import type { Conversation, ConversationStatusFilter, Message } from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
@@ -231,8 +233,12 @@ function ConversationList({
                     </p>
                     <div className="flex gap-1">
                       <ChannelBadge />
-                      <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
-                      {conv.has_pending_approval && <Badge variant="warning">Pending</Badge>}
+                      <StatusPill state={VARIANT_TO_STATE[statusBadge.variant]}>
+                        {statusBadge.label}
+                      </StatusPill>
+                      {conv.has_pending_approval && (
+                        <StatusPill state="waiting">Pending</StatusPill>
+                      )}
                     </div>
                   </button>
                 </li>

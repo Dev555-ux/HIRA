@@ -26,23 +26,9 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { useFounderAiMetrics, useFounderOverview } from "@/hooks/use-founder-ops";
 import { ApiError } from "@/lib/api";
 import { ALERT_LABEL } from "@/lib/alerts";
+import { VARIANT_TO_STATE } from "@/lib/status";
 import type { FounderBusinessRow } from "@/lib/types";
-import { formatRelativeTime } from "@/lib/utils";
-
-// IMPLEMENTATION-ROADMAP-001 M9: StatusPill's status->dot-color mapping,
-// single consumer (this file). Preserves WHATSAPP_BADGE's exact colors:
-// connected=success, pending_verification=warning, not_connected=secondary.
-const WHATSAPP_STATUS_STATE: Record<FounderBusinessRow["whatsapp"]["status"], ActivityState> = {
-  connected: "success",
-  pending_verification: "waiting",
-  not_connected: "idle",
-};
-
-const WHATSAPP_LABEL: Record<FounderBusinessRow["whatsapp"]["status"], string> = {
-  connected: "Connected",
-  pending_verification: "Needs attention",
-  not_connected: "Not connected",
-};
+import { describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
 
 // Onboarding's label depends on two fields (onboarding_complete AND
 // onboarding_status) but its color only ever depended on onboarding_complete
@@ -201,7 +187,9 @@ export default function FounderOpsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {businesses.map((b) => (
+                {businesses.map((b) => {
+                  const whatsapp = describeWhatsAppConnection(b.whatsapp.status);
+                  return (
                   <tr key={b.id}>
                     <td className="px-4 py-3 align-top">
                       <p className="font-medium">{b.name}</p>
@@ -213,8 +201,8 @@ export default function FounderOpsPage() {
                       <StatusPill state={onboardingState(b)}>{onboardingLabel(b)}</StatusPill>
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <StatusPill state={WHATSAPP_STATUS_STATE[b.whatsapp.status]}>
-                        {WHATSAPP_LABEL[b.whatsapp.status]}
+                      <StatusPill state={VARIANT_TO_STATE[whatsapp.variant]}>
+                        {whatsapp.label}
                       </StatusPill>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {b.whatsapp.display_phone_number ?? "No number yet"}
@@ -269,7 +257,8 @@ export default function FounderOpsPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}

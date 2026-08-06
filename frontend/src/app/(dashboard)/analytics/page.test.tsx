@@ -180,7 +180,9 @@ describe("AnalyticsPage", () => {
 
     const card = (await screen.findByText("Business health")).closest<HTMLElement>(".rounded-xl")!;
     expect(within(card).getByText("WhatsApp Connected")).toBeInTheDocument();
-    expect(within(card).getByText(/Onboarding · Live/)).toBeInTheDocument();
+    expect(within(card).getByText(/Onboarding/)).toBeInTheDocument();
+    // "Live" now renders as its own StatusPill (M15A), not a plain text run.
+    expect(within(card).getByText("Live")).toBeInTheDocument();
     expect(within(card).getByText(/18 published, 2 draft/)).toBeInTheDocument();
     expect(within(card).getByText("No alerts")).toBeInTheDocument();
   });
