@@ -2,10 +2,18 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { Bot, PanelLeft, PanelLeftClose, X } from "lucide-react";
-import { useState } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, useRef, useState } from "react";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { Topbar } from "@/components/layout/topbar";
 import { cn } from "@/lib/utils";
+
+// Dynamically imported (IMPLEMENTATION-ROADMAP-001 M16): a rarely-first-
+// interaction feature shouldn't add to the JS every page load pays for.
+const CommandPalette = dynamic(
+  () => import("@/components/layout/command-palette").then((m) => m.CommandPalette),
+  { ssr: false },
+);
 
 function Brand({ collapsed = false, action }: { collapsed?: boolean; action?: React.ReactNode }) {
   return (
@@ -33,6 +41,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // hard reload — cookie persistence is a deliberate PR4 follow-up, kept out
   // here to avoid any SSR/hydration risk).
   const [collapsed, setCollapsed] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Fetches the dynamically-imported chunk on first actual use, then stays
+  // mounted (unlike gating render on `paletteOpen` itself, which would tear
+  // the component down mid-close-animation every time).
+  const [paletteLoaded, setPaletteLoaded] = useState(false);
+  // Captured synchronously wherever open is requested from — see
+  // CommandPalette's own triggerRef doc comment for why this can't just be
+  // read from document.activeElement inside the palette itself.
+  const paletteTriggerRef = useRef<Element | null>(null);
+
+  function openPalette() {
+    paletteTriggerRef.current = document.activeElement;
+    setPaletteLoaded(true);
+    setPaletteOpen(true);
+  }
+
+  // Global ⌘K/Ctrl+K (M16) — works from anywhere, including while typing in
+  // a field (this is a strong modifier shortcut, not a bare letter key like
+  // /pending's j/k/e/x, so there's nothing to accidentally type into it).
+  // Reclaims the browser's own Ctrl+K unconditionally, but only actually
+  // opens the palette when no other dialog already has focus-trap — Raycast/
+  // Linear/Notion/Spotlight don't stack a palette on top of a confirm
+  // dialog either.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod || e.key.toLowerCase() !== "k") return;
+      e.preventDefault();
+      if (document.querySelector('[role="dialog"]')) return;
+      openPalette();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div className="flex min-h-screen">
@@ -105,7 +147,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </Dialog.Root>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar onOpenMobileNav={() => setMobileOpen(true)} />
+        <Topbar onOpenMobileNav={() => setMobileOpen(true)} onOpenPalette={openPalette} />
         <main
           id="main-content"
           tabIndex={-1}
@@ -114,6 +156,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
       </div>
+
+      {paletteLoaded && (
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          triggerRef={paletteTriggerRef}
+        />
+      )}
     </div>
   );
 }

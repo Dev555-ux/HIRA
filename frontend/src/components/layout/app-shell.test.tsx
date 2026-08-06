@@ -1,12 +1,14 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MouseEvent, ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AuthContext, type AuthContextValue } from "@/lib/auth-context";
 import { AppShell } from "./app-shell";
 
+const push = vi.fn();
 vi.mock("next/navigation", () => ({
   usePathname: () => "/dashboard",
+  useRouter: () => ({ push }),
 }));
 
 // Real next/link navigation isn't meaningful under jsdom (no app-router
@@ -124,5 +126,55 @@ describe("AppShell — desktop sidebar", () => {
 
     // Label is visually hidden (sr-only) but stays the link's accessible name.
     expect(screen.getAllByRole("link", { name: /dashboard/i }).length).toBeGreaterThan(0);
+  });
+});
+
+describe("AppShell — command palette (M16)", () => {
+  it("opens via the Topbar search trigger", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.click(screen.getByRole("button", { name: /search/i }));
+
+    expect(await screen.findByRole("combobox", { name: /search pages/i })).toBeInTheDocument();
+  });
+
+  it("opens via Ctrl+K from anywhere on the page", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.keyboard("{Control>}k{/Control}");
+
+    expect(await screen.findByRole("combobox", { name: /search pages/i })).toBeInTheDocument();
+  });
+
+  it("does not stack on top of the mobile nav drawer", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.click(screen.getByRole("button", { name: /open navigation/i }));
+    await screen.findByRole("dialog");
+
+    await user.keyboard("{Control>}k{/Control}");
+
+    // Still just the one dialog (the drawer) — the palette didn't open on top of it.
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.queryByRole("combobox", { name: /search pages/i })).not.toBeInTheDocument();
+  });
+
+  it("closes via Escape and restores focus to the triggering button", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    const trigger = screen.getByRole("button", { name: /search/i });
+    await user.click(trigger);
+    await screen.findByRole("combobox", { name: /search pages/i });
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("combobox", { name: /search pages/i })).not.toBeInTheDocument(),
+    );
+    expect(trigger).toHaveFocus();
   });
 });
