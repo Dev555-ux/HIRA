@@ -8,7 +8,10 @@ import type { OnboardingStatus } from "@/lib/types";
 import SettingsPage from "./page";
 
 function aiReplyModeCard() {
-  return screen.getByText("How your employee responds").closest<HTMLElement>(".rounded-xl")!;
+  // M13: this card carries the AI-identity spine (aiSurfaceClassName), which
+  // uses rounded-lg rather than the plain Card's rounded-xl — the only card
+  // on this page with that corner radius.
+  return screen.getByText("How your employee responds").closest<HTMLElement>(".rounded-lg")!;
 }
 
 function aiEmployeeCard() {

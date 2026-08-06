@@ -23,6 +23,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { aiSurfaceClassName } from "@/components/ui/ai-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -477,7 +478,10 @@ function AiReplyModeCard() {
   }
 
   return (
-    <Card className={CARD_HOVER}>
+    // M13: the one settings control that directly governs AI behavior gets
+    // the AI-identity spine (M4's aiSurfaceClassName) — combined with the
+    // page's existing hover treatment, not replacing it.
+    <Card className={cn(CARD_HOVER, aiSurfaceClassName)}>
       <CardHeader className="flex-row items-center gap-3 space-y-0">
         <SectionIcon icon={Globe} />
         <CardTitle className="text-base">How your employee responds</CardTitle>
