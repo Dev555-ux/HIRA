@@ -166,8 +166,8 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 
 - **Priority**: P2
 - **Category**: Business (external dependency) / Technical
-- **Status**: To Do
-- **Dependencies**: Meta Tech Provider / Embedded Signup approval — an external, non-engineering approval process. Should be kicked off in parallel now; it is the longest lead-time item in the onboarding plan.
+- **Status**: Design complete (Sprint 81, 2026-07-28) — see `documentation/WHATSAPP_ONBOARDING_V2_DESIGN.md` and `DECISIONS.md` DEC-052. Not implemented, not approved for build.
+- **Dependencies**: Meta Tech Provider / Embedded Signup approval — an external, non-engineering approval process, status not yet confirmed as of the design sprint. Should be kicked off in parallel now if not already; it is the longest lead-time item in the onboarding plan, and the design's own roadmap (§10) names confirming/advancing it as the literal first implementation step.
 
 ### ONBOARD-F — Go-live, resumability, and polish
 
@@ -343,6 +343,12 @@ Current technical debt is limited to production-infrastructure hardening — see
 ## Completed
 
 > Append-only. Never remove or rewrite.
+
+### TASK-C008 — Resolve frontend reliability and accessibility review findings
+- **Description**: Corrected appointment datetime UTC/local round-tripping, made dashboard errors recover on route navigation, refreshed every dashboard query from the shared Refresh action, named the list-search controls for assistive technology, and fixed Next's output tracing root.
+- **Category**: Technical
+- **Status**: Done (2026-07-30)
+- **Success criteria met**: Frontend tests cover UTC appointment preservation and route-error recovery; all frontend tests, ESLint, TypeScript, and the production build pass without the workspace-root warning.
 
 ### TASK-C001 — Create `.claude/` project memory scaffolding
 - **Description**: Created the `.claude/` directory and the six memory files.
