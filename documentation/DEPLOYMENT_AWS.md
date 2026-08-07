@@ -109,6 +109,23 @@ requirements, same `_reject_insecure_production_secrets` boot guard in
 is no risk of the two services drifting out of sync the way two separate
 Railway services' Variables tabs could.
 
+**`CLERK_JWKS_URL` / `CLERK_ISSUER` — must come from a Clerk *production*
+instance, not the default Development one.** Clerk creates every
+application in Development mode first; its keys/URLs are real and
+functional, so nothing fails at signup or at the boot guard above if you
+copy them by mistake (this has happened in production before — see
+`documentation/DEPLOYMENT.md`'s Appendix). Development instances are served
+from a shared `*.clerk.accounts.dev` domain and have strict request-rate
+limits not meant for real traffic; a production instance needs its own
+custom domain (Clerk dashboard → your app → Production). The backend logs a
+warning at startup (`app/main.py::_warn_if_clerk_looks_like_a_dev_instance`)
+if `CLERK_JWKS_URL` still looks like a `*.clerk.accounts.dev` domain with
+`ENVIRONMENT=production` — check `docker compose logs api` after first
+deploy and treat that warning as a real, actionable misconfiguration, not
+noise. **This is an operational fix (point `CLERK_JWKS_URL`/`CLERK_ISSUER`
+at your production Clerk instance), not a code change** — the warning
+itself is the backend correctly doing its job; do not silence or remove it.
+
 ---
 
 ## Fresh Ubuntu EC2 instance: full deploy
@@ -261,6 +278,23 @@ cd backend && docker compose -f docker-compose.prod.yml up -d --build api worker
 
 (`postgres` and `nginx` are untouched by an app code change — only rebuild
 them if their own config changed.)
+
+**Why this used to 502 after every redeploy.** `docker compose up -d --build
+api` recreates the `api` container, which gets a new internal IP on the
+Compose network — the old container is gone, DNS-wise. `nginx.conf`'s
+`proxy_pass http://api:8000` used a bare hostname, and Nginx only resolves a
+bare hostname in `proxy_pass` once, when a worker process starts, then
+caches that IP in memory for the rest of that worker's life. A live Nginx
+worker never re-resolves `api`, so after the container above swaps under it,
+Nginx keeps proxying to the dead IP of the container that no longer exists —
+every request 502s until something forces Nginx to re-resolve (previously:
+a manual `docker compose restart nginx`). `backend/nginx/nginx.conf` fixes
+this by routing through Docker's embedded DNS resolver (`127.0.0.11`) with a
+variable in `proxy_pass` (`set $upstream_api api:8000; proxy_pass
+http://$upstream_api;`), which defers resolution to request time instead of
+config-load time — a `resolver ... valid=10s` directive means a recreated
+`api` container is picked up automatically within 10 seconds, with no
+manual Nginx restart, and without touching any application code.
 
 ---
 
