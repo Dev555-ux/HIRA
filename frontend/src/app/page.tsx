@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { MarketingPage } from "@/components/marketing/marketing-page";
 import { authEnabled } from "@/lib/config";
 
-const SITE_URL = "https://hira-tau.vercel.app";
+const SITE_URL = "https://stoneveil.in";
 const TITLE = "HIRA — The AI Employee for WhatsApp-First Businesses";
 const DESCRIPTION =
   "HIRA is the AI employee businesses hire to answer customers on WhatsApp, book appointments, and follow up on every lead — grounded in your own knowledge, supervised by you.";

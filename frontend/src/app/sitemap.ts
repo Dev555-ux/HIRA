@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL = "https://hira-tau.vercel.app";
+const SITE_URL = "https://stoneveil.in";
 
 // Only the public marketing page belongs in a sitemap — everything else in
 // this app sits behind authentication.

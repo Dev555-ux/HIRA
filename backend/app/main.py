@@ -179,6 +179,7 @@ _CORS_ORIGINS = {
     "http://localhost:3001",
     "http://localhost:3002",
     "https://hira-tau.vercel.app",
+    "https://stoneveil.in",
     settings.frontend_url,
 }
 app.add_middleware(
