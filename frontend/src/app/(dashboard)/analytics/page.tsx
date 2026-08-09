@@ -7,25 +7,16 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { aiSurfaceClassName } from "@/components/ui/ai-surface";
+import { BusinessHealthCard } from "@/components/ui/business-health-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusPill } from "@/components/ui/status-pill";
 import { TrendChart } from "@/components/ui/trend-chart";
 import { useAnalyticsDashboard } from "@/hooks/use-analytics";
-import { ALERT_LABEL } from "@/lib/alerts";
 import { APPOINTMENT_STATUS_BADGE } from "@/lib/appointments";
 import { CONVERSATION_STATUS_BADGE } from "@/lib/conversations";
 import { STAGE_LABEL } from "@/lib/leads";
-import { VARIANT_TO_STATE } from "@/lib/status";
-import type {
-  AnalyticsBusinessHealth,
-  AnalyticsRange,
-  Appointment,
-  Conversation,
-  LeadStage,
-} from "@/lib/types";
-import { describeOnboardingStatus, describeWhatsAppConnection } from "@/lib/utils";
+import type { AnalyticsRange, Appointment, Conversation, LeadStage } from "@/lib/types";
 
 const RANGE_OPTIONS: { label: string; value: AnalyticsRange }[] = [
   { label: "7d", value: "7d" },
@@ -266,37 +257,6 @@ function AiImpactStat({
       <div className="mt-0.5 text-xs text-muted-foreground">{label}</div>
       {hint && <div className="mt-0.5 text-[10px] text-muted-foreground/70">{hint}</div>}
     </div>
-  );
-}
-
-function BusinessHealthCard({ health }: { health: AnalyticsBusinessHealth }) {
-  const whatsapp = describeWhatsAppConnection(health.whatsapp.status);
-  const onboarding = describeOnboardingStatus(health.onboarding_status);
-
-  return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-base">Business health</CardTitle>
-        <StatusPill state={VARIANT_TO_STATE[whatsapp.variant]}>WhatsApp {whatsapp.label}</StatusPill>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            Onboarding ·{" "}
-            <StatusPill state={VARIANT_TO_STATE[onboarding.variant]}>{onboarding.label}</StatusPill>
-          </span>
-          <span>
-            Knowledge base · {health.knowledge_base.published_count} published
-            {health.knowledge_base.draft_count > 0 && `, ${health.knowledge_base.draft_count} draft`}
-          </span>
-          <span>
-            {health.alerts.length === 0
-              ? "No alerts"
-              : health.alerts.map((a) => ALERT_LABEL[a]).join(" · ")}
-          </span>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
