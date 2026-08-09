@@ -6,11 +6,47 @@ import { resolve } from "node:path";
 // `settings.frontend_url` for the other half of that relationship.
 const apiOrigin = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-// Clerk's own documented CSP requirements (frontend API + Cloudflare
-// Turnstile bot-check + avatar images) — kept as named constants so the
-// two policies below can't drift apart on which domains Clerk actually needs.
-const CLERK_SCRIPT = "https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com";
-const CLERK_CONNECT = "https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com";
+// A Clerk publishable key encodes its own Frontend API host: `pk_(test|live)_`
+// + base64(`${frontendApiHost}$`) — Clerk's own documented key format, not
+// something specific to this app. Deriving the CSP origin from the same key
+// that configures ClerkProvider (frontend/src/lib/config.ts) means
+// script-src/connect-src always match whatever Clerk instance this build is
+// actually wired to — dev, prod, or any future staging custom domain — with
+// zero source changes when that changes, only the env var.
+function deriveClerkFrontendOrigin(publishableKey: string | undefined): string | null {
+  const match = publishableKey ? /^pk_(?:test|live)_(.+)$/.exec(publishableKey) : null;
+  if (!match) return null;
+  try {
+    const host = Buffer.from(match[1], "base64").toString("utf-8").replace(/\$$/, "");
+    // Reject anything that doesn't look like a bare hostname rather than
+    // interpolate malformed/unexpected data into a security header.
+    return /^[a-zA-Z0-9.-]+$/.test(host) ? `https://${host}` : null;
+  } catch {
+    return null;
+  }
+}
+
+const clerkFrontendOrigin = deriveClerkFrontendOrigin(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && !clerkFrontendOrigin) {
+  // A key is set but doesn't decode — falling back to the generic domains
+  // below silently would leave a misconfigured build passing the build step
+  // with a CSP that may not match the actual Clerk instance in use.
+  console.warn(
+    "[HIRA] NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY did not decode to a Clerk Frontend API host — " +
+      "falling back to the generic *.clerk.accounts.dev/*.clerk.com CSP allowlist. Verify the key is valid.",
+  );
+}
+
+// Falls back to Clerk's generic domains only when the key is missing or
+// didn't decode (e.g. a build with no env configured) — in normal operation
+// the derived origin above is exact, covers dev/prod/staging alike, and is
+// tighter than the old blanket wildcards.
+const CLERK_SCRIPT = clerkFrontendOrigin
+  ? `${clerkFrontendOrigin} https://challenges.cloudflare.com`
+  : "https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com";
+const CLERK_CONNECT = clerkFrontendOrigin
+  ? `${clerkFrontendOrigin} https://api.clerk.com`
+  : "https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com";
 const CLERK_IMG = "https://img.clerk.com https://images.clerk.dev";
 const CLERK_FRAME = "https://challenges.cloudflare.com";
 
