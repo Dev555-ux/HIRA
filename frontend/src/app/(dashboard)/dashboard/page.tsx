@@ -9,23 +9,31 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo } from "react";
+import { AskHiraBar } from "@/components/ask-hira-bar";
 import { DashboardHero } from "@/components/dashboard-hero";
 import { EmptyState } from "@/components/empty-state";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { ReviewReplyCard } from "@/components/review-reply-card";
 import { StatCard } from "@/components/stat-card";
+import { BusinessHealthCard } from "@/components/ui/business-health-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MemoryBadge } from "@/components/ui/memory-badge";
 import { StatusPill } from "@/components/ui/status-pill";
+import { TaskCard } from "@/components/ui/task-card";
 import { useToast } from "@/components/ui/toast";
+import { useAnalyticsDashboard } from "@/hooks/use-analytics";
 import { useAppointments } from "@/hooks/use-appointments";
 import { useAuthContext } from "@/lib/auth-context";
 import { useConversations } from "@/hooks/use-conversations";
 import { useCustomers } from "@/hooks/use-customers";
+import { useEscalations } from "@/hooks/use-escalations";
+import { useKbEntries } from "@/hooks/use-knowledge-base";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useApprove, usePending, useReject, useUpdateDraft } from "@/hooks/use-pending";
-import type { Appointment, PendingReply } from "@/lib/types";
+import type { Appointment, Escalation, PendingReply } from "@/lib/types";
 import { APPOINTMENT_STATUS, APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
 import { VARIANT_TO_STATE } from "@/lib/status";
 import { describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
@@ -36,12 +44,22 @@ import { describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
 const PREVIEW_ROWS = 5;
 const ACTIVITY_ROWS = 6;
 
-function customerLabel(customer: { display_name: string | null; wa_phone: string } | null): string {
+function customerLabel(customer: { display_name: string | null; wa_phone: string | null } | null): string {
   return customer?.display_name || customer?.wa_phone || "Unknown customer";
 }
 
 function pluralize(count: number, singular: string, plural: string): string {
   return count === 1 ? singular : plural;
+}
+
+function isToday(iso: string): boolean {
+  const d = new Date(iso);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
 }
 
 interface ActivityEntry {
@@ -54,6 +72,7 @@ interface ActivityEntry {
 
 export default function DashboardPage() {
   const { user } = useAuthContext();
+  const router = useRouter();
   const {
     data: pending,
     isPending: isLoadingPending,
@@ -95,6 +114,28 @@ export default function DashboardPage() {
     isError: isAppointmentsError,
     refetch: refetchAppointments,
   } = useAppointments({ from: now });
+  const {
+    data: openEscalationsResult,
+    isPending: isLoadingEscalations,
+    isFetching: isFetchingEscalations,
+    isError: isEscalationsError,
+    refetch: refetchEscalations,
+  } = useEscalations({ status: "open", limit: PREVIEW_ROWS });
+  // Business Health (§4) reuses the Phase 1 BusinessHealthCard, which reuses
+  // the Analytics dashboard's own business_health field — the only place
+  // this data already exists. Range fixed at 30d; Home isn't a range-picker.
+  const {
+    data: analyticsDashboard,
+    isFetching: isFetchingAnalytics,
+    refetch: refetchAnalytics,
+  } = useAnalyticsDashboard("30d");
+  // Learned Today (§8) reuses the Knowledge Base's own entry list, filtered
+  // client-side to today — no new endpoint, no invented "learning event."
+  const {
+    data: kbEntries,
+    isFetching: isFetchingKb,
+    refetch: refetchKb,
+  } = useKbEntries();
 
   const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
   const upcomingAppointments = useMemo(
@@ -105,13 +146,21 @@ export default function DashboardPage() {
     () => recentConversationsPage?.data ?? [],
     [recentConversationsPage],
   );
+  const openEscalations = useMemo(() => openEscalationsResult?.data ?? [], [openEscalationsResult]);
+  const learnedToday = useMemo(
+    () => (kbEntries ?? []).filter((entry) => isToday(entry.created_at)),
+    [kbEntries],
+  );
   const isRefreshing =
     isFetchingPending ||
     isFetchingOnboarding ||
     isFetchingConversationTotals ||
     isFetchingConversations ||
     isFetchingCustomers ||
-    isFetchingAppointments;
+    isFetchingAppointments ||
+    isFetchingEscalations ||
+    isFetchingAnalytics ||
+    isFetchingKb;
 
   function refreshAll() {
     refetchPending();
@@ -120,6 +169,9 @@ export default function DashboardPage() {
     refetchConversations();
     refetchCustomers();
     refetchAppointments();
+    refetchEscalations();
+    refetchAnalytics();
+    refetchKb();
   }
 
   // A compact, chronological merge of activity already fetched for the KPIs
@@ -169,12 +221,31 @@ export default function DashboardPage() {
   }, [pending, recentConversations, upcomingAppointments]);
 
   const pendingCount = pending?.length ?? 0;
+  const escalationCount = openEscalations.length;
   const appointmentCount = upcomingAppointments.length;
   const summaryReady =
-    !isLoadingPending && !isPendingError && !isLoadingAppointments && !isAppointmentsError;
-  const summary = summaryReady
+    !isLoadingPending &&
+    !isPendingError &&
+    !isLoadingAppointments &&
+    !isAppointmentsError &&
+    !isLoadingEscalations &&
+    !isEscalationsError;
+  const baseSummary = summaryReady
     ? `You have ${pendingCount === 0 ? "no" : pendingCount} ${pluralize(pendingCount, "reply", "replies")} waiting for review and ${appointmentCount === 0 ? "no" : appointmentCount} ${pluralize(appointmentCount, "appointment", "appointments")} booked.`
     : "Here's what's happening with your business.";
+  // Escalations are mentioned only when there are any — an "and 0 escalated"
+  // clause on every good day would bury the one day it actually matters.
+  const summary =
+    summaryReady && escalationCount > 0
+      ? `${baseSummary} ${escalationCount} ${pluralize(escalationCount, "conversation", "conversations")} escalated to you.`
+      : baseSummary;
+
+  // "Needs your attention" (§3): pending replies + open escalations, merged.
+  // The whole section disappears when there's genuinely nothing and nothing
+  // failed to load — an executive briefing doesn't dedicate a card to
+  // announcing that nothing needs it.
+  const attentionHasError = isPendingError || isEscalationsError;
+  const attentionEmpty = !attentionHasError && pendingCount === 0 && escalationCount === 0;
 
   return (
     <>
@@ -186,11 +257,81 @@ export default function DashboardPage() {
         pendingCount={pendingCount}
       />
 
+      <div className="mb-8">
+        <AskHiraBar />
+      </div>
+
       {onboarding?.business && onboarding.business.onboarding_status !== "live" && (
         <OnboardingChecklist business={onboarding.business} />
       )}
 
-      {/* KPIs — the four numbers an owner checks first. */}
+      {!attentionEmpty && (
+        <Card interactive className="mb-8">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle className="text-base">Needs your attention</CardTitle>
+            <Button asChild size="sm" variant="ghost">
+              <Link href="/pending">View all</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {isPendingError ? (
+              <EmptyState
+                icon={AlertTriangle}
+                title="Couldn't load pending approvals"
+                description="Something went wrong — please try again."
+                action={
+                  <Button size="sm" onClick={() => refetchPending()}>
+                    Retry
+                  </Button>
+                }
+                className="border-0 py-12"
+              />
+            ) : (
+              <div className="space-y-4">
+                {(pending ?? []).slice(0, PREVIEW_ROWS).map((p: PendingReply) => (
+                  <DashboardReviewCard key={p.id} reply={p} />
+                ))}
+                {isEscalationsError ? (
+                  <EmptyState
+                    icon={AlertTriangle}
+                    title="Couldn't load escalations"
+                    description="Something went wrong — please try again."
+                    action={
+                      <Button size="sm" onClick={() => refetchEscalations()}>
+                        Retry
+                      </Button>
+                    }
+                    className="border-0 py-6"
+                  />
+                ) : (
+                  openEscalations.slice(0, PREVIEW_ROWS).map((escalation: Escalation) => (
+                    <TaskCard
+                      key={escalation.id}
+                      title={customerLabel(escalation.conversation.customer)}
+                      description="Escalated — needs your review"
+                      meta={
+                        <span className="type-caption text-muted-foreground">
+                          {formatRelativeTime(escalation.created_at)}
+                        </span>
+                      }
+                      action={{ label: "Review", onClick: () => router.push("/escalations") }}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {analyticsDashboard?.business_health && (
+        <div className="mb-8">
+          <BusinessHealthCard health={analyticsDashboard.business_health} />
+        </div>
+      )}
+
+      {/* KPIs — the four numbers an owner checks first, once the narrative
+          above has already told them whether today needs anything from them. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Pending approvals"
@@ -236,116 +377,77 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Primary row: what needs action now, and what's coming up next. */}
+      {/* Upcoming appointments + WhatsApp status. */}
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
         <Card interactive className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle className="text-base">Needs your attention</CardTitle>
+            <CardTitle className="text-base">Upcoming appointments</CardTitle>
             <Button asChild size="sm" variant="ghost">
-              <Link href="/pending">View all</Link>
+              <Link href="/appointments">View all</Link>
             </Button>
           </CardHeader>
           <CardContent>
-            {isPendingError ? (
+            {isAppointmentsError ? (
               <EmptyState
                 icon={AlertTriangle}
-                title="Couldn't load pending approvals"
+                title="Couldn't load"
                 description="Something went wrong — please try again."
                 action={
-                  <Button size="sm" onClick={() => refetchPending()}>
+                  <Button size="sm" onClick={() => refetchAppointments()}>
                     Retry
                   </Button>
                 }
-                className="border-0 py-12"
+                className="border-0 py-10"
               />
-            ) : pendingCount === 0 ? (
+            ) : appointmentCount === 0 ? (
               <EmptyState
-                icon={CheckCheck}
-                title="Nothing pending"
-                description="HIRA is keeping up — a new reply will show up here the moment a customer writes in and needs your review."
-                className="border-0 py-12"
+                icon={CalendarClock}
+                title="No upcoming appointments"
+                description="Once a customer confirms a time — or you book one yourself — it'll show up here."
+                action={
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/appointments">New appointment</Link>
+                  </Button>
+                }
+                className="border-0 py-10"
               />
             ) : (
-              <div className="space-y-4">
-                {pending!.slice(0, PREVIEW_ROWS).map((p: PendingReply) => (
-                  <DashboardReviewCard key={p.id} reply={p} />
-                ))}
-              </div>
+              <ul className="space-y-3">
+                {upcomingAppointments.slice(0, 4).map((appt: Appointment) => {
+                  const badge = APPOINTMENT_STATUS_BADGE[appt.status];
+                  const name = customerLabel(appt.customer);
+                  return (
+                    <li key={appt.id} className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatAppointmentRange(appt.starts_at, appt.ends_at)}
+                        </p>
+                      </div>
+                      <StatusPill state={APPOINTMENT_STATUS[appt.status]} className="shrink-0">
+                        {badge.label}
+                      </StatusPill>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </CardContent>
         </Card>
 
-        <div className="flex flex-col gap-4">
-          <Card interactive>
-            <CardHeader className="flex-row items-center justify-between">
-              <CardTitle className="text-base">Upcoming appointments</CardTitle>
-              <Button asChild size="sm" variant="ghost">
-                <Link href="/appointments">View all</Link>
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {isAppointmentsError ? (
-                <EmptyState
-                  icon={AlertTriangle}
-                  title="Couldn't load"
-                  description="Something went wrong — please try again."
-                  action={
-                    <Button size="sm" onClick={() => refetchAppointments()}>
-                      Retry
-                    </Button>
-                  }
-                  className="border-0 py-10"
-                />
-              ) : appointmentCount === 0 ? (
-                <EmptyState
-                  icon={CalendarClock}
-                  title="No upcoming appointments"
-                  description="Once a customer confirms a time — or you book one yourself — it'll show up here."
-                  action={
-                    <Button asChild size="sm" variant="outline">
-                      <Link href="/appointments">New appointment</Link>
-                    </Button>
-                  }
-                  className="border-0 py-10"
-                />
-              ) : (
-                <ul className="space-y-3">
-                  {upcomingAppointments.slice(0, 4).map((appt: Appointment) => {
-                    const badge = APPOINTMENT_STATUS_BADGE[appt.status];
-                    const name = customerLabel(appt.customer);
-                    return (
-                      <li key={appt.id} className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatAppointmentRange(appt.starts_at, appt.ends_at)}
-                          </p>
-                        </div>
-                        <StatusPill state={APPOINTMENT_STATUS[appt.status]} className="shrink-0">
-                          {badge.label}
-                        </StatusPill>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card interactive className="bg-muted/30">
-            <CardHeader>
-              <CardTitle className="text-base">WhatsApp status</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <StatusRow
-                label="WhatsApp"
-                ok={onboarding?.business?.whatsapp_connection_status === "connected"}
-                note={whatsapp.label}
-                variant={whatsapp.variant}
-              />
-            </CardContent>
-          </Card>
-        </div>
+        <Card interactive className="bg-muted/30">
+          <CardHeader>
+            <CardTitle className="text-base">WhatsApp status</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <StatusRow
+              label="WhatsApp"
+              ok={onboarding?.business?.whatsapp_connection_status === "connected"}
+              note={whatsapp.label}
+              variant={whatsapp.variant}
+            />
+          </CardContent>
+        </Card>
       </div>
 
       {/* Secondary row: a compact, chronological log across conversations,
@@ -404,6 +506,33 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Learned Today (§8) — hidden entirely when nothing was added today,
+          same "don't announce nothing" rule as Needs your attention. */}
+      {learnedToday.length > 0 && (
+        <Card interactive className="mt-8">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle className="text-base">Learned today</CardTitle>
+            <MemoryBadge>
+              {learnedToday.length} new {pluralize(learnedToday.length, "entry", "entries")}
+            </MemoryBadge>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2">
+              {learnedToday.map((entry) => (
+                <li key={entry.id}>
+                  <Link
+                    href="/knowledge-base"
+                    className="block truncate rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                  >
+                    {entry.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }
