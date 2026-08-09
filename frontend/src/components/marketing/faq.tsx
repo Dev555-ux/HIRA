@@ -1,5 +1,6 @@
 import { cardClassName } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 const FAQS = [
@@ -43,7 +44,7 @@ const FAQS = [
 export function Faq() {
   return (
     <section id="faq" className="scroll-mt-16 py-16 sm:py-24">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-3xl px-4 sm:px-6">
         <SectionHeader title="Frequently asked questions" />
         <div className="mt-10 space-y-3">
           {FAQS.map((faq) => (
@@ -65,7 +66,7 @@ export function Faq() {
             </details>
           ))}
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }

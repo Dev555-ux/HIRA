@@ -7,6 +7,7 @@ import {
   Target,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 const FEATURES = [
@@ -51,7 +52,7 @@ const FEATURES = [
 export function Features() {
   return (
     <section id="features" className="scroll-mt-16 border-t py-16 sm:py-24">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHeader title="Everything the front desk does, minus the wait" className="mx-auto max-w-2xl" />
         <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((feature) => (
@@ -62,7 +63,7 @@ export function Features() {
             </Card>
           ))}
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }

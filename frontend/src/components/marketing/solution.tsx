@@ -1,3 +1,4 @@
+import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 // The three-card breakdown of what "one employee" means (knowledge, calendar,
@@ -12,12 +13,12 @@ import { SectionHeader } from "@/components/marketing/section-header";
 export function Solution() {
   return (
     <section className="border-t py-16 sm:py-24">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-3xl px-4 sm:px-6">
         <SectionHeader
           title="One employee, not a bundle of bots"
           description="A single AI agent holds the conversation, your calendar, and your leads together — not three separate tools handing your customer between them, and never pretending to know things it doesn't."
         />
-      </div>
+      </Reveal>
     </section>
   );
 }

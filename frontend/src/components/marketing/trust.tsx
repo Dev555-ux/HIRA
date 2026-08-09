@@ -1,4 +1,5 @@
 import { CheckCircle2 } from "lucide-react";
+import { Reveal } from "@/components/marketing/reveal";
 
 // Deliberately lightweight — a scannable checklist, not another card grid
 // (Features below already covers these in depth). No logos, no testimonials:
@@ -13,7 +14,7 @@ const TRUST_ITEMS = [
 export function Trust() {
   return (
     <section className="border-t py-10 sm:py-12">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <h2 className="sr-only">What HIRA does today</h2>
         <ul className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4 sm:justify-between">
           {TRUST_ITEMS.map((item) => (
@@ -23,7 +24,7 @@ export function Trust() {
             </li>
           ))}
         </ul>
-      </div>
+      </Reveal>
     </section>
   );
 }

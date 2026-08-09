@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useInView } from "@/hooks/use-in-view";
 import { cn } from "@/lib/utils";
 
 // HIRA's signature behavior, not a chat demo: one message reaches six real
@@ -283,6 +284,11 @@ function ClosingLine() {
 function DemoWidget() {
   const reducedMotion = useReducedMotion();
   const compact = useIsCompact();
+  // DESIGN-MOTION-001 §7.3: at rest until scrolled into view, then alive;
+  // pauses again if scrolled away — battery and honesty, same reasoning as
+  // the existing tab-hidden guard below, just for the viewport instead of
+  // the tab.
+  const { ref: viewRef, inView } = useInView<HTMLDivElement>({ once: false, rootMargin: "0px" });
   const [beatIndex, setBeatIndex] = useState(0);
   const [messageVisible, setMessageVisible] = useState(false);
   const [status, setStatus] = useState<Record<SystemId, SystemStatus>>(IDLE_STATUS);
@@ -299,7 +305,7 @@ function DemoWidget() {
   }, []);
 
   useEffect(() => {
-    if (paused || tabHidden || reducedMotion) return;
+    if (paused || tabHidden || reducedMotion || !inView) return;
     const timer = setTimeout(() => {
       const nextIndex = beatIndex + 1;
       if (nextIndex >= BEATS.length) {
@@ -320,7 +326,7 @@ function DemoWidget() {
       setBeatIndex(nextIndex);
     }, BEATS[beatIndex].hold);
     return () => clearTimeout(timer);
-  }, [beatIndex, paused, tabHidden, reducedMotion]);
+  }, [beatIndex, paused, tabHidden, reducedMotion, inView]);
 
   const summary =
     "Demo: a WhatsApp message triggers six business systems — Knowledge, CRM, Inventory, Finance, Calendar, and Human Team — each working independently before settling together in one synchronized moment and producing a reply. One message, six systems, zero manual work.";
@@ -357,6 +363,7 @@ function DemoWidget() {
 
   return (
     <div
+      ref={viewRef}
       role="group"
       aria-label={`${summary} Animation pauses while hovered or focused.`}
       tabIndex={0}

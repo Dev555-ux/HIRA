@@ -1,5 +1,6 @@
 import { cardClassName } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 // Steps stay <li> inside an <ol> (correct semantics for an ordered
@@ -39,7 +40,7 @@ const STEPS = [
 export function HowItWorks() {
   return (
     <section id="how-it-works" className="scroll-mt-16 border-t bg-secondary/40 py-16 sm:py-24">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHeader title="Set up in four steps" className="mx-auto max-w-2xl" />
         <ol className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((item) => (
@@ -52,7 +53,7 @@ export function HowItWorks() {
             </li>
           ))}
         </ol>
-      </div>
+      </Reveal>
     </section>
   );
 }

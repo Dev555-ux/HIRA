@@ -15,10 +15,10 @@ export function Hero() {
         Founder Beta — limited early access
       </Badge>
 
-      <h1 className="mt-6 text-4xl font-semibold tracking-tight sm:text-5xl">
+      <h1 className="mt-6 text-balance text-5xl font-semibold tracking-tight sm:text-6xl lg:text-7xl">
         Never miss another customer message.
       </h1>
-      <p className="mt-6 text-lg text-muted-foreground sm:text-xl">
+      <p className="mt-6 text-pretty text-lg text-muted-foreground sm:text-xl">
         HIRA answers your customers on WhatsApp, books appointments, follows
         up on leads, and hands the conversation to your team the moment it
         needs a human touch.

@@ -1,5 +1,6 @@
 import { Clock, MessageSquareOff, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 const PROBLEMS = [
@@ -26,7 +27,7 @@ const PROBLEMS = [
 export function Problem() {
   return (
     <section className="border-t bg-secondary/40 py-16 sm:py-24">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHeader
           title="WhatsApp is where your customers already are — and where they expect a fast reply"
           className="mx-auto max-w-2xl"
@@ -42,7 +43,7 @@ export function Problem() {
             </Card>
           ))}
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }
