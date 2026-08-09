@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,6 +26,7 @@ describe("CommandPalette", () => {
   beforeEach(() => {
     push.mockReset();
     mockPathname = "/dashboard";
+    window.localStorage.clear();
   });
 
   it("shows the full grouped navigation when the query is empty", async () => {
@@ -125,5 +126,56 @@ describe("CommandPalette", () => {
     );
     rerender(<CommandPalette open={true} onOpenChange={vi.fn()} triggerRef={triggerRef} />);
     expect(screen.getByRole("combobox")).toHaveValue("");
+  });
+
+  it("has no Recent group on a first-ever visit (nothing in storage yet)", () => {
+    renderPalette();
+    expect(screen.queryByText("Recent")).not.toBeInTheDocument();
+  });
+
+  it("surfaces a navigated-to page under Recent, first, on the next open", async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderPalette();
+    await user.click(screen.getByRole("option", { name: /Analytics/ }));
+    unmount();
+
+    renderPalette();
+    const recentHeading = await screen.findByText("Recent");
+    const recentGroup = recentHeading.parentElement!;
+    expect(within(recentGroup).getByRole("option", { name: /Analytics/ })).toBeInTheDocument();
+  });
+
+  it("keeps a recently-visited page's href unique across the list (no duplicate rows)", async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderPalette();
+    await user.click(screen.getByRole("option", { name: /Analytics/ }));
+    unmount();
+
+    renderPalette();
+    await screen.findByText("Recent");
+    expect(screen.getAllByRole("option", { name: /Analytics/ })).toHaveLength(1);
+  });
+
+  it("caps recents at 3 and moves a re-visited page back to the front", async () => {
+    const user = userEvent.setup();
+    for (const name of [/Analytics/, /Customers/, /Escalations/, /Inbox/]) {
+      const { unmount } = renderPalette();
+      await user.click(screen.getByRole("option", { name }));
+      unmount();
+    }
+    // Re-visit Customers — should jump back to the front, and the list
+    // should still only hold 3 (Escalations dropped out first, being both
+    // oldest and not re-visited).
+    const { unmount } = renderPalette();
+    await user.click(screen.getByRole("option", { name: /Customers/ }));
+    unmount();
+
+    renderPalette();
+    const recentHeading = await screen.findByText("Recent");
+    const recentGroup = recentHeading.parentElement!;
+    const options = within(recentGroup).getAllByRole("option");
+    expect(options).toHaveLength(3);
+    expect(options[0]).toHaveAccessibleName(expect.stringContaining("Customers"));
+    expect(within(recentGroup).queryByRole("option", { name: /Analytics/ })).not.toBeInTheDocument();
   });
 });

@@ -15,6 +15,29 @@ if (typeof Element !== "undefined" && !Element.prototype.scrollTo) {
   Element.prototype.scrollTo = () => {};
 }
 
+// jsdom doesn't provide localStorage in this Node/jsdom combination (Node
+// 22+ ships its own experimental global `localStorage` that shadows jsdom's
+// without actually being usable, per-file, without the `--localstorage-file`
+// flag — a known Node/jsdom interaction, not something real browsers hit).
+// A minimal in-memory Web Storage implementation is enough for anything this
+// suite needs (the command palette's recent-commands persistence).
+if (typeof window !== "undefined" && !window.localStorage) {
+  const store = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", {
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, String(value)),
+      removeItem: (key: string) => void store.delete(key),
+      clear: () => void store.clear(),
+      key: (index: number) => Array.from(store.keys())[index] ?? null,
+      get length() {
+        return store.size;
+      },
+    },
+    configurable: true,
+  });
+}
+
 // jsdom has no layout engine and therefore no notion of a reduced-motion
 // media query either — any component checking prefers-reduced-motion
 // throws without this stub. Defaults to "no preference" so tests exercise

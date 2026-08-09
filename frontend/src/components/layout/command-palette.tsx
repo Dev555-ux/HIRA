@@ -4,8 +4,33 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Search } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { navGroups, type NavItem } from "@/lib/nav";
+import { navGroups, navItems, type NavItem } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+
+// DESIGN-MOTION-001 §10.28: "command palette remembers recent commands and
+// surfaces them first." Persisted across visits (not just the session) since
+// a founder's most-used pages are a stable habit, not a per-tab thing.
+// Failure (private browsing, quota, disabled storage) degrades to "no
+// recents" — never an error surfaced for what's purely a convenience.
+const RECENT_KEY = "hira:command-palette:recent";
+const MAX_RECENT = 3;
+
+function loadRecentHrefs(): string[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentHrefs(hrefs: string[]) {
+  try {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(hrefs));
+  } catch {
+    // Best-effort; recents are a nicety, not a feature worth failing loudly over.
+  }
+}
 
 // Subsequence match ("cust" -> "Customers", "appoint" -> "Appointments") —
 // enough for a ~12-route list; a scoring/fuzzy library would be solving a
@@ -55,27 +80,48 @@ export function CommandPalette({
   const pathname = usePathname();
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [recentHrefs, setRecentHrefs] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listboxId = useId();
 
   // Fresh on every open, same as Spotlight/Raycast — a stale query from last
-  // time isn't useful, and an empty box is the honest starting state.
+  // time isn't useful, and an empty box is the honest starting state. Recents
+  // are re-read from storage on each open (not kept live in state while
+  // closed) since nothing else in this component can change them meanwhile.
   useEffect(() => {
     if (!open) {
       setQuery("");
       setActiveIndex(0);
+    } else {
+      setRecentHrefs(loadRecentHrefs());
     }
   }, [open]);
 
   const resultGroups: ResultGroup[] = useMemo(() => {
-    if (query.trim() === "") return navGroups;
+    if (query.trim() === "") {
+      const recentItems = recentHrefs
+        .map((href) => navItems.find((item) => item.href === href))
+        .filter((item): item is NavItem => Boolean(item));
+      if (recentItems.length === 0) return navGroups;
+      // Recent items are pulled out of whichever group they'd normally sit
+      // in for this view — an href appearing twice would break keyboard nav
+      // (activeIndex math and React keys both assume one row per href).
+      const recentSet = new Set(recentItems.map((item) => item.href));
+      const rest = navGroups
+        .map((group) => ({
+          label: group.label,
+          items: group.items.filter((item) => !recentSet.has(item.href)),
+        }))
+        .filter((group) => group.items.length > 0);
+      return [{ label: "Recent", items: recentItems }, ...rest];
+    }
     return navGroups
       .map((group) => ({
         label: group.label,
         items: group.items.filter((item) => fuzzyMatch(query, item.label)),
       }))
       .filter((group) => group.items.length > 0);
-  }, [query]);
+  }, [query, recentHrefs]);
 
   const flatResults = useMemo(() => resultGroups.flatMap((g) => g.items), [resultGroups]);
 
@@ -84,6 +130,7 @@ export function CommandPalette({
   }, [query]);
 
   function activate(item: NavItem) {
+    saveRecentHrefs([item.href, ...recentHrefs.filter((href) => href !== item.href)].slice(0, MAX_RECENT));
     onOpenChange(false);
     router.push(item.href);
   }

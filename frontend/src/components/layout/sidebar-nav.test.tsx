@@ -75,4 +75,14 @@ describe("SidebarNav — M15 grouping", () => {
       expect(screen.getByRole("link", { name: item.label })).toBeInTheDocument();
     }
   });
+
+  it("renders exactly one active-item indicator, shared across the whole nav (not one per link)", () => {
+    const { container } = render(<SidebarNav />);
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    // The indicator is the nav's own direct aria-hidden child, not something
+    // owned by any individual link — a shared element that moves, per
+    // DESIGN-MOTION-001 §5.4, rather than one instance per NavLink.
+    expect(nav.querySelectorAll(':scope > [aria-hidden="true"]')).toHaveLength(1);
+    expect(container.querySelectorAll('a [aria-hidden="true"]')).toHaveLength(ALL_ITEMS.length);
+  });
 });
