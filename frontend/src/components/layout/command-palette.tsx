@@ -237,7 +237,7 @@ export function CommandPalette({
                         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <span className="flex-1">{item.label}</span>
                         {isCurrentRoute && (
-                          <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                          <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-hidden="true" />
                         )}
                       </div>
                     );

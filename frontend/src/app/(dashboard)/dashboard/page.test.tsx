@@ -201,7 +201,7 @@ describe("DashboardPage", () => {
     renderWithProviders(<DashboardPage />);
     // "Awaiting your review" also appears in the inline ReviewReplyCard's own
     // StatusPill (M10) — scope to the KPI tile specifically.
-    const kpi = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-xl")!;
+    const kpi = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-2xl")!;
     expect(await within(kpi).findByText("Awaiting your review")).toBeInTheDocument();
   });
 
@@ -472,7 +472,7 @@ describe("DashboardPage", () => {
       renderWithProviders(<DashboardPage />);
 
       await screen.findByText("Yes, we're open!");
-      const kpiBefore = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-xl")!;
+      const kpiBefore = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-2xl")!;
       expect(await within(kpiBefore).findByText("1")).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: /approve & send/i }));
@@ -480,7 +480,7 @@ describe("DashboardPage", () => {
       // Optimistic PENDING_KEY update — no waiting on the network or the poll.
       await waitFor(() => expect(screen.queryByText("Yes, we're open!")).not.toBeInTheDocument());
       expect(api.approveMessage).toHaveBeenCalledWith(expect.any(Function), "msg-1");
-      const kpiAfter = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-xl")!;
+      const kpiAfter = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-2xl")!;
       expect(await within(kpiAfter).findByText("0")).toBeInTheDocument();
     });
 
@@ -514,7 +514,7 @@ describe("DashboardPage", () => {
       // Still awaiting review, still visible — an edit doesn't remove the card.
       // "Jordan Lee" also appears in Recent activity (existing behavior,
       // unrelated to this change), so scope to "Needs your attention".
-      const section = (await screen.findByText("Needs your attention")).closest<HTMLElement>(".rounded-xl")!;
+      const section = (await screen.findByText("Needs your attention")).closest<HTMLElement>(".rounded-2xl")!;
       expect(within(section).getByText("Jordan Lee")).toBeInTheDocument();
     });
 

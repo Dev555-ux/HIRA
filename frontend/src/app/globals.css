@@ -2,53 +2,62 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================================================
+   HIRA V2 — visual re-skin (Session 64). Every value below is a hue rotation
+   of the previous token (cool blue-grey 240° neutral, Cobalt 229° accent) to
+   a warm-ink neutral (~20-30°) and a coral-vermilion accent (~18°) — NOT a
+   from-scratch repaint. Lightness values are kept identical to the tokens
+   they replace wherever the pairing is text-on-surface, so the contrast
+   ratios this system already relied on carry forward; hue and saturation are
+   what actually changed. See DECISIONS.md for the full rationale (this was
+   an explicit, mandatory instruction: replace the skin, keep the logic). */
 :root {
-  --radius: 0.625rem;
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(240 10% 4%);
+  --radius: 1rem;
+  --background: hsl(30 20% 99%);
+  --foreground: hsl(20 15% 6%);
   --card: hsl(0 0% 100%);
-  --card-foreground: hsl(240 10% 4%);
+  --card-foreground: hsl(20 15% 6%);
   --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(240 10% 4%);
-  --primary: hsl(240 6% 10%);
-  --primary-foreground: hsl(0 0% 98%);
-  --secondary: hsl(240 5% 96%);
-  --secondary-foreground: hsl(240 6% 10%);
-  --muted: hsl(240 5% 96%);
-  --muted-foreground: hsl(240 4% 46%);
-  --accent: hsl(240 5% 96%);
-  --accent-foreground: hsl(240 6% 10%);
-  --destructive: hsl(0 72% 51%);
-  --destructive-foreground: hsl(0 0% 98%);
-  --success: hsl(142 71% 45%);
-  --warning: hsl(38 92% 50%);
-  --border: hsl(240 6% 90%);
-  --input: hsl(240 6% 90%);
-  --ring: hsl(240 5% 65%);
+  --popover-foreground: hsl(20 15% 6%);
+  --primary: hsl(20 12% 10%);
+  --primary-foreground: hsl(30 20% 98%);
+  --secondary: hsl(30 12% 95%);
+  --secondary-foreground: hsl(20 12% 10%);
+  --muted: hsl(30 12% 95%);
+  --muted-foreground: hsl(25 8% 45%);
+  --accent: hsl(30 12% 95%);
+  --accent-foreground: hsl(20 12% 10%);
+  --destructive: hsl(4 74% 51%);
+  --destructive-foreground: hsl(30 20% 98%);
+  --success: hsl(150 68% 38%);
+  --warning: hsl(40 90% 48%);
+  --border: hsl(30 10% 88%);
+  --input: hsl(30 10% 88%);
+  --ring: hsl(18 82% 54%);
 }
 
 .dark {
-  --background: hsl(240 10% 4%);
-  --foreground: hsl(0 0% 98%);
-  --card: hsl(240 8% 6%);
-  --card-foreground: hsl(0 0% 98%);
-  --popover: hsl(240 8% 6%);
-  --popover-foreground: hsl(0 0% 98%);
-  --primary: hsl(0 0% 98%);
-  --primary-foreground: hsl(240 6% 10%);
-  --secondary: hsl(240 4% 14%);
-  --secondary-foreground: hsl(0 0% 98%);
-  --muted: hsl(240 4% 14%);
-  --muted-foreground: hsl(240 5% 65%);
-  --accent: hsl(240 4% 16%);
-  --accent-foreground: hsl(0 0% 98%);
-  --destructive: hsl(0 63% 50%);
-  --destructive-foreground: hsl(0 0% 98%);
-  --success: hsl(142 64% 42%);
-  --warning: hsl(38 92% 50%);
-  --border: hsl(240 4% 16%);
-  --input: hsl(240 4% 18%);
-  --ring: hsl(240 5% 40%);
+  --background: hsl(20 15% 5%);
+  --foreground: hsl(30 15% 97%);
+  --card: hsl(20 12% 8%);
+  --card-foreground: hsl(30 15% 97%);
+  --popover: hsl(20 12% 8%);
+  --popover-foreground: hsl(30 15% 97%);
+  --primary: hsl(30 15% 97%);
+  --primary-foreground: hsl(20 12% 10%);
+  --secondary: hsl(20 10% 15%);
+  --secondary-foreground: hsl(30 15% 97%);
+  --muted: hsl(20 10% 15%);
+  --muted-foreground: hsl(25 8% 65%);
+  --accent: hsl(20 10% 17%);
+  --accent-foreground: hsl(30 15% 97%);
+  --destructive: hsl(4 65% 55%);
+  --destructive-foreground: hsl(30 15% 97%);
+  --success: hsl(150 60% 45%);
+  --warning: hsl(40 90% 52%);
+  --border: hsl(20 10% 17%);
+  --input: hsl(20 10% 19%);
+  --ring: hsl(20 100% 68%);
 }
 
 /* ============================================================================
@@ -82,16 +91,32 @@
   --font-size-caption: 0.8125rem; /* 13px */
   --font-size-mono: 0.875rem; /* 14px */
 
+  /* HIRA V2 — expanded display scale for the highest-visibility moments
+     (landing hero, page headings, the Home greeting). Additive: the roles
+     above are untouched, so any existing .type-* consumer is unaffected. */
+  --font-size-display-2xl: 4.5rem; /* 72px — landing hero */
+  /* Fluid, not stepped: these two roles are used as a single flat class at
+     call sites with no per-consumer breakpoint variants (dashboard-hero.tsx,
+     section-header.tsx, page-header.tsx), so the size itself has to do the
+     responsive work. clamp() scales continuously between the two bounds
+     instead of jumping at a breakpoint — full size from a comfortable
+     desktop width down, shrinking smoothly on narrower viewports rather
+     than staying flat and risking a multi-line wrap on a phone. */
+  --font-size-display-xl: clamp(2rem, 1.1rem + 4.5vw, 3.5rem); /* 32px → 56px — Home greeting */
+  --font-size-display-lg: clamp(1.75rem, 1.1rem + 3.25vw, 2.75rem); /* 28px → 44px — page/section headings */
+
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
+  --font-weight-black: 800;
 
   --leading-tight: 1.1;
   --leading-snug: 1.3;
   --leading-normal: 1.5;
   --leading-relaxed: 1.65;
 
+  --tracking-tighter: -0.035em;
   --tracking-tight: -0.02em;
   --tracking-normal: 0em;
   --tracking-wide: 0.02em;
@@ -155,37 +180,40 @@
      the existing outer shadow on every level is unchanged, just joined by a
      second layer. */
   --elevation-0: none;
-  --elevation-1: 0 1px 2px 0 rgb(24 24 37 / 0.04), inset 0 1px 0 0 rgb(255 255 255 / 0.04);
-  --elevation-2: 0 2px 8px -1px rgb(24 24 37 / 0.06), inset 0 1px 0 0 rgb(255 255 255 / 0.05);
-  --elevation-3: 0 8px 24px -4px rgb(24 24 37 / 0.1), inset 0 1px 0 0 rgb(255 255 255 / 0.06);
-  --elevation-4: 0 16px 48px -8px rgb(24 24 37 / 0.16), inset 0 1px 0 0 rgb(255 255 255 / 0.07);
-  --elevation-5: 0 24px 64px -12px rgb(24 24 37 / 0.22), inset 0 1px 0 0 rgb(255 255 255 / 0.09);
+  --elevation-1: 0 1px 2px 0 rgb(34 24 16 / 0.05), inset 0 1px 0 0 rgb(255 255 255 / 0.04);
+  --elevation-2: 0 2px 8px -1px rgb(34 24 16 / 0.07), inset 0 1px 0 0 rgb(255 255 255 / 0.05);
+  --elevation-3: 0 8px 24px -4px rgb(34 24 16 / 0.11), inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+  --elevation-4: 0 16px 48px -8px rgb(34 24 16 / 0.17), inset 0 1px 0 0 rgb(255 255 255 / 0.07);
+  --elevation-5: 0 24px 64px -12px rgb(34 24 16 / 0.23), inset 0 1px 0 0 rgb(255 255 255 / 0.09);
 
   /* AI + review surfaces (DESIGN-MOTION-001 §4.4, §6). Near-threshold tones
      DERIVED from the neutral system — never new brand hues. The AI surface is
      the "handled for you" material; the spine is its faint left border; review
      is the calm "awaiting you" state. */
   --ai-foreground: var(--foreground);
-  --ai-spine: hsl(240 5% 65%);
-  --ai-surface: hsl(240 20% 99%);
+  --ai-spine: hsl(25 8% 65%);
+  --ai-surface: hsl(30 25% 99%);
   --ai-surface-foreground: var(--card-foreground);
-  --review: hsl(240 5% 96%);
-  --review-foreground: hsl(240 6% 10%);
+  --review: hsl(30 12% 95%);
+  --review-foreground: hsl(20 12% 10%);
 
   /* Status foregrounds — pair with the existing --success / --warning fills
      (which shipped without foreground pairs). Additive; nothing consumes them
      yet. */
-  --success-foreground: hsl(0 0% 98%);
-  --warning-foreground: hsl(240 6% 10%);
+  --success-foreground: hsl(30 20% 98%);
+  --warning-foreground: hsl(20 12% 10%);
 
-  /* Brand (Cobalt, approved — IMPLEMENTATION-ROADMAP-001 M0). The one
-     saturated accent in an otherwise neutral system: primary actions, links,
-     focus rings, the active-nav indicator, and (from M4 onward) the AI
-     authorship spine. Never a surface fill outside that short list — status,
-     tables, skeletons, and disabled states stay on the existing neutral/
-     semantic tokens above, unchanged. Additive; zero consumers yet. */
-  --brand: hsl(229 79% 54%);
-  --brand-foreground: hsl(0 0% 98%);
+  /* Brand ("Signal", warm coral-vermilion — HIRA V2 re-skin, replaces Cobalt).
+     The one saturated accent in an otherwise neutral system: primary actions,
+     links, focus rings, the active-nav indicator, and the AI authorship
+     spine. Never a surface fill outside that short list — status, tables,
+     skeletons, and disabled states stay on the existing neutral/semantic
+     tokens above, unchanged. Same S/L recipe as the Cobalt token it replaces
+     (S~80%, L~54%), hue rotated from 229° to 18° — chosen for maximum
+     distance from the old blue, from warning's amber (40°), and from
+     destructive's red (4°). */
+  --brand: hsl(18 82% 54%);
+  --brand-foreground: hsl(30 20% 98%);
 }
 
 .dark {
@@ -198,16 +226,17 @@
   --elevation-4: inset 0 1px 0 0 rgb(255 255 255 / 0.07), 0 16px 48px -8px rgb(0 0 0 / 0.6);
   --elevation-5: inset 0 1px 0 0 rgb(255 255 255 / 0.09), 0 24px 64px -12px rgb(0 0 0 / 0.7);
 
-  --ai-spine: hsl(240 5% 40%);
-  --ai-surface: hsl(240 8% 7%);
-  --review: hsl(240 4% 14%);
-  --review-foreground: hsl(0 0% 98%);
+  --ai-spine: hsl(25 8% 40%);
+  --ai-surface: hsl(20 12% 9%);
+  --review: hsl(20 10% 15%);
+  --review-foreground: hsl(30 15% 97%);
 
-  /* Brand (Cobalt) — dark mode. Lightened for contrast on a near-black
-     surface, same technique already used by --success/--destructive above;
-     foreground flips to near-black to stay readable on the lighter fill. */
-  --brand: hsl(232 100% 72%);
-  --brand-foreground: hsl(240 6% 10%);
+  /* Brand ("Signal") — dark mode. Lightened/saturated for contrast on a
+     near-black surface, same technique already used for Cobalt/success/
+     destructive above; foreground flips to near-black to stay readable on
+     the lighter fill. */
+  --brand: hsl(20 100% 68%);
+  --brand-foreground: hsl(20 12% 10%);
 }
 
 @theme inline {
@@ -530,6 +559,30 @@
    no existing element uses these, so nothing already rendered changes.
    ============================================================================ */
 @layer components {
+  /* HIRA V2 — the expanded display roles, same composition pattern as
+     .type-display below (family/weight/line-height/tracking from tokens),
+     just reaching for the bigger sizes added alongside --font-size-display. */
+  .type-display-2xl {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: var(--font-size-display-2xl);
+    font-weight: var(--font-weight-black);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tighter);
+  }
+  .type-display-xl {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: var(--font-size-display-xl);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tighter);
+  }
+  .type-display-lg {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: var(--font-size-display-lg);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+  }
   .type-display {
     font-family: var(--font-sans), system-ui, sans-serif;
     font-size: var(--font-size-display);

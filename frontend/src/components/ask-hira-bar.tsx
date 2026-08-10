@@ -2,7 +2,6 @@
 
 import { ArrowRight } from "lucide-react";
 import { AIAvatar } from "@/components/ui/ai-avatar";
-import { cardClassName } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 // Home's command centre entry point (HIRA v2 Phase 4). Reuses the existing
@@ -13,6 +12,13 @@ import { cn } from "@/lib/utils";
 // state machine. App Shell is explicitly out of scope for this phase, so
 // this reaches the palette through its existing public surface (the
 // shortcut) rather than adding a prop/context to AppShell itself.
+//
+// HIRA V2: deliberately NOT built on cardClassName — the audit that led to
+// this re-skin found this bar reading as "one more generic card," which
+// undersold its role as the page's primary interaction. It gets its own
+// elevated, brand-tinted surface instead, at e3 (a step above the resting
+// cards around it) so it visually leads the page rather than sitting in the
+// stack with everything else.
 export function AskHiraBar() {
   function open() {
     const isMac =
@@ -32,16 +38,18 @@ export function AskHiraBar() {
       type="button"
       onClick={open}
       className={cn(
-        cardClassName,
-        "flex w-full items-center gap-4 p-5 text-left transition-[box-shadow,transform] duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:-translate-y-px hover:shadow-e2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full items-center gap-5 rounded-2xl border border-brand/20 bg-gradient-to-br from-brand/[0.07] via-card to-card p-6 text-left shadow-e3 sm:p-8",
+        "transition-[box-shadow,transform,border-color] duration-[var(--motion-fast)] ease-[var(--ease-standard)]",
+        "hover:-translate-y-px hover:border-brand/35 hover:shadow-e4",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
       )}
     >
-      <AIAvatar name="HIRA" size="lg" />
+      <AIAvatar name="HIRA" size="xl" />
       <span className="min-w-0 flex-1">
-        <span className="block text-base font-medium text-foreground">
+        <span className="block text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
           Ask HIRA anything about your business
         </span>
-        <span className="block text-sm text-muted-foreground">
+        <span className="mt-1 block text-sm text-muted-foreground">
           Search customers, jump to a page, or find what you need
         </span>
       </span>
@@ -49,7 +57,7 @@ export function AskHiraBar() {
         <kbd className="hidden rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] sm:block">
           ⌘K
         </kbd>
-        <ArrowRight className="size-4" aria-hidden="true" />
+        <ArrowRight className="size-5" aria-hidden="true" />
       </span>
     </button>
   );

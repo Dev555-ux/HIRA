@@ -136,7 +136,7 @@ describe("FounderOpsPage", () => {
     vi.mocked(api.getFounderOverview).mockResolvedValue(BASE_OVERVIEW);
     renderWithProviders();
 
-    const alertsCard = (await screen.findByText("Needs attention")).closest<HTMLElement>(".rounded-xl")!;
+    const alertsCard = (await screen.findByText("Needs attention")).closest<HTMLElement>(".rounded-2xl")!;
     expect(within(alertsCard).getByText("Struggling Gym")).toBeInTheDocument();
     expect(within(alertsCard).queryByText("Bright Smile Dental")).not.toBeInTheDocument();
     expect(within(alertsCard).getByText("WhatsApp disconnected")).toBeInTheDocument();
@@ -230,7 +230,7 @@ describe("FounderOpsPage", () => {
       renderWithProviders();
 
       const card = (await screen.findByText("AI Employee Activity")).closest<HTMLElement>(
-        ".rounded-xl",
+        ".rounded-2xl",
       )!;
       expect(await within(card).findByText("42")).toBeInTheDocument();
       expect(within(card).getByText("Scheduler")).toBeInTheDocument();

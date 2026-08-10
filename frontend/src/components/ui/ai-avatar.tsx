@@ -12,16 +12,17 @@ function initials(name: string): string {
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase();
 }
 
-const SIZE: Record<"sm" | "default" | "lg", string> = {
+const SIZE: Record<"sm" | "default" | "lg" | "xl", string> = {
   sm: "size-6 text-[10px]",
   default: "size-8 text-xs",
   lg: "size-10 text-sm",
+  xl: "size-14 text-lg",
 };
 
 export interface AIAvatarProps extends React.HTMLAttributes<HTMLDivElement> {
   /** The AI employee's name, e.g. "Maya". Used for initials and the accessible label. */
   name: string;
-  size?: "sm" | "default" | "lg";
+  size?: "sm" | "default" | "lg" | "xl";
   /** When supplied, overlays an ActivityDot in the corner (§6.2 state grammar). */
   state?: ActivityState;
 }

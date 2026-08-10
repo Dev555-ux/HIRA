@@ -15,7 +15,7 @@ function aiReplyModeCard() {
 }
 
 function aiEmployeeCard() {
-  return screen.getByText("AI Employee").closest<HTMLElement>(".rounded-xl")!;
+  return screen.getByText("AI Employee").closest<HTMLElement>(".rounded-2xl")!;
 }
 
 vi.mock("@/lib/api", () => ({
@@ -147,7 +147,7 @@ describe("SettingsPage", () => {
     it("no longer shows Timezone here — it moved to the Working hours & calendar card", async () => {
       renderWithProviders();
       const profileCard = (await screen.findByText("Business profile")).closest<HTMLElement>(
-        ".rounded-xl",
+        ".rounded-2xl",
       )!;
       expect(within(profileCard).queryByText("America/Chicago")).not.toBeInTheDocument();
     });

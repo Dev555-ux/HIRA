@@ -60,10 +60,10 @@ export function DashboardHero({
   return (
     <div className="mb-8 flex flex-col gap-4 animate-fade-in-up sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="type-display-xl text-balance">
           {greeting}, {firstName(name)}
         </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">{summary}</p>
+        <p className="mt-2 text-base text-muted-foreground">{summary}</p>
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">
         {pendingCount > 0 && (

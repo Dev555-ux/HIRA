@@ -83,7 +83,7 @@ export function SidebarNav({
     <nav ref={navRef} className="relative flex flex-col gap-4 px-3 py-4" aria-label="Primary">
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute left-0 h-5 w-0.5 rounded-full bg-primary transition-[transform,opacity] duration-[var(--motion-slow)] ease-[var(--ease-in-out-quart)]"
+        className="pointer-events-none absolute left-0 h-5 w-0.5 rounded-full bg-brand transition-[transform,opacity] duration-[var(--motion-slow)] ease-[var(--ease-in-out-quart)]"
         style={{
           transform: `translateY(${indicatorTop ?? 0}px)`,
           opacity: indicatorTop === null ? 0 : 1,

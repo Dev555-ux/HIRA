@@ -24,7 +24,7 @@ function Brand({ collapsed = false, action }: { collapsed?: boolean; action?: Re
       )}
     >
       <div className="flex items-center gap-2">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand text-brand-foreground">
           <Bot className="size-4" aria-hidden="true" />
         </div>
         {!collapsed && <span className="text-sm font-semibold tracking-tight">HIRA</span>}

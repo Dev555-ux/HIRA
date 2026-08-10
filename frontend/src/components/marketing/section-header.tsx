@@ -22,7 +22,7 @@ export function SectionHeader({
 }) {
   return (
     <div className={cn("text-center", className)}>
-      <h2 className="text-3xl font-semibold tracking-tight">{title}</h2>
+      <h2 className="type-display-lg text-balance">{title}</h2>
       {description ? (
         <p className="mt-4 text-lg text-muted-foreground">{description}</p>
       ) : null}

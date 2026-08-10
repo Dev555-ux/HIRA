@@ -98,7 +98,7 @@ describe("CommandPalette", () => {
     renderPalette();
 
     const option = screen.getByRole("option", { name: /Customers/ });
-    expect(option.querySelector(".bg-primary")).toBeInTheDocument();
+    expect(option.querySelector(".bg-brand")).toBeInTheDocument();
   });
 
   it("wires ARIA combobox/listbox relationships correctly", async () => {

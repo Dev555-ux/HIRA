@@ -178,7 +178,7 @@ describe("AnalyticsPage", () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue(POPULATED_DASHBOARD);
     renderWithProviders(<AnalyticsPage />);
 
-    const card = (await screen.findByText("Business health")).closest<HTMLElement>(".rounded-xl")!;
+    const card = (await screen.findByText("Business health")).closest<HTMLElement>(".rounded-2xl")!;
     expect(within(card).getByText("WhatsApp Connected")).toBeInTheDocument();
     expect(within(card).getByText(/Onboarding/)).toBeInTheDocument();
     // "Live" now renders as its own StatusPill (M15A), not a plain text run.
