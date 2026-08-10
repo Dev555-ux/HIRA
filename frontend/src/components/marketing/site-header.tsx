@@ -12,11 +12,17 @@ const NAV_LINKS = [
 // in / Get started always reachable — keeps this header (and the whole
 // marketing page) free of client-side JS, matching "fast loading" and
 // "clarity over animation".
+//
+// V4 "Signal & Quiet": dropped the border-b — a hard rule right above a
+// deliberately quiet, borderless hero reads as leftover chrome. The
+// backdrop-blur + bg-background/80 scrim still keeps nav legible over
+// whatever scrolls underneath it; that's doing the separation work a
+// hairline used to.
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
+    <header className="sticky top-0 z-30 bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
+        <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
           <span className="flex size-8 items-center justify-center rounded-md bg-brand text-brand-foreground">
             <Bot className="size-4" aria-hidden="true" />
           </span>

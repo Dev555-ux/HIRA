@@ -12,6 +12,16 @@ const FUTURE_ROLES = ["Sales follow-up", "Support", "Scheduling"];
 // Deliberately a compact banner, not a full section-height block: it makes
 // one small claim (there will be more AI employees later) that shouldn't
 // compete for attention with Problem/Solution/Features above and below it.
+//
+// V4 "Signal & Quiet": this Card is now the only card left on the page —
+// every other info tile was cut in favor of the editorial/list treatments
+// elsewhere (see problem.tsx, features.tsx). Left as a real Card on
+// purpose: it's a compound object (an employee profile — avatar, status,
+// roadmap, activity), not a decorative icon+title+description tile, so it
+// earns its container. Its rarity now does the "make it visually
+// distinctive" work by itself. No border-t: Solution directly above ends
+// in a hard dark→light color cut, which already marks this boundary —
+// a hairline on top of that cut would double-mark the same seam.
 export function AiEmployees() {
   // DESIGN-MOTION-001 §7.4: on hover, the employee's working-line does one
   // quiet pass — a preview of "doing the job" — reusing the same primitive
@@ -19,7 +29,7 @@ export function AiEmployees() {
   const [hovering, setHovering] = useState(false);
 
   return (
-    <section className="border-t py-10 sm:py-12">
+    <section className="py-10 sm:py-12">
       <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <h2 className="sr-only">AI employees, not just automations</h2>
         <Card

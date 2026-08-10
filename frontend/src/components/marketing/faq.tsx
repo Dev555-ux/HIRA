@@ -1,5 +1,3 @@
-import { cardClassName } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
@@ -43,16 +41,22 @@ const FAQS = [
 
 export function Faq() {
   return (
-    <section id="faq" className="scroll-mt-16 py-16 sm:py-24">
-      <Reveal className="mx-auto max-w-3xl px-4 sm:px-6">
+    <section id="faq" className="scroll-mt-16 py-20 sm:py-28">
+      <Reveal className="mx-auto max-w-2xl px-4 sm:px-6">
         <SectionHeader title="Frequently asked questions" />
-        <div className="mt-10 space-y-3">
+        {/* V4 "Signal & Quiet": no more per-row cards — a plain hairline-divided
+            list, same <details> semantics, quieter register matching the rest
+            of the page's editorial sections.
+
+            Post-launch self-critique: at the same width/padding/type-size as
+            Features' spec-sheet list, this read as "list #3 in a row" rather
+            than its own register — the fine-print questions at the end of a
+            page should feel more intimate than the product's own feature
+            sheet, not identical to it. Narrower column (max-w-2xl vs
+            max-w-3xl), smaller question type, tighter row padding. */}
+        <div className="mt-12 divide-y divide-border border-t">
           {FAQS.map((faq) => (
-            // Stays a <details> for native keyboard/disclosure semantics rather
-            // than the div-based <Card>; px-6 py-4 (not the standard p-6) is
-            // intentional — a shorter closed-row height reads better when
-            // several FAQ rows are stacked and mostly collapsed.
-            <details key={faq.question} className={cn(cardClassName, "group px-6 py-4")}>
+            <details key={faq.question} className="group py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold marker:content-none">
                 {faq.question}
                 <span
@@ -62,7 +66,7 @@ export function Faq() {
                   +
                 </span>
               </summary>
-              <p className="mt-3 text-sm text-muted-foreground">{faq.answer}</p>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{faq.answer}</p>
             </details>
           ))}
         </div>

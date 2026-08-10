@@ -15,14 +15,23 @@ import { Trust } from "@/components/marketing/trust";
 // — a visitor sees the promise and its evidence within the first two
 // sections, before Problem makes the deeper case for anyone not yet sold.
 //
-// Sprint 68 — documented vertical-padding scale for every section below
-// (Sprint 67 audit: six of eight sections already converged on the middle
-// tier; Solution was the one outlier, now fixed). Any new section should
-// pick one of these three rather than inventing a fourth:
+// Vertical-padding scale for every section below. V4 "Signal & Quiet" split
+// the old three-tier scale into five, on purpose — deliberate hierarchy
+// means sections no longer share one weight:
 //
-//   Compact band            py-10 sm:py-12   (40 → 48px)   — Trust, AiEmployees
-//   Standard section        py-16 sm:py-24   (64 → 96px)   — everything else
-//   Flagship / hero-adjacent py-24 sm:py-32  (96 → 128px)  — SignatureDemo only
+//   Quiet footnote           py-6 sm:py-8              — Trust only
+//   Compact band              py-10 sm:py-12            — AiEmployees only
+//   Standard section          py-20 sm:py-28            — Problem, Features,
+//                                                          How It Works, FAQ
+//   Flagship / hero-adjacent  py-24 sm:py-32(-lg:py-32) — Hero, SignatureDemo
+//   Signal band (bg-primary,  py-24 sm:py-32 lg:py-40   — Solution, FinalCta
+//     inverted, bespoke type)
+//
+// The two Signal sections are intentionally the most generously spaced on
+// the page — they're the two moments the product asks the reader to
+// believe something, everything else is quieter by design. Any new
+// section should land on the tier that matches its actual weight rather
+// than defaulting to Standard.
 //
 // Footer (py-8, fixed) is deliberately outside this scale — it's a closing
 // utility bar, not a narrative section, and was never part of the rhythm

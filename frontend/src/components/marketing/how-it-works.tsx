@@ -1,15 +1,28 @@
-import { cardClassName } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
-// Steps stay <li> inside an <ol> (correct semantics for an ordered
-// sequence) rather than the shared <Card> component, which always renders
-// a <div> — Card has no asChild/polymorphic-tag support (unlike Button),
-// and it's used across the whole dashboard, so it isn't touched here.
-// Reusing its exported class string keeps this visually identical to
-// every other card on the page without duplicating (and risking drifting
-// from) the literal class list by hand.
+// V4 "Signal & Quiet": no more boxed cards — a connected numbered timeline
+// instead, the numerals themselves carrying the sequence rather than a
+// card boundary around each step.
+//
+// Post-launch self-critique: the first pass only drew the connecting line
+// at lg (4-col row) and showed a bare, lineless 2x2 grid at sm/md — an
+// unexplained middle state, not a considered one, for the exact breakpoint
+// range ("each breakpoint should feel intentionally crafted") this
+// component was supposed to prove out. Restructured instead of patched:
+// single column with a continuous VERTICAL line through the numerals from
+// mobile through tablet (a real timeline, not an absent one), switching to
+// the 4-across horizontal line only at lg where a single row actually
+// exists to connect.
+//
+// Final-review self-critique: even fixed, this stayed the most generic
+// section on the page — four neutral numbered circles read as stock
+// "onboarding steps" UI, the one component never pulled into the page's
+// own accent system (Solution has the brand-colored phrase, FinalCta has
+// the brand button). Numerals now use brand fill — the same restrained
+// "progress/sequence marker" use hira-design already grants the
+// active-nav indicator — so this section reads as HIRA's own, not a
+// generic template's.
 
 const STEPS = [
   {
@@ -39,17 +52,27 @@ const STEPS = [
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="scroll-mt-16 border-t bg-secondary/40 py-16 sm:py-24">
+    <section id="how-it-works" className="scroll-mt-16 border-t bg-secondary/40 py-20 sm:py-28">
       <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHeader title="Set up in four steps" className="mx-auto max-w-2xl" />
-        <ol className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <ol className="relative mt-16 flex flex-col gap-10 lg:grid lg:grid-cols-4 lg:gap-x-8 lg:gap-y-10">
+          <div
+            className="absolute inset-y-0 left-[1.125rem] w-px bg-border lg:hidden"
+            aria-hidden="true"
+          />
+          <div
+            className="absolute inset-x-0 top-[1.125rem] hidden h-px bg-border lg:block"
+            aria-hidden="true"
+          />
           {STEPS.map((item) => (
-            <li key={item.step} className={cn(cardClassName, "p-6")}>
-              <span className="flex size-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+            <li key={item.step} className="relative pl-14 lg:pl-0">
+              <span className="absolute left-0 top-0 z-10 flex size-9 items-center justify-center rounded-full bg-brand text-sm font-semibold text-brand-foreground lg:static">
                 {item.step}
               </span>
-              <h3 className="mt-4 text-base font-semibold">{item.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
+              <h3 className="mt-5 text-lg font-semibold tracking-tight">{item.title}</h3>
+              <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground">
+                {item.description}
+              </p>
             </li>
           ))}
         </ol>

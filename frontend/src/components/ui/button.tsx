@@ -43,6 +43,9 @@ const buttonVariants = cva(
         default: "h-9 px-4 py-2",
         sm: "h-8 rounded-md px-3 text-xs",
         lg: "h-10 rounded-md px-6",
+        // Landing-page-weight CTA (Hero, FinalCta) — every other size stays
+        // exactly as it was, so no existing call site anywhere else changes.
+        xl: "h-12 rounded-lg px-8 text-base font-semibold",
         icon: "size-9",
       },
     },

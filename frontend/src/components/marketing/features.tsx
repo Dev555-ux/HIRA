@@ -6,7 +6,6 @@ import {
   ShieldAlert,
   Target,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
@@ -49,18 +48,38 @@ const FEATURES = [
   },
 ];
 
+// V4 "Signal & Quiet": the 3x2 icon-card grid was the single most generic
+// "SaaS feature grid" moment on the page (and, post-V3, visually identical
+// to Problem's cards) — cut in favor of a spec-sheet list, a label column
+// against a description column separated by hairline rules, no
+// border/shadow/radius per row. Same six claims, same order; only the
+// container disappears.
+//
+// Post-launch self-critique: at py-8/py-10 per row, six rows made this the
+// single longest scroll on the page for what is, relatively, its least
+// dense content — a "spacious" list had drifted into "slow." Rows tightened
+// to py-6/py-7 (outer section padding untouched, still the shared Standard
+// tier) — reads as a fast, scannable spec sheet again instead of a second
+// hero-length section.
 export function Features() {
   return (
-    <section id="features" className="scroll-mt-16 border-t py-16 sm:py-24">
+    <section id="features" className="scroll-mt-16 border-t py-20 sm:py-28">
       <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHeader title="Everything the front desk does, minus the wait" className="mx-auto max-w-2xl" />
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-16 divide-y divide-border border-t sm:mt-20">
           {FEATURES.map((feature) => (
-            <Card key={feature.title} className="p-6">
-              <feature.icon className="size-5 text-muted-foreground" aria-hidden="true" />
-              <h3 className="mt-4 text-base font-semibold">{feature.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{feature.description}</p>
-            </Card>
+            <div
+              key={feature.title}
+              className="grid gap-3 py-6 sm:grid-cols-[16rem_1fr] sm:items-baseline sm:gap-10 sm:py-7"
+            >
+              <div className="flex items-center gap-3">
+                <feature.icon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <h3 className="text-lg font-semibold tracking-tight">{feature.title}</h3>
+              </div>
+              <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
+                {feature.description}
+              </p>
+            </div>
           ))}
         </div>
       </Reveal>
