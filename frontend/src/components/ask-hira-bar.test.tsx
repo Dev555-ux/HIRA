@@ -18,4 +18,30 @@ describe("AskHiraBar", () => {
     expect(event.metaKey || event.ctrlKey).toBe(true);
     window.removeEventListener("keydown", spy);
   });
+
+  it("links every quick-access item to a real page — never a fabricated in-place answer", () => {
+    render(<AskHiraBar />);
+
+    const destinations: Record<string, string> = {
+      "Pending approvals": "/pending",
+      Escalations: "/escalations",
+      Leads: "/leads",
+      "Upcoming appointments": "/appointments",
+    };
+    for (const [label, href] of Object.entries(destinations)) {
+      expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href);
+    }
+  });
+
+  it("never phrases a quick link as a question — that would imply a conversational answer this doesn't deliver", () => {
+    render(<AskHiraBar />);
+    for (const link of screen.getAllByRole("link")) {
+      expect(link.textContent).not.toMatch(/\?/);
+    }
+  });
+
+  it("labels the quick links as navigation, not chat suggestions", () => {
+    render(<AskHiraBar />);
+    expect(screen.getByText("Jump to")).toBeInTheDocument();
+  });
 });

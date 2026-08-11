@@ -6,17 +6,16 @@ import {
   CheckCheck,
   MessageSquare,
   Sparkles,
-  Users,
+  UserPlus,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 import { AskHiraBar } from "@/components/ask-hira-bar";
-import { DashboardHero } from "@/components/dashboard-hero";
+import { DashboardHero, type BriefHighlight } from "@/components/dashboard-hero";
 import { EmptyState } from "@/components/empty-state";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { ReviewReplyCard } from "@/components/review-reply-card";
-import { StatCard } from "@/components/stat-card";
 import { BusinessHealthCard } from "@/components/ui/business-health-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,15 +27,14 @@ import { useAnalyticsDashboard } from "@/hooks/use-analytics";
 import { useAppointments } from "@/hooks/use-appointments";
 import { useAuthContext } from "@/lib/auth-context";
 import { useConversations } from "@/hooks/use-conversations";
-import { useCustomers } from "@/hooks/use-customers";
 import { useEscalations } from "@/hooks/use-escalations";
 import { useKbEntries } from "@/hooks/use-knowledge-base";
+import { useLeads } from "@/hooks/use-leads";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useApprove, usePending, useReject, useUpdateDraft } from "@/hooks/use-pending";
 import type { Appointment, Escalation, PendingReply } from "@/lib/types";
 import { APPOINTMENT_STATUS, APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
-import { VARIANT_TO_STATE } from "@/lib/status";
-import { describeWhatsAppConnection, formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/utils";
 
 // How many rows each preview widget shows before "View all" takes over —
 // kept small and consistent across widgets so the page reads as an at-a-
@@ -82,27 +80,20 @@ export default function DashboardPage() {
   } = usePending();
   const { data: onboarding, isFetching: isFetchingOnboarding, refetch: refetchOnboarding } =
     useOnboardingStatus();
-  // limit: 1 — only meta.total is needed here, not the rows themselves.
-  const {
-    data: conversationTotals,
-    isPending: isLoadingConversationTotals,
-    isError: isConversationTotalsError,
-    isFetching: isFetchingConversationTotals,
-    refetch: refetchConversationTotals,
-  } = useConversations({ limit: 1 });
   const {
     data: recentConversationsPage,
     isFetching: isFetchingConversations,
     isError: isRecentConversationsError,
     refetch: refetchConversations,
   } = useConversations({ limit: PREVIEW_ROWS });
+  // Morning Brief's "N new leads" line — same small-page-then-client-filter
+  // pattern as "Learned today" below (no new endpoint, no date-range param
+  // on this list endpoint to ask the backend for "today" directly).
   const {
-    data: customers,
-    isPending: isLoadingCustomers,
-    isError: isCustomersError,
-    isFetching: isFetchingCustomers,
-    refetch: refetchCustomers,
-  } = useCustomers({ limit: 1 });
+    data: recentLeadsPage,
+    isFetching: isFetchingLeads,
+    refetch: refetchLeads,
+  } = useLeads({ limit: PREVIEW_ROWS });
   // Computed once per mount (matches the Appointments page's own convention)
   // rather than on every render, so the query key — and therefore the
   // request — doesn't change on each re-render.
@@ -137,7 +128,6 @@ export default function DashboardPage() {
     refetch: refetchKb,
   } = useKbEntries();
 
-  const whatsapp = describeWhatsAppConnection(onboarding?.business?.whatsapp_connection_status);
   const upcomingAppointments = useMemo(
     () => upcomingAppointmentsResult ?? [],
     [upcomingAppointmentsResult],
@@ -151,12 +141,53 @@ export default function DashboardPage() {
     () => (kbEntries ?? []).filter((entry) => isToday(entry.created_at)),
     [kbEntries],
   );
+  // Morning Brief highlights (§1) — every count here is real and today-
+  // scoped, computed from data already fetched for the sections below (plus
+  // one small new leads page). A zero-count line is omitted rather than
+  // shown, per "if something can't be honestly stated, simplify instead."
+  const repliesToday = analyticsDashboard?.overview.ai_responses_today ?? 0;
+  const appointmentsBookedToday = useMemo(
+    () => upcomingAppointments.filter((a) => isToday(a.created_at)).length,
+    [upcomingAppointments],
+  );
+  const leadsToday = useMemo(
+    () => (recentLeadsPage?.data ?? []).filter((l) => isToday(l.created_at)).length,
+    [recentLeadsPage],
+  );
+  const escalationsToday = useMemo(
+    () => openEscalations.filter((e) => isToday(e.created_at)).length,
+    [openEscalations],
+  );
+  const highlights = useMemo<BriefHighlight[]>(() => {
+    const items: BriefHighlight[] = [];
+    if (repliesToday > 0) {
+      items.push({
+        icon: CheckCheck,
+        label: `Answered ${repliesToday} customer ${pluralize(repliesToday, "message", "messages")}`,
+      });
+    }
+    if (appointmentsBookedToday > 0) {
+      items.push({
+        icon: CalendarClock,
+        label: `Booked ${appointmentsBookedToday} ${pluralize(appointmentsBookedToday, "appointment", "appointments")}`,
+      });
+    }
+    if (leadsToday > 0) {
+      items.push({ icon: UserPlus, label: `${leadsToday} new ${pluralize(leadsToday, "lead", "leads")}` });
+    }
+    if (escalationsToday > 0) {
+      items.push({
+        icon: AlertTriangle,
+        label: `Escalated ${escalationsToday} ${pluralize(escalationsToday, "conversation", "conversations")} for your review`,
+      });
+    }
+    return items;
+  }, [repliesToday, appointmentsBookedToday, leadsToday, escalationsToday]);
   const isRefreshing =
     isFetchingPending ||
     isFetchingOnboarding ||
-    isFetchingConversationTotals ||
     isFetchingConversations ||
-    isFetchingCustomers ||
+    isFetchingLeads ||
     isFetchingAppointments ||
     isFetchingEscalations ||
     isFetchingAnalytics ||
@@ -165,9 +196,8 @@ export default function DashboardPage() {
   function refreshAll() {
     refetchPending();
     refetchOnboarding();
-    refetchConversationTotals();
     refetchConversations();
-    refetchCustomers();
+    refetchLeads();
     refetchAppointments();
     refetchEscalations();
     refetchAnalytics();
@@ -252,6 +282,8 @@ export default function DashboardPage() {
       <DashboardHero
         name={user?.name ?? "there"}
         summary={summary}
+        highlights={highlights}
+        needsAttention={!attentionEmpty}
         isRefreshing={isRefreshing}
         onRefresh={refreshAll}
         pendingCount={pendingCount}
@@ -266,7 +298,7 @@ export default function DashboardPage() {
       )}
 
       {!attentionEmpty && (
-        <Card interactive className="mb-8">
+        <Card interactive className="mb-8 border-l-2 border-l-warning">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-base">Needs your attention</CardTitle>
             <Button asChild size="sm" variant="ghost">
@@ -326,129 +358,9 @@ export default function DashboardPage() {
 
       {analyticsDashboard?.business_health && (
         <div className="mb-8">
-          <BusinessHealthCard health={analyticsDashboard.business_health} />
+          <BusinessHealthCard health={analyticsDashboard.business_health} explain />
         </div>
       )}
-
-      {/* KPIs — the four numbers an owner checks first, once the narrative
-          above has already told them whether today needs anything from them. */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Pending approvals"
-          value={isPendingError ? "—" : pendingCount}
-          icon={CheckCheck}
-          loading={isLoadingPending}
-          hint={
-            isPendingError ? "Couldn't load" : pendingCount === 0 ? "Everything reviewed" : "Awaiting your review"
-          }
-        />
-        <StatCard
-          label="Conversations"
-          value={isConversationTotalsError ? "—" : (conversationTotals?.meta.total ?? 0)}
-          icon={MessageSquare}
-          loading={isLoadingConversationTotals}
-          hint={
-            isConversationTotalsError
-              ? "Couldn't load"
-              : (conversationTotals?.meta.total ?? 0) === 0
-                ? "No conversations yet"
-                : "Across all customers"
-          }
-        />
-        <StatCard
-          label="Customers"
-          value={isCustomersError ? "—" : (customers?.meta.total ?? 0)}
-          icon={Users}
-          loading={isLoadingCustomers}
-          hint={
-            isCustomersError
-              ? "Couldn't load"
-              : (customers?.meta.total ?? 0) === 0
-                ? "No one yet"
-                : "People who've messaged you"
-          }
-        />
-        <StatCard
-          label="Upcoming appointments"
-          value={isAppointmentsError ? "—" : appointmentCount}
-          icon={CalendarClock}
-          loading={isLoadingAppointments}
-          hint={isAppointmentsError ? "Couldn't load" : appointmentCount === 0 ? "Nothing scheduled" : "Booked and scheduled"}
-        />
-      </div>
-
-      {/* Upcoming appointments + WhatsApp status. */}
-      <div className="mt-8 grid gap-4 lg:grid-cols-3">
-        <Card interactive className="lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle className="text-base">Upcoming appointments</CardTitle>
-            <Button asChild size="sm" variant="ghost">
-              <Link href="/appointments">View all</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {isAppointmentsError ? (
-              <EmptyState
-                icon={AlertTriangle}
-                title="Couldn't load"
-                description="Something went wrong — please try again."
-                action={
-                  <Button size="sm" onClick={() => refetchAppointments()}>
-                    Retry
-                  </Button>
-                }
-                className="border-0 py-10"
-              />
-            ) : appointmentCount === 0 ? (
-              <EmptyState
-                icon={CalendarClock}
-                title="No upcoming appointments"
-                description="Once a customer confirms a time — or you book one yourself — it'll show up here."
-                action={
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/appointments">New appointment</Link>
-                  </Button>
-                }
-                className="border-0 py-10"
-              />
-            ) : (
-              <ul className="space-y-3">
-                {upcomingAppointments.slice(0, 4).map((appt: Appointment) => {
-                  const badge = APPOINTMENT_STATUS_BADGE[appt.status];
-                  const name = customerLabel(appt.customer);
-                  return (
-                    <li key={appt.id} className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatAppointmentRange(appt.starts_at, appt.ends_at)}
-                        </p>
-                      </div>
-                      <StatusPill state={APPOINTMENT_STATUS[appt.status]} className="shrink-0">
-                        {badge.label}
-                      </StatusPill>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card interactive className="bg-muted/30">
-          <CardHeader>
-            <CardTitle className="text-base">WhatsApp status</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <StatusRow
-              label="WhatsApp"
-              ok={onboarding?.business?.whatsapp_connection_status === "connected"}
-              note={whatsapp.label}
-              variant={whatsapp.variant}
-            />
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Secondary row: a compact, chronological log across conversations,
           approvals, and bookings — a retrospective "what happened" view,
@@ -507,6 +419,66 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
+      {/* Upcoming appointments — reference material for "what's coming up
+          next," not one of the first-viewport questions, so it sits here,
+          lightweight (muted surface, not `interactive`), after the sections
+          that actually answer those questions. */}
+      <Card className="mt-8 bg-muted/30">
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle className="text-base">Upcoming appointments</CardTitle>
+          <Button asChild size="sm" variant="ghost">
+            <Link href="/appointments">View all</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isAppointmentsError ? (
+            <EmptyState
+              icon={AlertTriangle}
+              title="Couldn't load"
+              description="Something went wrong — please try again."
+              action={
+                <Button size="sm" onClick={() => refetchAppointments()}>
+                  Retry
+                </Button>
+              }
+              className="border-0 py-10"
+            />
+          ) : appointmentCount === 0 ? (
+            <EmptyState
+              icon={CalendarClock}
+              title="No upcoming appointments"
+              description="Once a customer confirms a time — or you book one yourself — it'll show up here."
+              action={
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/appointments">New appointment</Link>
+                </Button>
+              }
+              className="border-0 py-10"
+            />
+          ) : (
+            <ul className="space-y-3">
+              {upcomingAppointments.slice(0, 4).map((appt: Appointment) => {
+                const badge = APPOINTMENT_STATUS_BADGE[appt.status];
+                const name = customerLabel(appt.customer);
+                return (
+                  <li key={appt.id} className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatAppointmentRange(appt.starts_at, appt.ends_at)}
+                      </p>
+                    </div>
+                    <StatusPill state={APPOINTMENT_STATUS[appt.status]} className="shrink-0">
+                      {badge.label}
+                    </StatusPill>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Learned Today (§8) — hidden entirely when nothing was added today,
           same "don't announce nothing" rule as Needs your attention. */}
       {learnedToday.length > 0 && (
@@ -534,28 +506,6 @@ export default function DashboardPage() {
         </Card>
       )}
     </>
-  );
-}
-
-function StatusRow({
-  label,
-  ok,
-  note,
-  variant,
-}: {
-  label: string;
-  ok: boolean;
-  note?: string;
-  variant?: "success" | "warning" | "secondary";
-}) {
-  const resolvedVariant = variant ?? (ok ? "success" : "secondary");
-  return (
-    <div className="flex items-center justify-between">
-      <span>{label}</span>
-      <StatusPill state={VARIANT_TO_STATE[resolvedVariant]}>
-        {note ?? (ok ? "Operational" : "Off")}
-      </StatusPill>
-    </div>
   );
 }
 

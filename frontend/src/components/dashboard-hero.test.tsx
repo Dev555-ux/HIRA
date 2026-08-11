@@ -1,3 +1,4 @@
+import { CheckCheck } from "lucide-react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -115,5 +116,58 @@ describe("DashboardHero", () => {
       "href",
       "/pending",
     );
+  });
+
+  it("renders real highlights as a checklist instead of the flat summary sentence", () => {
+    render(
+      <DashboardHero
+        name="Dev"
+        summary="Summary."
+        highlights={[{ icon: CheckCheck, label: "Answered 3 customer messages" }]}
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("While you were away…")).toBeInTheDocument();
+    expect(screen.getByText("Answered 3 customer messages")).toBeInTheDocument();
+    expect(screen.queryByText("Summary.")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the flat summary sentence when there are no real highlights", () => {
+    render(
+      <DashboardHero
+        name="Dev"
+        summary="Summary."
+        highlights={[]}
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Summary.")).toBeInTheDocument();
+    expect(screen.queryByText("While you were away…")).not.toBeInTheDocument();
+  });
+
+  it("shows the reassuring close only when nothing needs attention", () => {
+    const { rerender } = render(
+      <DashboardHero
+        name="Dev"
+        summary="Summary."
+        needsAttention={false}
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Nothing urgent requires you.")).toBeInTheDocument();
+
+    rerender(
+      <DashboardHero
+        name="Dev"
+        summary="Summary."
+        needsAttention={true}
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("Nothing urgent requires you.")).not.toBeInTheDocument();
   });
 });

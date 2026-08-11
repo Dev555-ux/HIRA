@@ -24,4 +24,38 @@ describe("BusinessHealthCard", () => {
     expect(screen.getByText(/5 published, 2 draft/)).toBeInTheDocument();
     expect(screen.getByText("No alerts")).toBeInTheDocument();
   });
+
+  it("omits the explanatory sentence by default (Analytics keeps its original presentation)", () => {
+    render(<BusinessHealthCard health={health} />);
+    expect(screen.queryByText("Excellent.")).not.toBeInTheDocument();
+  });
+
+  it("explains, rather than merely reports, when explain is on (Home only) and everything is clear", () => {
+    render(<BusinessHealthCard health={health} explain />);
+    expect(screen.getByText("Excellent.")).toBeInTheDocument();
+    expect(screen.getByText("Your business is running normally.")).toBeInTheDocument();
+  });
+
+  it("names the real issue by reusing the backend's own alert list — never a fabricated score", () => {
+    render(
+      <BusinessHealthCard health={{ ...health, alerts: ["whatsapp_disconnected"] }} explain />,
+    );
+    expect(screen.getByText("Good.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/the only issue today is whatsapp disconnected/i),
+    ).toBeInTheDocument();
+  });
+
+  it("names every real issue when there is more than one", () => {
+    render(
+      <BusinessHealthCard
+        health={{ ...health, alerts: ["whatsapp_disconnected", "ai_failures"] }}
+        explain
+      />,
+    );
+    expect(screen.getByText("Needs a look.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/2 things need a look: WhatsApp disconnected, AI failures/i),
+    ).toBeInTheDocument();
+  });
 });

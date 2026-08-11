@@ -18,7 +18,7 @@ vi.mock("@/lib/api", () => ({
     listPending: vi.fn(),
     getOnboardingStatus: vi.fn(),
     listConversations: vi.fn(),
-    listCustomers: vi.fn(),
+    listLeads: vi.fn(),
     listAppointments: vi.fn(),
     listEscalations: vi.fn(),
     getAnalyticsDashboard: vi.fn(),
@@ -118,9 +118,9 @@ describe("DashboardPage", () => {
       data: [],
       meta: { total: 0, limit: 1, offset: 0 },
     });
-    vi.mocked(api.listCustomers).mockResolvedValue({
+    vi.mocked(api.listLeads).mockResolvedValue({
       data: [],
-      meta: { total: 0, limit: 1, offset: 0 },
+      meta: { total: 0, limit: 5, offset: 0 },
     });
     vi.mocked(api.listAppointments).mockResolvedValue([]);
     vi.mocked(api.listEscalations).mockResolvedValue({
@@ -136,30 +136,6 @@ describe("DashboardPage", () => {
       body: "revised",
       status: "pending_approval",
     });
-  });
-
-  it("shows real conversation and customer totals from existing list endpoints", async () => {
-    vi.mocked(api.listConversations).mockResolvedValue({
-      data: [],
-      meta: { total: 37, limit: 1, offset: 0 },
-    });
-    vi.mocked(api.listCustomers).mockResolvedValue({
-      data: [],
-      meta: { total: 12, limit: 1, offset: 0 },
-    });
-
-    renderWithProviders(<DashboardPage />);
-
-    expect(await screen.findByText("37")).toBeInTheDocument();
-    expect(screen.getByText("12")).toBeInTheDocument();
-    expect(api.listConversations).toHaveBeenCalledWith(
-      expect.any(Function),
-      expect.objectContaining({ limit: 1 }),
-    );
-    expect(api.listCustomers).toHaveBeenCalledWith(
-      expect.any(Function),
-      expect.objectContaining({ limit: 1 }),
-    );
   });
 
   it("greets the signed-in owner by name with a real-data summary sentence", async () => {
@@ -182,12 +158,12 @@ describe("DashboardPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows a reassuring KPI hint when there's nothing pending", async () => {
+  it("shows a reassuring Morning Brief close when there's nothing pending", async () => {
     renderWithProviders(<DashboardPage />);
-    expect(await screen.findByText("Everything reviewed")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing urgent requires you.")).toBeInTheDocument();
   });
 
-  it("shows an actionable KPI hint when replies are pending", async () => {
+  it("does not show the reassuring close when a reply needs review", async () => {
     vi.mocked(api.listPending).mockResolvedValue([
       {
         id: "msg-1",
@@ -199,10 +175,8 @@ describe("DashboardPage", () => {
       },
     ]);
     renderWithProviders(<DashboardPage />);
-    // "Awaiting your review" also appears in the inline ReviewReplyCard's own
-    // StatusPill (M10) — scope to the KPI tile specifically.
-    const kpi = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-2xl")!;
-    expect(await within(kpi).findByText("Awaiting your review")).toBeInTheDocument();
+    await screen.findByText("Needs your attention");
+    expect(screen.queryByText("Nothing urgent requires you.")).not.toBeInTheDocument();
   });
 
   it("shows the pending-approval count and customer name", async () => {
@@ -225,27 +199,13 @@ describe("DashboardPage", () => {
     expect(screen.getAllByText("Jordan Lee").length).toBeGreaterThan(0);
   });
 
-  it("shows a retryable error instead of a misleading zero when pending approvals fail to load", async () => {
+  it("shows a retryable error instead of a misleading empty state when pending approvals fail to load", async () => {
     vi.mocked(api.listPending).mockRejectedValue(new Error("Network error"));
 
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("Couldn't load pending approvals")).toBeInTheDocument();
     expect(screen.queryByText("Nothing pending")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Couldn't load").length).toBeGreaterThan(0);
-  });
-
-  it("shows a dash instead of a misleading zero when conversation/customer totals fail to load", async () => {
-    vi.mocked(api.listConversations).mockRejectedValue(new Error("Network error"));
-    vi.mocked(api.listCustomers).mockRejectedValue(new Error("Network error"));
-
-    renderWithProviders(<DashboardPage />);
-
-    // "Needs your attention" is hidden entirely with nothing pending and no
-    // escalations, so the KPI tile's own hint is the reliable settle-anchor.
-    await screen.findByText("Everything reviewed");
-    expect(await screen.findAllByText("—")).toHaveLength(2);
-    expect(await screen.findAllByText("Couldn't load")).toHaveLength(2);
   });
 
   it("shows upcoming appointments with customer name, time range, and status", async () => {
@@ -269,9 +229,10 @@ describe("DashboardPage", () => {
     // Appears twice deliberately: once in "Upcoming appointments" and once
     // in "Recent activity" (the same booking, logged).
     await waitFor(() => expect(screen.getAllByText("Jordan Lee").length).toBeGreaterThan(0));
-    expect(screen.getAllByText("Upcoming appointments")).toHaveLength(2);
+    // "Upcoming appointments" now also appears as an Ask HIRA quick link
+    // (§ ask-hira-bar.tsx) — three legitimate appearances, not two.
+    expect(screen.getAllByText("Upcoming appointments").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Booked")).toBeInTheDocument();
-    expect(screen.getByText("1")).toBeInTheDocument(); // the KPI count
   });
 
   it("shows a meaningful empty state when there are no upcoming appointments", async () => {
@@ -398,39 +359,40 @@ describe("DashboardPage", () => {
     );
   });
 
-  it("shows real WhatsApp status, never internal AI provider/model names", async () => {
+  it("shows real WhatsApp status via Business Health, never internal AI provider/model names", async () => {
+    vi.mocked(api.getAnalyticsDashboard).mockResolvedValue({
+      ...EMPTY_ANALYTICS_DASHBOARD,
+      business_health: {
+        ...EMPTY_ANALYTICS_DASHBOARD.business_health,
+        whatsapp: { status: "connected", display_phone_number: "+15551230000" },
+      },
+    });
     renderWithProviders(<DashboardPage />);
 
-    await screen.findByText("WhatsApp status");
-    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(await screen.findByText("WhatsApp Connected")).toBeInTheDocument();
     expect(
       screen.queryByText(/groq|llama|claude|embedding|ai provider|knowledge search/i),
     ).not.toBeInTheDocument();
   });
 
   it("reflects a not-connected WhatsApp status honestly", async () => {
-    vi.mocked(api.getOnboardingStatus).mockResolvedValue({
-      has_business: true,
-      business: {
-        ...onboardingStatus.business!,
-        whatsapp_connection_status: "not_connected",
-      } as OnboardingStatus["business"],
-    });
+    // EMPTY_ANALYTICS_DASHBOARD's business_health.whatsapp.status is already
+    // "not_connected" — the default beforeEach mock already covers this case.
     renderWithProviders(<DashboardPage />);
 
-    await screen.findByText("WhatsApp status");
-    expect(screen.getByText("Not connected")).toBeInTheDocument();
+    expect(await screen.findByText("WhatsApp Not connected")).toBeInTheDocument();
   });
 
   it("refreshes every dashboard data source when Refresh is clicked", async () => {
     renderWithProviders(<DashboardPage />);
     // "Needs your attention" is hidden entirely with nothing pending and no
-    // escalations, so the KPI tile's own hint is the reliable settle-anchor.
-    await screen.findByText("Everything reviewed");
+    // escalations, so the Morning Brief's own settled summary sentence is
+    // the reliable settle-anchor.
+    await screen.findByText("You have no replies waiting for review and no appointments booked.");
     vi.mocked(api.listPending).mockClear();
     vi.mocked(api.getOnboardingStatus).mockClear();
     vi.mocked(api.listConversations).mockClear();
-    vi.mocked(api.listCustomers).mockClear();
+    vi.mocked(api.listLeads).mockClear();
     vi.mocked(api.listAppointments).mockClear();
     vi.mocked(api.listEscalations).mockClear();
     vi.mocked(api.getAnalyticsDashboard).mockClear();
@@ -441,7 +403,7 @@ describe("DashboardPage", () => {
     expect(api.listPending).toHaveBeenCalled();
     expect(api.getOnboardingStatus).toHaveBeenCalled();
     expect(api.listConversations).toHaveBeenCalled();
-    expect(api.listCustomers).toHaveBeenCalled();
+    expect(api.listLeads).toHaveBeenCalled();
     expect(api.listEscalations).toHaveBeenCalled();
     expect(api.getAnalyticsDashboard).toHaveBeenCalled();
     expect(api.listKbEntries).toHaveBeenCalled();
@@ -463,7 +425,7 @@ describe("DashboardPage", () => {
       conversation_preview: null,
     };
 
-    it("approve removes the card and decrements the KPI in the same tick", async () => {
+    it("approve removes the card via the optimistic PENDING_KEY update", async () => {
       // Once for the initial load; onSettled's invalidation refetches
       // afterward, and the (mocked) backend now correctly reflects the
       // approval — same as a real server response.
@@ -472,16 +434,11 @@ describe("DashboardPage", () => {
       renderWithProviders(<DashboardPage />);
 
       await screen.findByText("Yes, we're open!");
-      const kpiBefore = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-2xl")!;
-      expect(await within(kpiBefore).findByText("1")).toBeInTheDocument();
-
       await user.click(screen.getByRole("button", { name: /approve & send/i }));
 
       // Optimistic PENDING_KEY update — no waiting on the network or the poll.
       await waitFor(() => expect(screen.queryByText("Yes, we're open!")).not.toBeInTheDocument());
       expect(api.approveMessage).toHaveBeenCalledWith(expect.any(Function), "msg-1");
-      const kpiAfter = (await screen.findByText("Pending approvals")).closest<HTMLElement>(".rounded-2xl")!;
-      expect(await within(kpiAfter).findByText("0")).toBeInTheDocument();
     });
 
     it("reject removes the card via the same optimistic PENDING_KEY update", async () => {
@@ -565,7 +522,7 @@ describe("DashboardPage", () => {
 
     it("hides Needs your attention entirely when there's nothing pending and no open escalations", async () => {
       renderWithProviders(<DashboardPage />);
-      await screen.findByText("Everything reviewed");
+      await screen.findByText("You have no replies waiting for review and no appointments booked.");
       expect(screen.queryByText("Needs your attention")).not.toBeInTheDocument();
     });
 
@@ -622,12 +579,14 @@ describe("DashboardPage", () => {
       expect(routerPush).toHaveBeenCalledWith("/escalations");
     });
 
-    it("mentions escalations in the Morning Brief summary only when there are any", async () => {
+    it("shows a flat summary sentence with no highlights and nothing happened today", async () => {
       renderWithProviders(<DashboardPage />);
       expect(
         await screen.findByText("You have no replies waiting for review and no appointments booked."),
       ).toBeInTheDocument();
+    });
 
+    it("surfaces a today-escalated conversation as a real Morning Brief highlight", async () => {
       vi.mocked(api.listEscalations).mockResolvedValue({
         data: [
           {
@@ -644,11 +603,14 @@ describe("DashboardPage", () => {
         meta: { total: 1, limit: 5, offset: 0 },
       });
       renderWithProviders(<DashboardPage />);
+      // A real today-scoped signal (the escalation's own created_at) promotes
+      // the Morning Brief from the flat fallback sentence to a real
+      // highlight — and since it's still open, needsAttention suppresses
+      // "Nothing urgent requires you."
       expect(
-        await screen.findByText(
-          "You have no replies waiting for review and no appointments booked. 1 conversation escalated to you.",
-        ),
+        await screen.findByText("Escalated 1 conversation for your review"),
       ).toBeInTheDocument();
+      expect(screen.queryByText("Nothing urgent requires you.")).not.toBeInTheDocument();
     });
 
     it("shows Business Health, reusing the shared BusinessHealthCard with real analytics data", async () => {
@@ -680,7 +642,7 @@ describe("DashboardPage", () => {
       ]);
 
       renderWithProviders(<DashboardPage />);
-      await screen.findByText("Everything reviewed");
+      await screen.findByText("You have no replies waiting for review and no appointments booked.");
       expect(screen.queryByText("Learned today")).not.toBeInTheDocument();
     });
 

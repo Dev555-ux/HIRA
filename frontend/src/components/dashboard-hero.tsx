@@ -1,9 +1,15 @@
 "use client";
 
-import { ArrowRight, MessageSquareText, RefreshCw } from "lucide-react";
+import { ArrowRight, Check, MessageSquareText, RefreshCw } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+
+export interface BriefHighlight {
+  icon: LucideIcon;
+  label: string;
+}
 
 function timeOfDayGreeting(): string {
   const hour = new Date().getHours();
@@ -18,11 +24,13 @@ function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] || name;
 }
 
-/** The dashboard's own hero — replaces the generic PageHeader used by every
- * other page with a greeting, a one-sentence real-data summary (computed by
- * the caller, since it owns the KPI queries), and the two actions an owner
- * reaches for first. Kept to two short lines of text plus a button row —
- * deliberately not a full-bleed banner.
+/** The dashboard's own hero — HIRA V6 "Morning Brief": a greeting, then
+ * either a real "while you were away" checklist (`highlights`, each one
+ * backed by a real today-scoped count the caller already fetched) or, when
+ * there's nothing yet to report, the plain one-sentence `summary` — never
+ * both, and never an invented highlight. Closes with a calm "nothing urgent"
+ * line only when `needsAttention` is false, so the brief never claims a
+ * clear day while the section right below it is showing open work.
  *
  * The greeting starts as "Welcome back" and only switches to a time-of-day
  * greeting after mount (an effect, not the initial render) — this page is
@@ -38,12 +46,20 @@ function firstName(name: string): string {
 export function DashboardHero({
   name,
   summary,
+  highlights = [],
+  needsAttention = false,
   isRefreshing,
   onRefresh,
   pendingCount = 0,
 }: {
   name: string;
   summary: string;
+  /** Real, today-scoped "what HIRA did" lines — omit an item entirely
+   *  rather than show a zero count; empty array falls back to `summary`. */
+  highlights?: BriefHighlight[];
+  /** True when "Needs your attention" below has real open items — suppresses
+   *  the brief's own "nothing urgent" line so the two never disagree. */
+  needsAttention?: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
   /** When > 0, promotes a "Review N replies" primary CTA ahead of the
@@ -58,12 +74,29 @@ export function DashboardHero({
   }, []);
 
   return (
-    <div className="mb-8 flex flex-col gap-4 animate-fade-in-up sm:flex-row sm:items-end sm:justify-between">
-      <div>
+    <div className="mb-8 flex flex-col gap-6 animate-fade-in-up sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
         <h1 className="type-display-xl text-balance">
           {greeting}, {firstName(name)}
         </h1>
-        <p className="mt-2 text-base text-muted-foreground">{summary}</p>
+        {highlights.length > 0 ? (
+          <>
+            <p className="mt-3 text-base text-muted-foreground">While you were away…</p>
+            <ul className="mt-3 space-y-1.5">
+              {highlights.map((h) => (
+                <li key={h.label} className="flex items-center gap-2 text-base">
+                  <Check className="size-4 shrink-0 text-success" aria-hidden="true" />
+                  {h.label}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="mt-2 text-base text-muted-foreground">{summary}</p>
+        )}
+        {!needsAttention && (
+          <p className="mt-3 text-base text-muted-foreground">Nothing urgent requires you.</p>
+        )}
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">
         {pendingCount > 0 && (
