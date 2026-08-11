@@ -25,7 +25,7 @@ describe("MarketingPage", () => {
     // full script) — here we only confirm the accessible entry point for
     // the demo exists on the page, without needing fake timers.
     expect(
-      screen.getByRole("group", { name: /six business systems/i }),
+      screen.getByRole("group", { name: /four.*systems/i }),
     ).toBeInTheDocument();
   });
 

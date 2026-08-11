@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Check, CheckCheck } from "lucide-react";
+import { ArrowRight, Check, CheckCheck, Pause, Play } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,15 +9,14 @@ import { ReviewReplyCard } from "@/components/review-reply-card";
 import { StatusPill } from "@/components/ui/status-pill";
 import { WorkingIndicator } from "@/components/ui/working-indicator";
 import type { ActivityState } from "@/components/ui/activity-dot";
+import { useInView } from "@/hooks/use-in-view";
 import { cn } from "@/lib/utils";
 
 // HIRA V5 — "Proof First": the hero demonstrates HIRA instead of describing
 // it. Left column keeps the existing argument (headline/CTA); right column
-// (dominant on desktop) plays one real HIRA workflow, once, event-driven —
-// each stage advances only after the previous one's own hold elapses, using
-// the same motion tokens those stages' CSS already animates with, not
-// arbitrary numbers. Reuses ReviewReplyCard, WorkingIndicator, and
-// StatusPill/ActivityDot verbatim rather than inventing parallel UI.
+// (dominant on desktop) plays one real HIRA workflow. Reuses ReviewReplyCard,
+// WorkingIndicator, and StatusPill/ActivityDot verbatim rather than
+// inventing parallel UI.
 const CUSTOMER_MESSAGE = "Do you have availability for a cleaning this Thursday?";
 const CUSTOMER_MESSAGE_TIME = "9:47 PM";
 const DRAFTED_REPLY = "Thursday at 10:00 AM works — you're all set!";
@@ -27,11 +26,18 @@ const OUTCOME_ITEMS = ["Customer confirmed", "Appointment booked", "Calendar upd
 const STAGES = ["idle", "message", "processing", "knowledge", "calendar", "draft", "resolved"] as const;
 type Stage = (typeof STAGES)[number];
 
-// One hold per transition (STAGES.length - 1), each reusing an existing
-// motion token: --motion-fast (entrance stagger), --motion-narrative (reading
-// time), --motion-ambient (one full working-line cycle), --motion-signature
-// (a "system finished" beat, same token signature-demo uses for its settle).
-const HOLDS_MS = [120, 1200, 1800, 700, 700, 1400] as const;
+// V5.1: slowed down so each stage is actually readable, not just legible in
+// a screenshot — deliberately paced rather than reused from the small
+// --motion-* token scale (those top out at 1.8s; this is a narrative, not a
+// micro-interaction), same reasoning signature-demo.tsx's own BEATS array
+// already uses for its multi-second holds. One hold per transition
+// (STAGES.length - 1): idle→message, message→processing, processing→
+// knowledge, knowledge→calendar, calendar→draft, draft→resolved.
+const HOLDS_MS = [400, 1800, 2600, 1600, 1600, 2400] as const;
+
+// How long the resolved outcome stays on screen before the demo settles
+// back to idle, ready to replay.
+const RESOLVED_HOLD_MS = 6500;
 
 const DEMO_SUMMARY =
   `Live product demonstration: a customer messages at ${CUSTOMER_MESSAGE_TIME} asking, ` +
@@ -99,32 +105,64 @@ function ResolvedDemo() {
 function ProductDemo({
   reducedMotion,
   onResolved,
+  onReset,
 }: {
   reducedMotion: boolean;
   onResolved: () => void;
+  onReset: () => void;
 }) {
+  // Continuous (not "once") viewport tracking: every entry — the first one
+  // on load, and every later re-entry after scrolling away — restarts the
+  // story. Staying in view does NOT loop it; only a fresh entry does.
+  const { ref: viewRef, inView } = useInView<HTMLDivElement>({ once: false, rootMargin: "0px" });
   const [stageIndex, setStageIndex] = useState(0);
+  const [playing, setPlaying] = useState(false);
   const stage = STAGES[stageIndex];
 
-  // Event-driven, not timer-driven in spirit: each hold below IS the real
-  // duration of the CSS animation that stage plays (working-line's own
-  // --motion-ambient cycle, signature-settle's own --motion-signature), so a
-  // stage only advances once its own animation has actually finished — not
-  // an arbitrary schedule disconnected from what's on screen. Plays once;
-  // once "resolved" is reached no further timer is scheduled.
   useEffect(() => {
-    if (reducedMotion || stageIndex >= STAGES.length - 1) return;
-    const timer = setTimeout(() => setStageIndex((i) => i + 1), HOLDS_MS[stageIndex]);
+    if (reducedMotion || !inView) return;
+    setStageIndex(0);
+    setPlaying(true);
+  }, [inView, reducedMotion]);
+
+  // Advances one stage per hold while playing. Once "resolved" is reached,
+  // holds there for RESOLVED_HOLD_MS, then settles back to idle and stops —
+  // deliberately not a loop; only the inView effect above or a manual
+  // Replay restarts it.
+  useEffect(() => {
+    if (!playing) return;
+    if (stageIndex < STAGES.length - 1) {
+      const timer = setTimeout(() => setStageIndex((i) => i + 1), HOLDS_MS[stageIndex]);
+      return () => clearTimeout(timer);
+    }
+    const timer = setTimeout(() => {
+      setStageIndex(0);
+      setPlaying(false);
+    }, RESOLVED_HOLD_MS);
     return () => clearTimeout(timer);
-  }, [stageIndex, reducedMotion]);
+  }, [playing, stageIndex]);
 
   useEffect(() => {
     if (stage === "resolved") onResolved();
-  }, [stage, onResolved]);
+    if (stage === "idle") onReset();
+  }, [stage, onResolved, onReset]);
+
+  // Replay always restarts from stage 0; Resume continues playing from
+  // wherever Pause froze it — distinct actions, not the same button always
+  // restarting.
+  const handleReplay = useCallback(() => {
+    setStageIndex(0);
+    setPlaying(true);
+  }, []);
+  const handleResume = useCallback(() => setPlaying(true), []);
+  const handlePause = useCallback(() => setPlaying(false), []);
+  const isPausedMidSequence = !playing && stageIndex > 0;
+  const primaryAction = playing ? handlePause : isPausedMidSequence ? handleResume : handleReplay;
+  const primaryLabel = playing ? "Pause demo" : isPausedMidSequence ? "Resume demo" : "Replay demo";
 
   if (reducedMotion) {
     return (
-      <Card role="img" aria-label={DEMO_SUMMARY} className="overflow-hidden p-5 sm:p-6">
+      <Card role="img" aria-label={DEMO_SUMMARY} className="overflow-hidden p-6 sm:p-8">
         <div aria-hidden="true">
           <ResolvedDemo />
         </div>
@@ -133,38 +171,54 @@ function ProductDemo({
   }
 
   return (
-    <Card
-      role="group"
-      aria-label={DEMO_SUMMARY}
-      className="overflow-hidden p-5 sm:p-6"
-    >
-      <div aria-hidden="true" className="space-y-4">
-        {stage !== "idle" && <CustomerMessage />}
+    <div ref={viewRef}>
+      <Card
+        role="group"
+        aria-label={`${DEMO_SUMMARY} Use the button below to replay or pause.`}
+        className="overflow-hidden p-6 sm:p-8"
+      >
+        <div aria-hidden="true" className="space-y-4">
+          {stage !== "idle" && <CustomerMessage />}
 
-        {stage === "processing" && (
-          <WorkingIndicator state="working" label="HIRA is working" />
-        )}
+          {stage === "processing" && (
+            <WorkingIndicator state="working" label="HIRA is working" />
+          )}
 
-        {(stage === "knowledge" || stage === "calendar") && (
-          <div className="space-y-2">
-            <StatusPill state={stepState(stageIndex, "knowledge")}>
-              Using Business Knowledge
-            </StatusPill>
-            <StatusPill state={stepState(stageIndex, "calendar")}>Calendar checked</StatusPill>
-          </div>
-        )}
+          {(stage === "knowledge" || stage === "calendar") && (
+            <div className="space-y-2">
+              <StatusPill state={stepState(stageIndex, "knowledge")}>
+                Using Business Knowledge
+              </StatusPill>
+              <StatusPill state={stepState(stageIndex, "calendar")}>
+                Calendar checked
+              </StatusPill>
+            </div>
+          )}
 
-        {stage === "draft" && (
-          <ReviewReplyCard
-            body={DRAFTED_REPLY}
-            status="waiting"
-            className="border-0 bg-transparent p-0 shadow-none"
-          />
-        )}
+          {stage === "draft" && (
+            <ReviewReplyCard
+              body={DRAFTED_REPLY}
+              status="waiting"
+              className="border-0 bg-transparent p-0 shadow-none"
+            />
+          )}
 
-        {stage === "resolved" && <Outcome />}
-      </div>
-    </Card>
+          {stage === "resolved" && <Outcome />}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={primaryAction}
+            aria-label={primaryLabel}
+          >
+            {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+          </Button>
+        </div>
+      </Card>
+    </div>
   );
 }
 
@@ -173,9 +227,10 @@ export function Hero() {
   const [demoResolved, setDemoResolved] = useState(false);
   const resolved = reducedMotion || demoResolved;
   const handleResolved = useCallback(() => setDemoResolved(true), []);
+  const handleReset = useCallback(() => setDemoResolved(false), []);
 
   return (
-    <section className="mx-auto flex max-w-6xl flex-col px-4 py-16 sm:px-6 sm:py-24 lg:grid lg:grid-cols-[1fr_1.15fr] lg:items-center lg:gap-12 lg:py-32">
+    <section className="mx-auto flex max-w-6xl flex-col px-4 py-16 sm:px-6 sm:py-24 lg:grid lg:grid-cols-[0.9fr_1.25fr] lg:items-center lg:gap-12 lg:py-32">
       <div className="order-2 mt-12 text-center lg:order-1 lg:mt-0 lg:text-left">
         <div className="flex items-center justify-center gap-2.5 lg:justify-start">
           <span className="size-1.5 rounded-full bg-brand" aria-hidden="true" />
@@ -222,7 +277,7 @@ export function Hero() {
       </div>
 
       <div className="order-1 lg:order-2">
-        <ProductDemo reducedMotion={reducedMotion} onResolved={handleResolved} />
+        <ProductDemo reducedMotion={reducedMotion} onResolved={handleResolved} onReset={handleReset} />
       </div>
     </section>
   );
