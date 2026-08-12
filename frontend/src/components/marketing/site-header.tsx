@@ -2,10 +2,14 @@ import { Bot } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
+// "/#anchor", not "#anchor" — these render on every page under (legal) too
+// now, not just the homepage; a bare "#anchor" only scrolls if that id
+// already exists on the current page, which silently does nothing from
+// /privacy, /terms, etc.
 const NAV_LINKS = [
-  { href: "#features", label: "Features" },
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#faq", label: "FAQ" },
+  { href: "/#features", label: "Features" },
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/#faq", label: "FAQ" },
 ];
 
 // No mobile nav-toggle: the anchor links simply hide below sm, leaving Sign
