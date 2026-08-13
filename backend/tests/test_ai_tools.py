@@ -23,11 +23,8 @@ from app.ai.tools import (
     response_to_message_fields,
 )
 from app.calendar.providers.base import (
-    CalendarAlreadyCancelledError,
-    CalendarConflictError,
     CalendarEventDraft,
     CalendarNotConnectedError,
-    CalendarValidationError,
 )
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService

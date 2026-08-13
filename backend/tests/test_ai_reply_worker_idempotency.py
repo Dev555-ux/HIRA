@@ -270,12 +270,18 @@ def test_replaying_a_committed_booking_does_not_book_twice(db_session, monkeypat
     """Same guarantee, for a turn that executed a real (non-governed) tool —
     the audit's explicit "no duplicate booking" scenario."""
     biz, conversation, trigger = _autonomous_business(db_session, monkeypatch)
+    # A fixed offset from the real current time, not a hardcoded date — a
+    # literal past date rots the moment "today" catches up to it and now
+    # also trips AppointmentService's own past-date validation (DEC-059).
+    starts_at = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+        hour=14, minute=0, second=0, microsecond=0
+    )
     booking_call = ToolCall(
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-10T14:00:00",
-            "ends_at": "2026-08-10T14:30:00",
+            "starts_at": starts_at.isoformat(),
+            "ends_at": starts_at.replace(minute=30).isoformat(),
             "summary": "Cleaning",
         },
     )
