@@ -377,9 +377,16 @@ def test_generate_reply_offers_tools_once_booking_is_complete(db_session):
     assert "Action planning" not in spy.calls[0]["system"]
 
 
-def test_generate_reply_withholds_tools_and_asks_for_lead_name(db_session):
+def test_generate_reply_offers_the_lead_tool_with_no_name_required(db_session):
+    # Sprint 82 (production bug fix, DEC-058): create_lead's own tool schema
+    # (app/ai/lead_tools.py) never takes a customer name — the lead attaches
+    # to whoever's in this conversation — so a bare "Create a lead." is
+    # already fully actionable and must offer the tool immediately, not
+    # withhold it pending a name no tool call would ever use.
+    from app.ai.lead_tools import CREATE_LEAD
+
     _, conversation = _setup_business_with_kb(db_session)
-    spy = _SpyProvider(fixed_reply="Sure — who's the lead?")
+    spy = _SpyProvider(fixed_reply="Done — I've logged you as a lead.")
 
     generate_reply(
         db_session,
@@ -389,8 +396,7 @@ def test_generate_reply_withholds_tools_and_asks_for_lead_name(db_session):
         embedding=FakeEmbeddingProvider(),
     )
 
-    assert spy.calls[0]["tools"] == []
-    assert "the customer's name" in spy.calls[0]["system"]
+    assert CREATE_LEAD in {t.name for t in spy.calls[0]["tools"]}
 
 
 def test_generate_reply_withholds_tools_and_asks_which_appointment_to_cancel(db_session):

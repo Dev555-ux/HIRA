@@ -265,6 +265,7 @@ def build_system_prompt(
     *,
     tool_result_note: str | None = None,
     clarification_hint: str | None = None,
+    tools_offered: bool = True,
 ) -> str:
     parts = [
         _BASE_SYSTEM_PROMPT,
@@ -295,6 +296,27 @@ def build_system_prompt(
             f"\nAction planning:\nBefore proceeding, {clarification_hint}. No booking/reschedule/"
             "cancellation/lead tool is available for this reply — respond only in natural "
             "language, and don't propose or imply that any action has already been taken."
+        )
+    elif not tools_offered:
+        # Sprint 82 (production bug fix, DEC-058): no clarification_hint means
+        # this turn wasn't withheld pending more detail — it never had a
+        # write tool to offer in the first place (a capability question, a
+        # knowledge question, small talk, ...). Without an explicit
+        # instruction here, a message shaped like a request ("Can you log me
+        # as a lead?") could still get a confidently-worded fabricated
+        # confirmation, since nothing above told the model it has no tool
+        # this turn — it isn't being asked to complete a proposed action, so
+        # it has nothing to hesitate over. This is the same "don't imply an
+        # action was taken" guarantee the clarification_hint branch already
+        # gives, generalized to every turn with zero tools, not only a
+        # withheld one.
+        parts.append(
+            "\nAction planning:\nNo tool is available for this reply — respond only in "
+            "natural language. Never state or imply that a lead was created or updated, "
+            "an appointment was booked/rescheduled/cancelled, or any other business record "
+            "was changed, unless you actually called the matching tool earlier in this same "
+            "turn and it returned a result. If the customer is asking you to do one of these "
+            "things, say so honestly rather than describing it as already done."
         )
     return "\n".join(parts)
 

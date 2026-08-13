@@ -95,16 +95,22 @@ def test_plan_stops_before_an_unready_domain_and_omits_its_tools():
     """Objective D's "stopping conditions": the first domain is complete and
     ready, the second is missing a required field — the plan must include
     only the first, with a hint describing the second's gap, not silently
-    drop the requirement or offer the second domain's tools anyway."""
-    text = "Book a meeting tomorrow at 10am and create a lead."  # no name for the lead
+    drop the requirement or offer the second domain's tools anyway.
+
+    (Sprint 82: crm_lead no longer has a required field of its own — see
+    tests/test_planning.py::test_lead_creation_never_requires_a_customer_name
+    — so this example uses calendar, not crm, as the unready second domain.)
+    """
+    text = "Create a lead and book a meeting tomorrow."  # no time for the meeting
 
     plan = build_execution_plan(text)
 
     assert len(plan.steps) == 1
-    assert plan.steps[0].domain == "calendar"
+    assert plan.steps[0].domain == "crm"
     assert plan.clarification_hint is not None
-    assert "name" in plan.clarification_hint
-    assert CREATE_LEAD not in {t.name for t in plan.tools}
+    assert "time" in plan.clarification_hint
+    assert BOOK_APPOINTMENT not in {t.name for t in plan.tools}
+    assert CREATE_LEAD in {t.name for t in plan.tools}
 
 
 def test_plan_stops_before_a_second_domain_that_requires_confirmation():

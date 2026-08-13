@@ -59,10 +59,6 @@ _APPOINTMENT_REFERENCE_RE = re.compile(
     r"\d{1,2}(:\d{2})?\s?(am|pm)|\d{1,2}/\d{1,2})\b",
     re.IGNORECASE,
 )
-# Presence-only detector: a capitalized token after "for" — a lightweight
-# proper-noun heuristic, not real name extraction. See "Tradeoffs" in this
-# sprint's deliverables for the known lowercase-name limitation.
-_CUSTOMER_NAME_RE = re.compile(r"\bfor\s+([A-Z][a-z]+)\b")
 _CONTACT_RE = re.compile(r"\b(\+?\d[\d\-\s]{6,}\d|[\w.+-]+@[\w-]+\.\w{2,})\b")
 
 
@@ -141,10 +137,20 @@ _ACTION_PROFILES: tuple[ActionProfile, ...] = (
         name="crm_lead",
         domain="crm",
         trigger_keywords=("lead",),
-        required=(
-            RequiredField("customer_name", _CUSTOMER_NAME_RE, "ask for the customer's name"),
-        ),
-        optional_fields=("phone", "email", "notes"),
+        # Sprint 82 (production bug fix, DEC-058): previously required
+        # customer_name (a "for <Name>" match) before offering the tool —
+        # but create_lead's own tool schema (app/ai/lead_tools.py) takes
+        # only source/notes; it never takes a customer name at all, since
+        # the lead always attaches to whoever's in this conversation, not a
+        # named argument. Requiring a field the tool doesn't use meant a
+        # customer plainly asking to be logged as a lead about themselves
+        # ("Create a lead for me") was stuck being asked for a name no tool
+        # call would ever use. A third-party name ("Create a lead for
+        # Priya") still works exactly as before — nothing here stops that
+        # text from reaching the model with the tool offered — this only
+        # stops it being required.
+        required=(),
+        optional_fields=("customer_name", "phone", "email", "notes"),
     ),
 )
 

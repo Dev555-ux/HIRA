@@ -93,16 +93,30 @@ BENCHMARK_CONVERSATIONS: tuple[PlanExpectation, ...] = (
         actions=("calendar_booking", "crm_lead"),
     ),
     PlanExpectation(
+        # Sprint 82 (production bug fix, DEC-058): crm_lead no longer
+        # requires a customer_name (create_lead's own tool schema never
+        # takes one — see app/ai/planning.py) — a lead with no name given is
+        # therefore ready immediately, same as one that names someone.
         text="Book a meeting tomorrow at 10am and create a lead.",  # no name for the lead
         category=ConversationCategory.ACTION,
-        domains=("calendar",),
-        actions=("calendar_booking",),
-        clarification_hint_expected=True,
+        domains=("calendar", "crm"),
+        actions=("calendar_booking", "crm_lead"),
     ),
     PlanExpectation(
         text="Cancel my appointment for tomorrow and create a lead for John.",
         category=ConversationCategory.ACTION,
         clarification_hint_expected=True,
+    ),
+    PlanExpectation(
+        # Sprint 82 (production bug fix, DEC-058): the live-reproduced bug —
+        # "Can you log me as a lead?" used to classify CAPABILITY (no
+        # concrete-instance signal was checked for a "can/could you" modal
+        # request), so no tool was ever offered and the model fabricated a
+        # confirmation. See app/ai/intent.py::_CONCRETE_REQUEST_RE.
+        text="Can you log me as a lead?",
+        category=ConversationCategory.ACTION,
+        domains=("crm",),
+        actions=("crm_lead",),
     ),
 )
 

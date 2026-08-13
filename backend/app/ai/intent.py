@@ -84,11 +84,23 @@ class ConversationCategory(str, Enum):
 
 
 _CAPABILITY_VERBS = (
-    r"(schedule|book|create|remember|learn|answer|help|assist|manage|track|log|handle)"
+    r"(schedule|book|create|remember|learn|answer|help|assist|manage|track|log|handle|update)"
 )
 # "Can/could YOU <verb>" — asking what HIRA itself is able to do.
 _CAPABILITY_MODAL_RE = re.compile(rf"\b(can|could)\s+you\b.*\b{_CAPABILITY_VERBS}\b")
 _CAPABILITY_EXPLICIT_RE = re.compile(r"\b(what can you do|what do you do|how do you work)\b")
+# Sprint 82 (production bug fix, DEC-058): "Can/could you <verb>" is
+# structurally identical whether it's a capability question ("Can you
+# schedule appointments?") or an actual request phrased politely ("Can you
+# schedule a meeting?", "Can you log me as a lead?") — English marks the
+# difference in the object, not the verb: a bare plural with no determiner
+# ("appointments", "leads", "CRM records") reads as "in general," while a
+# singular instance (bare, "a/an/this/that/the X", or a first/second-person
+# target like "me") names something to actually act on now. Reuses
+# _ACTION_OBJECT_RE's noun list rather than inventing a new one.
+_CONCRETE_REQUEST_RE = re.compile(
+    r"\bme\b|\b(a|an|this|that|the)\s+(lead|appointment|meeting|booking|slot|order|invoice)\b"
+)
 
 # Imperative mood at the start of the message ("Book a meeting tomorrow").
 _ACTION_VERB_RE = re.compile(
@@ -177,7 +189,11 @@ def classify_conversation(text: str) -> ConversationCategory | None:
     if not lower:
         return ConversationCategory.CONVERSATION
 
-    has_time_or_object = bool(_TIME_MARKER_RE.search(lower) or _ACTION_OBJECT_RE.search(lower))
+    has_time_or_object = bool(
+        _TIME_MARKER_RE.search(lower)
+        or _ACTION_OBJECT_RE.search(lower)
+        or _CONCRETE_REQUEST_RE.search(lower)
+    )
     is_imperative = bool(_ACTION_VERB_RE.match(lower))
     is_first_person_action = bool(_FIRST_PERSON_ACTION_RE.search(lower))
     is_modal_capability = bool(_CAPABILITY_MODAL_RE.search(lower))

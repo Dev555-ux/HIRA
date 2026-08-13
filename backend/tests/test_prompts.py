@@ -162,6 +162,40 @@ def test_clarification_hint_appended_when_given():
     assert "No booking/reschedule/cancellation/lead tool is available" in prompt
 
 
+# Sprint 82 (production bug fix, DEC-058): the live-reproduced bug was a
+# turn with NO clarification_hint at all (the message was misclassified as
+# CAPABILITY, so planning never even started) — the pre-fix prompt had no
+# instruction covering this shape of turn, and the model fabricated "I've
+# created a lead for you." This is the second line of defense: regardless
+# of *why* no tool was offered, the prompt must say so.
+def test_no_tool_safeguard_appended_when_no_tools_offered_and_no_clarification_hint():
+    prompt = build_system_prompt(_context(), tools_offered=False)
+
+    assert "Action planning" in prompt
+    assert "No tool is available for this reply" in prompt
+    assert "Never state or imply that a lead was created or updated" in prompt
+
+
+def test_no_tool_safeguard_omitted_when_tools_are_offered():
+    prompt = build_system_prompt(_context(), tools_offered=True)
+
+    assert "Action planning" not in prompt
+    assert "No tool is available for this reply" not in prompt
+
+
+def test_clarification_hint_takes_precedence_over_the_generic_no_tool_safeguard():
+    # A withheld-pending-more-detail turn gets the more specific message
+    # (which already carries its own "don't imply it's done" guarantee),
+    # not both.
+    prompt = build_system_prompt(
+        _context(), clarification_hint="what date this should be on", tools_offered=False
+    )
+
+    assert prompt.count("Action planning") == 1
+    assert "Before proceeding, what date this should be on" in prompt
+    assert "No tool is available for this reply" not in prompt
+
+
 def test_demo_prompt_does_not_include_kb_grounding_language():
     # Sprint 55: Demo Mode is a genuinely separate prompt, not a variant of
     # the grounded one — it must never tell the model to answer "ONLY using

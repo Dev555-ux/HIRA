@@ -871,3 +871,126 @@ def test_sprint_81_an_unrelated_disclosure_after_a_completed_booking_does_not_re
     )
 
 
+def test_sprint_82_a_polite_lead_request_offers_the_tool_instead_of_hallucinating(
+    db_session, monkeypatch
+):
+    """The exact live-reproduced bug: 'Can you log me as a lead?' used to
+    classify as CAPABILITY (app/ai/intent.py::_CAPABILITY_MODAL_RE matched
+    before any action rule got a chance), so no tool was ever offered — yet
+    the model still replied "I've created a lead for you," and no Lead row
+    was written. Reproduced end-to-end through the real orchestrator/
+    planning pipeline: the ExecutionTrace's own plan is checked (not just
+    the mocked reply) to prove the tool was genuinely offered this turn,
+    not merely that the mock happened to be configured with one."""
+    from app.ai.lead_tools import CREATE_LEAD
+    from app.ai.llm.base import ToolCall
+    from app.models import ExecutionTrace, Lead
+
+    biz = _business(db_session)
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+    index_entry(
+        db_session,
+        biz.id,
+        "Services",
+        "We offer teeth cleaning appointments.",
+        provider=FakeEmbeddingProvider(),
+    )
+
+    lead_call = ToolCall(id="1", name=CREATE_LEAD, arguments={"source": "WhatsApp inquiry"})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[lead_call]),
+    )
+
+    _, _, body, tool_outcome = playground_reply(
+        db_session, biz.id, "Can you log me as a lead?"
+    )
+
+    conversation = get_or_create_playground_conversation(db_session, biz.id)
+    trace = (
+        db_session.query(ExecutionTrace)
+        .filter_by(conversation_id=conversation.id)
+        .order_by(ExecutionTrace.created_at.desc())
+        .first()
+    )
+    assert trace.plan["category"] == "action"
+    assert any("create_lead" in step["tools"] for step in trace.plan["steps"]), (
+        "create_lead was not offered this turn — the request was misclassified again"
+    )
+
+    # And the tool actually executed for real — no fabricated confirmation.
+    assert tool_outcome == {"name": CREATE_LEAD, "success": True}
+    lead = db_session.query(Lead).filter_by(business_id=biz.id).first()
+    assert lead is not None
+    assert lead.source == "WhatsApp inquiry"
+
+
+def test_sprint_82_no_false_success_when_the_model_declines_to_call_the_offered_tool(
+    db_session, monkeypatch
+):
+    """The safety-net half of the fix: even when create_lead IS correctly
+    offered, the model must never be structurally trusted to have called it
+    just because a customer asked. Here the tool is offered (as proven via
+    the trace, same as the test above) but the mock model responds with
+    plain text only — playground.py must report tool_outcome=None and the
+    reply must be exactly the model's own text, not a fabricated confirmation
+    stitched in by anything downstream. Combined with the safeguard now in
+    app/ai/prompts.py::build_system_prompt (tested directly in
+    tests/test_prompts.py), this is what stops a future misclassification
+    from reproducing the original bug even before it's diagnosed."""
+    from app.models import Lead
+
+    biz = _business(db_session)
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+    index_entry(
+        db_session,
+        biz.id,
+        "Services",
+        "We offer teeth cleaning appointments.",
+        provider=FakeEmbeddingProvider(),
+    )
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="Sure, what's your name and number?"),
+    )
+
+    _, _, body, tool_outcome = playground_reply(db_session, biz.id, "Can you log me as a lead?")
+
+    assert tool_outcome is None
+    assert body == "Sure, what's your name and number?"
+    assert db_session.query(Lead).filter_by(business_id=biz.id).count() == 0
+
+
+def test_sprint_82_third_party_lead_creation_still_works_unchanged(db_session, monkeypatch):
+    """Naming someone else ("Create a lead for Priya") is a separate, already
+    -working path (own Stage 2 domain match via the "lead" keyword, not this
+    fix's capability/action boundary) — confirms it's untouched."""
+    from app.ai.lead_tools import CREATE_LEAD
+    from app.ai.llm.base import ToolCall
+    from app.models import Lead
+
+    biz = _business(db_session)
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+    index_entry(
+        db_session,
+        biz.id,
+        "Services",
+        "We offer teeth cleaning appointments.",
+        provider=FakeEmbeddingProvider(),
+    )
+    lead_call = ToolCall(id="1", name=CREATE_LEAD, arguments={"notes": "Interested, ask for Priya"})
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[lead_call]),
+    )
+
+    _, _, _, tool_outcome = playground_reply(db_session, biz.id, "Create a lead for Priya.")
+
+    assert tool_outcome == {"name": CREATE_LEAD, "success": True}
+    assert db_session.query(Lead).filter_by(business_id=biz.id).count() == 1

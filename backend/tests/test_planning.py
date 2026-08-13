@@ -56,16 +56,22 @@ def test_cancel_with_a_date_reference_is_ready():
     assert plan.action == "calendar_cancel"
 
 
-def test_lead_missing_customer_name():
+def test_lead_creation_never_requires_a_customer_name():
+    # Sprint 82 (production bug fix, DEC-058): create_lead's own tool schema
+    # (app/ai/lead_tools.py) takes only source/notes — never a customer name,
+    # since the lead always attaches to whoever's in this conversation. A
+    # bare "Create a lead." is therefore already fully actionable; requiring
+    # a field the tool doesn't use just meant a self-referential request
+    # ("Create a lead for me") got stuck asking a question with no purpose.
     plan = plan_action("Create a lead.")
-    assert plan.ready is False
-    assert plan.missing_field == "customer_name"
+    assert plan.ready is True
+    assert plan.missing_field is None
+    assert plan.action == "crm_lead"
 
 
-def test_lead_with_a_name_is_ready():
-    # Requires: customer name only (per this sprint's Requirements section
-    # — phone/email are Optional). See deliverables for why this differs
-    # from the illustrative dialogue, which asks for contact info too.
+def test_lead_with_a_name_is_still_ready():
+    # A third-party name ("for John") is still fully supported — it's just
+    # no longer required.
     plan = plan_action("Create a lead for John.")
     assert plan.ready is True
     assert plan.action == "crm_lead"
@@ -106,16 +112,20 @@ def test_plan_actions_evaluates_each_requested_domain_independently():
 
 
 def test_plan_actions_reports_readiness_per_domain_not_globally():
-    """A complete calendar request alongside an incomplete CRM request must
+    """An incomplete calendar request alongside a complete CRM request must
     report each domain's own readiness — one domain being incomplete must
-    not be masked by (or mask) the other's."""
-    text = "Reschedule my appointment to tomorrow at 10am and create a lead."  # no name
+    not be masked by (or mask) the other's. (Sprint 82: crm_lead no longer
+    has a required field of its own — see
+    test_lead_creation_never_requires_a_customer_name — so the incomplete
+    side of this example is now calendar's, not crm's.)"""
+    text = "Reschedule my appointment and create a lead."  # no new date/time
 
     plans = plan_actions(text, ["calendar", "crm"])
 
-    assert plans[0].ready is True
-    assert plans[1].ready is False
-    assert plans[1].missing_field == "customer_name"
+    assert plans[0].ready is False
+    assert plans[0].missing_field == "date"
+    assert plans[1].ready is True
+    assert plans[1].action == "crm_lead"
 
 
 def test_plan_actions_matches_plan_action_for_a_single_domain():

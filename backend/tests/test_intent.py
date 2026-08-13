@@ -43,6 +43,55 @@ def test_classifies_capability(text):
     assert classify_conversation(text) == ConversationCategory.CAPABILITY
 
 
+# Sprint 82 (production bug fix, DEC-058): "Can/could you <verb>" phrased
+# politely around a concrete, singular instance ("a lead", "me", "this
+# lead") is a real request, not a question about HIRA's abilities — the
+# live-reproduced bug was exactly this: "Can you log me as a lead?" got
+# classified CAPABILITY, no tool was offered, and the model fabricated a
+# confirmation anyway. See app/ai/intent.py::_CONCRETE_REQUEST_RE.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Can you create a lead for me?",
+        "Can you log me as a lead?",
+        "Could you book an appointment tomorrow?",
+        "Can you schedule a meeting?",
+        "Could you update this lead?",
+    ],
+)
+def test_a_polite_request_naming_a_concrete_instance_classifies_as_action(text):
+    assert classify_conversation(text) == ConversationCategory.ACTION
+
+
+# The inverse: the same verbs, but asking about the capability in general
+# (a bare plural, no concrete instance) — these must NOT be swept into
+# ACTION by the fix above.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Can you create leads?",
+        "Can you schedule appointments?",
+        "Can you update CRM records?",
+    ],
+)
+def test_a_generic_capability_question_is_not_reclassified_as_action(text):
+    assert classify_conversation(text) == ConversationCategory.CAPABILITY
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Can you integrate with Salesforce?",
+        "Are you able to send WhatsApp messages?",
+    ],
+)
+def test_capability_style_questions_outside_the_known_verb_list_never_become_action(text):
+    # Neither uses a recognized capability verb ("integrate", "are you able
+    # to") — unaffected by this fix either way, but must never be swept into
+    # ACTION (which would offer tools for a request that was never made).
+    assert classify_conversation(text) != ConversationCategory.ACTION
+
+
 @pytest.mark.parametrize(
     "text",
     [

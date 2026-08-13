@@ -211,7 +211,9 @@ def generate_reply(
     )
     tools = plan.tools
 
-    system = build_system_prompt(context, clarification_hint=plan.clarification_hint)
+    system = build_system_prompt(
+        context, clarification_hint=plan.clarification_hint, tools_offered=bool(tools)
+    )
     logger.info(
         "Generating reply: business=%s conversation=%s retrieved=%d category=%s tools=%d "
         "steps=%s ready=%s prompt=%s",
@@ -232,13 +234,15 @@ def generate_reply(
             tool_result_note = READ_TOOL_EXECUTORS[read_call.name](
                 db, conversation.business_id, read_call
             )
-            system_with_result = build_system_prompt(context, tool_result_note=tool_result_note)
             # The just-resolved read tool is withheld on this one follow-up
             # call — structurally, not just by instruction — so the model
             # can't simply re-ask the question it was just given the answer
             # to; it has to either propose a state-changing tool or respond
             # in plain text.
             follow_up_tools = [tool for tool in tools if tool.name != read_call.name]
+            system_with_result = build_system_prompt(
+                context, tool_result_note=tool_result_note, tools_offered=bool(follow_up_tools)
+            )
             response = llm.generate(
                 system=system_with_result, messages=messages, tools=follow_up_tools
             )
