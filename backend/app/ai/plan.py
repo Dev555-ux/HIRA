@@ -81,6 +81,7 @@ from app.ai.intent import (
     ConversationCategory,
     classify_conversation,
     domains_for_action,
+    is_unrelated_disclosure,
     tool_schemas_for_domain,
 )
 from app.ai.llm.base import ToolSchema
@@ -146,6 +147,23 @@ def build_execution_plan(
     away from a pending calendar domain) always takes priority over an
     inherited one, same as any other confident classification.
 
+    Sprint 81 (production bug fix, DEC-057): inheriting `pending_domain` is
+    additionally withheld when `is_unrelated_disclosure(text)` is true — a
+    message with no domain match of its own that also volunteers new,
+    unprompted information ("My name is Devansh, just so you know.") rather
+    than answering whatever's open. Without this, a stale-but-still-open
+    domain (e.g. a booking that already completed a couple of turns ago, or
+    a clarifying question that never got answered) would silently re-expose
+    that domain's write tools — including book_appointment/create_lead,
+    neither of which is governance-gated — to a message that was never
+    asking for anything, and Demo Chat executes whatever the model proposes
+    immediately, with no human review. This check is deliberately narrow: a
+    generic confirmation ("yes", "go ahead", "sounds good", "that's fine")
+    has no domain match of its own either, but is not an unrelated
+    disclosure, so it still passes through exactly as before — see
+    app/ai/intent.py::is_unrelated_disclosure for what it does and does not
+    recognize.
+
     `pending_action` (DEC-051) is a separate, narrower axis — it's consulted
     inside the per-domain loop below, only when *this* domain's fresh
     plan_actions() result names the exact same action that's pending
@@ -158,7 +176,7 @@ def build_execution_plan(
         domains = domains_for_action(text)
         if domains:
             category = ConversationCategory.ACTION
-        elif pending_domain is not None:
+        elif pending_domain is not None and not is_unrelated_disclosure(text):
             category = ConversationCategory.ACTION
             domains = [pending_domain]
         else:

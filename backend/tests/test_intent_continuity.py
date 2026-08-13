@@ -222,6 +222,95 @@ class TestTopicSwitchesAndInterruptions:
         assert plan.tools == []
 
 
+class TestUnrelatedDisclosureDoesNotHijackAPendingDomain:
+    """Sprint 81 (production bug fix, DEC-057): a real, reproduced bug — with
+    a calendar domain left open by an earlier turn (booked, or merely
+    discussed, a couple of turns back), an unrelated message like "My name is
+    Devansh, just so you know." was silently treated as a continuation of
+    that stale domain and got every one of its tools, including
+    book_appointment, exposed with no readiness check and no governance gate
+    (book_appointment/create_lead aren't governance-gated at all — see
+    app/ai/tools.py::GOVERNED_TOOL_ACTIONS). Demo Chat (app/ai/playground.py)
+    executes whatever the model then proposes immediately, with no human
+    review, so this reliably produced a second, real, unrequested
+    Appointment row. See app/ai/intent.py::is_unrelated_disclosure for the
+    fix itself; this class is the regression coverage for it."""
+
+    def test_the_reproduced_bug_no_longer_offers_booking_tools(self):
+        """The exact live repro: pending_domain="calendar" with no
+        pending_action (the prior turn already resolved, same shape as a
+        booking that completed a couple of turns ago), then an unrelated
+        self-disclosure. Before the fix, this returned all four calendar
+        tools, including BOOK_APPOINTMENT."""
+        plan = build_execution_plan("My name is Devansh.", pending_domain="calendar")
+        assert plan.category == ConversationCategory.CONVERSATION
+        assert plan.tools == []
+
+    def test_the_reproduced_bug_exact_wording_no_longer_offers_booking_tools(self):
+        """The literal sentence from the live reproduction."""
+        plan = build_execution_plan(
+            "My name is Devansh, just so you know.", pending_domain="calendar"
+        )
+        assert plan.category == ConversationCategory.CONVERSATION
+        assert plan.tools == []
+
+    def test_thank_you_mid_workflow_does_not_execute_a_tool(self):
+        """Already worked before this fix (small talk is a confident Stage 1
+        match, never reaches pending_domain at all) — kept here as an
+        explicit regression check alongside the sibling cases above, per the
+        bug's own required test list."""
+        plan = build_execution_plan("Thank you.", pending_domain="calendar")
+        assert plan.category == ConversationCategory.CONVERSATION
+        assert plan.tools == []
+
+    def test_an_unrelated_aside_mid_workflow_does_not_offer_tools(self):
+        """Same shape, different unrelated content — the fix targets the
+        pattern (an unprompted disclosure), not just the one reported
+        sentence."""
+        plan = build_execution_plan(
+            "By the way, I really like your new website design.", pending_domain="calendar"
+        )
+        assert plan.category == ConversationCategory.CONVERSATION
+        assert plan.tools == []
+
+    def test_a_disclosure_clears_a_pending_crm_domain_too(self):
+        """Not calendar-specific — the same stale-domain hijack was equally
+        possible after a lead-creation turn."""
+        plan = build_execution_plan("My name is Devansh, by the way.", pending_domain="crm")
+        assert plan.category == ConversationCategory.CONVERSATION
+        assert plan.tools == []
+
+    def test_legitimate_booking_continuation_still_completes(self):
+        """Must not regress: supplying the missing detail is still a real
+        continuation, not a disclosure."""
+        plan = build_execution_plan("Tomorrow at 3pm.", pending_domain="calendar")
+        assert plan.category == ConversationCategory.ACTION
+        assert BOOK_APPOINTMENT in {t.name for t in plan.tools}
+
+    def test_legitimate_reschedule_correction_still_completes(self):
+        plan = build_execution_plan("Actually make it 4pm.", pending_domain="calendar")
+        assert plan.category == ConversationCategory.ACTION
+        assert {BOOK_APPOINTMENT, RESCHEDULE_APPOINTMENT} & {t.name for t in plan.tools}
+
+    def test_legitimate_lead_continuation_with_contact_info_still_completes(self):
+        """Providing a follow-up detail for an already-open CRM workflow
+        (an email address) must still expose the CRM tools, same as before
+        this fix — only a genuinely unrelated disclosure is screened out."""
+        plan = build_execution_plan("His email is john@example.com", pending_domain="crm")
+        assert plan.category == ConversationCategory.ACTION
+        assert CREATE_LEAD in {t.name for t in plan.tools}
+
+    def test_bare_confirmations_are_unaffected_by_the_disclosure_check(self):
+        """The fix must not regress DEC-049/DEC-051's own confirmation
+        continuity — none of these contain a self-disclosure marker, so all
+        must keep working exactly as TestBookingConfirmationFollowUp already
+        proves elsewhere in this file."""
+        for reply in ["Sure, please go ahead.", "yes", "go ahead", "sounds good", "continue"]:
+            plan = build_execution_plan(reply, pending_domain="calendar")
+            assert plan.category == ConversationCategory.ACTION, reply
+            assert BOOK_APPOINTMENT in {t.name for t in plan.tools}, reply
+
+
 def test_ambiguous_replies_never_hardcode_a_phrase_list():
     """Structural proof, not just behavioural: classify_conversation has no
     branch that matches any of these strings specifically — they all fall

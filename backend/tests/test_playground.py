@@ -1,5 +1,7 @@
 """Tests for the AI Playground: reuses generate_reply(), never duplicates it."""
 
+from datetime import datetime, timedelta
+
 from app.ai.knowledge_base import index_entry
 from app.ai.llm.base import ChatMessage, LLMError, LLMProvider, LLMResponse, ToolSchema
 from app.ai.llm.mock import MockProvider
@@ -11,6 +13,19 @@ from app.ai.playground import (
 )
 from app.models import Business, Conversation, Customer, Message
 from tests.test_knowledge_base import FakeEmbeddingProvider
+
+
+def _tomorrow_at(hour: int, minute: int = 0) -> str:
+    """A same-shape-as-hardcoded ISO datetime that's always in the future
+    relative to whenever the suite runs, so "upcoming appointment" lookups
+    (app/calendar/service.py::get_upcoming_appointments) find what these
+    tests just booked regardless of what today's date happens to be — a
+    literal hardcoded date rots into the past the moment "today" catches up
+    to it (see tests fixed by this helper)."""
+    tomorrow = datetime.now() + timedelta(days=1)
+    return tomorrow.replace(hour=hour, minute=minute, second=0, microsecond=0).isoformat(
+        timespec="seconds"
+    )
 
 
 class FailingProvider(LLMProvider):
@@ -768,3 +783,91 @@ def test_dec_051_a_cancellation_confirmation_that_echoes_its_own_trigger_word_re
     assert turn_3_trace.proposed_tool_calls == [
         {"tool_name": CANCEL_APPOINTMENT, "agent_role": "scheduler"}
     ]
+
+
+def test_sprint_81_an_unrelated_disclosure_after_a_completed_booking_does_not_rebook(
+    db_session, monkeypatch
+):
+    """The exact live-reproduced bug, end-to-end through the real
+    orchestrator/planning pipeline (app/ai/plan.py::build_execution_plan(),
+    not a direct unit call): a completed booking leaves calendar
+    `active_domain` open for continuity (by design — see
+    TestBookingClarification in tests/test_intent_continuity.py); an
+    unrelated aside two turns later must not silently re-expose
+    book_appointment. Before the fix (DEC-057), this turn offered all four
+    calendar tools with no readiness check and no governance gate — neither
+    book_appointment nor create_lead is in
+    app/ai/tools.py::GOVERNED_TOOL_ACTIONS — and Demo Chat executes whatever
+    the model proposes immediately, producing a second, real, unrequested
+    Appointment row."""
+    from app.ai.llm.base import ToolCall
+    from app.ai.tools import BOOK_APPOINTMENT
+    from app.models import Appointment
+
+    biz = _business(db_session)
+    monkeypatch.setattr(
+        "app.ai.knowledge_base.get_embedding_provider", lambda name=None: FakeEmbeddingProvider()
+    )
+    index_entry(
+        db_session,
+        biz.id,
+        "Services",
+        "We offer teeth cleaning appointments.",
+        provider=FakeEmbeddingProvider(),
+    )
+
+    # --- Turn 1: book something real -------------------------------------
+    booking_call = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": _tomorrow_at(15),
+            "ends_at": _tomorrow_at(15, 30),
+            "summary": "Teeth cleaning",
+        },
+    )
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[booking_call]),
+    )
+    _, _, _, turn_1_outcome = playground_reply(
+        db_session, biz.id, "I would like to book a teeth cleaning appointment tomorrow at 3pm"
+    )
+    assert turn_1_outcome == {"name": BOOK_APPOINTMENT, "success": True}
+    assert db_session.query(Appointment).filter_by(business_id=biz.id).count() == 1
+
+    # --- Turn 2: a follow-up question that re-touches the calendar domain
+    # via its own keyword match ("book"/"appointment"), but isn't itself a
+    # new booking request — planning correctly finds it not ready, which
+    # (pre-fix) still left the domain "pending" for the next turn too.
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="I'm not sure about that, let me check."),
+    )
+    _, _, _, turn_2_outcome = playground_reply(
+        db_session, biz.id, "What time did I just book my appointment for?"
+    )
+    assert turn_2_outcome is None
+
+    # --- Turn 3: the unrelated disclosure — must NOT book again -----------
+    # No fixed_tool_calls: a real LLM structurally cannot emit a tool call
+    # for a tool it was never offered (build_execution_plan must return no
+    # tools this turn) — MockProvider ignores the `tools` kwarg entirely, so
+    # asserting no *fixed* tool call is configured, combined with asserting
+    # no second Appointment was written, is what actually proves the tool
+    # was withheld rather than merely unused.
+    monkeypatch.setattr(
+        "app.ai.orchestrator.get_llm_provider",
+        lambda name=None: MockProvider(fixed_reply="Nice to meet you, Devansh!"),
+    )
+    _, _, turn_3_body, turn_3_outcome = playground_reply(
+        db_session, biz.id, "My name is Devansh, just so you know."
+    )
+
+    assert turn_3_outcome is None
+    assert turn_3_body == "Nice to meet you, Devansh!"
+    assert db_session.query(Appointment).filter_by(business_id=biz.id).count() == 1, (
+        "a second Appointment row was written — the reported bug regressed"
+    )
+
+

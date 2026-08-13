@@ -111,6 +111,32 @@ _ACTION_OBJECT_RE = re.compile(r"\bmy\s+(appointment|meeting|booking|lead|order|
 _GREETING_RE = re.compile(r"^(hi|hello|hey|yo|good morning|good afternoon|good evening)\b")
 _SMALL_TALK_RE = re.compile(r"\b(how are you|tell me about yourself|thank(s| you))\b")
 
+# Sprint 81 (production bug fix, DEC-057): a message that volunteers new,
+# unprompted information ("My name is Devansh, just so you know.") rather
+# than answering or continuing whatever HIRA's own last turn left open.
+# Consulted only by app/ai/plan.py::build_execution_plan(), and only in the
+# one branch where neither this message's own Stage 1 classification nor its
+# own Stage 2 domain match found anything and the sole reason a domain is
+# still in play is continuity from a prior turn (`pending_domain`) — a
+# generic confirmation ("yes", "go ahead", "sounds good") must still pass
+# through this check untouched (see plan.py's docstring for why content-based
+# gating there would wrongly block those too), so this only ever screens out
+# a message that's actually introducing something new, not merely short or
+# ambiguous.
+_UNRELATED_DISCLOSURE_RE = re.compile(
+    r"^(my name is|my name's|this is)\b|"
+    r"\b(by the way|just so you know|just letting you know|fyi)\b",
+    re.IGNORECASE,
+)
+
+
+def is_unrelated_disclosure(text: str) -> bool:
+    """True for a message that announces new, unprompted information (a
+    self-introduction, an aside) rather than continuing a pending workflow —
+    see `_UNRELATED_DISCLOSURE_RE` above for exactly what this recognizes and
+    why it's scoped this narrowly."""
+    return bool(_UNRELATED_DISCLOSURE_RE.search(text.strip()))
+
 _KNOWLEDGE_KEYWORDS = (
     "hour",
     "hours",

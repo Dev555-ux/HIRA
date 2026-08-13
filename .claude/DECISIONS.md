@@ -895,3 +895,19 @@ sequenceDiagram
 - **Reasoning**: Every piece here is inert (behind a False-by-default flag) except the interface shape itself, which costs nothing to have early and saves a rewrite later — the same trade-off `CalendarProvider` already validated in this codebase.
 - **Status**: Decided, implemented. `TODOS.md` `ONBOARD-E` updated to reflect scaffolding landed; the roadmap's next step is still the Meta Tech Provider application (external, unchanged by this work).
 - **Review Date**: When Meta Tech Provider approval status changes — that's what unblocks replacing `StubEmbeddedSignupProvider` with a real implementation.
+
+---
+
+## DEC-057 — Stale `pending_domain` continuity withheld on an unrelated disclosure (production bug fix)
+
+- **Date**: 2026-08-12
+- **Category**: AI / Bug Fix
+- **Decision**: Fixed a live, reproduced bug (internally tracked as "Sprint 81"; its own code comments cited `DEC-052`, which collided with the unrelated WhatsApp Embedded Signup decision of the same number — this entry is the correction, and code comments now cite `DEC-057`). `active_domain`/`pending_domain` continuity (DEC-049/050) deliberately keeps a domain open across turns so a customer can complete a booking over several messages. The gap: an *unrelated* aside two turns after a completed booking ("My name is Devansh, by the way") had no domain match of its own, so it silently inherited the stale `pending_domain` and re-exposed `book_appointment`/`create_lead` — neither of which is governance-gated — with no readiness check. Demo Chat executes whatever the model proposes immediately with no human review, so this could produce a second, real, unrequested `Appointment` row. Fix: `app/ai/intent.py` gained `_UNRELATED_DISCLOSURE_RE`/`is_unrelated_disclosure()` — a narrow detector for self-introductions and asides ("my name is…", "by the way", "just so you know", "fyi"). `app/ai/plan.py::build_execution_plan()` now withholds `pending_domain` inheritance when `is_unrelated_disclosure(text)` is true.
+- **Context**: Found via the same live-reproduction discipline DEC-049/050/051 established — reproduce the exact reported/plausible failure against the real pipeline before changing anything, not just reasoning about it abstractly.
+- **Alternatives Considered**: Gating `pending_domain` inheritance more broadly on "does this message look like a continuation" (rejected — a generic confirmation like "yes" or "sounds good" has no domain match of its own either and must still inherit continuity; a broad heuristic risks blocking those too. `is_unrelated_disclosure` is deliberately narrow — it only screens out messages that are *introducing something new*, not merely short or ambiguous ones).
+- **Reasoning**: The detector is consulted only inside the one branch where `pending_domain` is the sole reason a domain is still in play (no fresh Stage 1/Stage 2 match) — a confident, differently-specified new request already takes priority over inherited continuity regardless of this change.
+- **Trade-offs**: Regex-based detection, same class of heuristic as the rest of `intent.py` (capability/action/greeting detection) — will miss disclosures phrased in ways the pattern doesn't cover. Consistent with this file's existing precision/recall trade-offs elsewhere, not a new risk category.
+- **Status**: Implemented. Covered by `backend/tests/test_intent_continuity.py` (unit-level) and `backend/tests/test_playground.py::test_sprint_81_an_unrelated_disclosure_after_a_completed_booking_does_not_rebook` (end-to-end through the real orchestrator/planning pipeline).
+- **Review Date**: If a real conversation surfaces a disclosure phrasing the regex misses, extend `_UNRELATED_DISCLOSURE_RE` rather than broadening the gating logic itself.
+
+---
