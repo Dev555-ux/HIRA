@@ -101,6 +101,22 @@ def test_build_authorization_url_includes_signed_state(monkeypatch):
     assert "state=" in url
 
 
+def test_build_authorization_url_does_not_request_pkce(monkeypatch):
+    # Regression test: google-auth-oauthlib >=1.x defaults to
+    # autogenerate_code_verifier=True, which puts a code_challenge in this URL
+    # but the verifier only lives on this Flow instance's Python object — it's
+    # gone by the time the callback's separate request builds a new Flow to
+    # exchange the code, so Google rejects the exchange with "Missing code
+    # verifier". This client already authenticates via client_secret and
+    # doesn't need PKCE, so the fix is to turn it off, not to thread the
+    # verifier through the callback.
+    _configure_google(monkeypatch)
+
+    url = build_authorization_url(uuid.uuid4())
+
+    assert "code_challenge" not in url
+
+
 def test_exchange_code_requires_google_config(monkeypatch):
     monkeypatch.setattr(settings, "google_client_id", "")
     with pytest.raises(CalendarNotConfiguredError):

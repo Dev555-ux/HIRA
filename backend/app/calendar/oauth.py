@@ -58,8 +58,17 @@ def _client_config() -> dict:
 
 
 def _build_flow() -> Flow:
+    # autogenerate_code_verifier=False: this is a confidential server-side
+    # client (already authenticated via client_secret), and build_authorization_url
+    # / exchange_code_for_refresh_token build separate Flow instances across two
+    # different HTTP requests — a PKCE verifier generated in one has no way to
+    # reach the other, so Google's token endpoint rejects the exchange with
+    # "Missing code verifier" if PKCE is left on.
     return Flow.from_client_config(
-        _client_config(), scopes=SCOPES, redirect_uri=settings.google_oauth_redirect_uri
+        _client_config(),
+        scopes=SCOPES,
+        redirect_uri=settings.google_oauth_redirect_uri,
+        autogenerate_code_verifier=False,
     )
 
 
