@@ -22,6 +22,7 @@ from app.api.calendar import router as calendar_router
 from app.api.conversations import router as conversations_router
 from app.api.customers import router as customers_router
 from app.api.dashboard import router as dashboard_router
+from app.api.embedded_signup import router as embedded_signup_router
 from app.api.escalations import router as escalations_router
 from app.api.founder_ops import outbox_router as outbox_jobs_router
 from app.api.founder_ops import router as founder_ops_router
@@ -200,6 +201,7 @@ app.add_middleware(RequestLoggingMiddleware)
 init_rate_limiting(app)
 app.include_router(whatsapp_router)
 app.include_router(whatsapp_api_router)
+app.include_router(embedded_signup_router)
 app.include_router(analytics_router)
 app.include_router(dashboard_router)
 app.include_router(knowledge_base_router)

@@ -73,6 +73,19 @@ class Settings(BaseSettings):
     whatsapp_api_base: str = "https://graph.facebook.com"
     whatsapp_graph_version: str = "v21.0"
 
+    # WhatsApp Embedded Signup (Track B / ONBOARD-E, TODOS.md, DEC-052).
+    # Master kill-switch: OFF means production keeps using the existing
+    # guided-manual connect flow (app/api/whatsapp.py) untouched — no route
+    # or UI change is reachable. Meta Tech Provider approval isn't granted
+    # yet (TODOS.md ONBOARD-E), so this stays False until it is; flipping it
+    # on today would just surface the stub provider's "not configured" error,
+    # never fake success. `embedded_signup_config_id` is the `config_id`
+    # Meta's JS SDK needs to launch the real popup (per
+    # documentation/WHATSAPP_ONBOARDING_V2_DESIGN.md §5) — also required, not
+    # just the flag, before the flow is considered configured.
+    enable_embedded_signup: bool = False
+    embedded_signup_config_id: str = ""
+
     # Embeddings. Provider is swappable via config (see app/ai/embeddings).
     # "local_bge" runs BAAI/bge-small-en-v1.5 locally (384 dims) — no API key.
     embedding_provider: str = "local_bge"

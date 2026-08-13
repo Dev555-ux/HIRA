@@ -26,6 +26,18 @@ export const isProduction = process.env.NODE_ENV === "production";
 // bypassing authentication.
 export const mockAuthAllowed = authEnabled || !isProduction;
 
+// WhatsApp Embedded Signup (Track B prep, TODOS.md ONBOARD-E). Mirrors
+// authEnabled's derivation above: "enabled" means there's actually something
+// configured to use, not just a flag flipped on by mistake. Both must be set
+// or the entry screen falls back to the existing manual connect flow — see
+// (dashboard)/connect-whatsapp/page.tsx. The backend independently gates its
+// own routes on ENABLE_EMBEDDED_SIGNUP; this is only the frontend's own copy
+// of that decision so the entry screen doesn't have to round-trip an API
+// call just to know whether to render itself.
+export const embeddedSignupConfigId = process.env.NEXT_PUBLIC_EMBEDDED_SIGNUP_CONFIG_ID ?? "";
+export const embeddedSignupEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_EMBEDDED_SIGNUP === "true" && embeddedSignupConfigId.length > 0;
+
 // Polling cadence for data that can change from outside the dashboard (a
 // WhatsApp webhook firing asynchronously) — pending replies, conversations,
 // and message threads all use this so refresh behavior stays consistent.

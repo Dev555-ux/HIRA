@@ -49,3 +49,25 @@ export function useDisconnectWhatsApp() {
     onSuccess: () => qc.invalidateQueries({ queryKey: [WHATSAPP_STATUS_KEY] }),
   });
 }
+
+// Embedded Signup (Track B prep) — the query 404s unless the backend has
+// ENABLE_EMBEDDED_SIGNUP set, same as every other flagged-off placeholder in
+// this app; callers treat isError the same as enabled: false.
+const EMBEDDED_SIGNUP_CONFIG_KEY = "embedded-signup-config" as const;
+
+export function useEmbeddedSignupConfig() {
+  const { getToken, isLoaded } = useAuthContext();
+  return useQuery({
+    queryKey: [EMBEDDED_SIGNUP_CONFIG_KEY],
+    queryFn: () => api.getEmbeddedSignupConfig(getToken),
+    enabled: isLoaded,
+    retry: false,
+  });
+}
+
+export function useStartEmbeddedSignup() {
+  const { getToken } = useAuthContext();
+  return useMutation({
+    mutationFn: () => api.startEmbeddedSignup(getToken),
+  });
+}

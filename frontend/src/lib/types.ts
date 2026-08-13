@@ -353,6 +353,24 @@ export interface WhatsAppWebhookConfig {
   verify_token: string;
 }
 
+// WhatsApp Embedded Signup (Track B prep, TODOS.md ONBOARD-E). Placeholder
+// surface — /api/v1/whatsapp/embedded-signup/* 404s unless
+// ENABLE_EMBEDDED_SIGNUP is set on the backend.
+export interface EmbeddedSignupConfig {
+  enabled: boolean;
+}
+
+export interface EmbeddedSignupSession {
+  config_id: string;
+  state: string;
+}
+
+export interface EmbeddedSignupResult {
+  success: boolean;
+  display_phone_number: string | null;
+  error: string | null;
+}
+
 export interface AvailabilitySlot {
   starts_at: string;
   ends_at: string;

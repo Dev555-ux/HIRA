@@ -162,12 +162,14 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 - **Status**: **Complete (2026-08-11, DEC-055).** `POST /api/v1/whatsapp/connect`/`GET /status`/`POST /disconnect`, a per-business encrypted `WhatsAppCredential` (DEC-038), UX-hardened across two same-day passes (DEC-053, DEC-054) to assume an existing WhatsApp Business owner rather than a first-timer — single-purpose "Connect WhatsApp" entry screen, one field per screen in business language, jargon-minimized. Live-verified against the real Meta Graph API's credential-validation call. Frozen as-is: no further polish planned. **Only reopen if real user testing surfaces an actual bug** — not for further UX refinement, which is superseded by ONBOARD-E.
 - **Dependencies**: ONBOARD-A. `SEC-1`/`SEC-2` (see `IMPLEMENTATION_PLAN.md` Milestone 0) are both done as of Sprint 50 (2026-07-15), so that precondition is cleared.
 
-### ONBOARD-E — WhatsApp Embedded Signup (v2)
+### ONBOARD-E — WhatsApp Embedded Signup (v2) — **now the top engineering priority**
 
-- **Priority**: P2
+- **Priority**: P0 (raised from P2, 2026-08-11, DEC-055 — the whole point of freezing ONBOARD-D)
 - **Category**: Business (external dependency) / Technical
-- **Status**: Design complete (Sprint 81, 2026-07-28) — see `documentation/WHATSAPP_ONBOARDING_V2_DESIGN.md` and `DECISIONS.md` DEC-052. Not implemented, not approved for build.
-- **Dependencies**: Meta Tech Provider / Embedded Signup approval — an external, non-engineering approval process, status not yet confirmed as of the design sprint. Should be kicked off in parallel now if not already; it is the longest lead-time item in the onboarding plan, and the design's own roadmap (§10) names confirming/advancing it as the literal first implementation step.
+- **Status**: Design complete (Sprint 81, 2026-07-28) — see `documentation/WHATSAPP_ONBOARDING_V2_DESIGN.md` and `DECISIONS.md` DEC-052. Confirmed directly with the founder (2026-08-11): the Meta Tech Provider application **has not been submitted**. **Architecture scaffolding landed (2026-08-12, DEC-056)**, ahead of approval, as pure prep: `EmbeddedSignupProvider` interface + stub (`app/whatsapp/providers/`), `ENABLE_EMBEDDED_SIGNUP`/`EMBEDDED_SIGNUP_CONFIG_ID` flag, placeholder `/api/v1/whatsapp/embedded-signup/*` endpoints (404 while the flag is off), and a flagged frontend entry screen (`(dashboard)/connect-whatsapp`). No Meta call is implemented — the stub always reports "not configured." Still not a usable connect flow; still blocked on approval for that.
+- **Next action, literal first step, no engineering dependency**: submit the Meta Tech Provider application. This is the actual bottleneck for the whole onboarding roadmap — start it before any of the remaining build steps below.
+- **Then, per DEC-052 §10's roadmap** (build can proceed once approval is in flight, doesn't have to wait for it to fully clear before starting engineering work): (1) ~~backend Embedded Signup endpoint scaffolding alongside the existing guided-manual v1 endpoints~~ done (DEC-056) as placeholders — the real Graph API calls (code exchange, `/register`, `subscribed_apps`) still need to be implemented against Meta's actual API once approval exists; (2) frontend Welcome/Connecting/Success/error screens per DEC-052 §3 — only a bare entry screen exists so far; (3) generalize Connection Health (`last_inbound_at`) to also react to permission/auth errors; (4) pilot with a small number of real businesses, guided-manual v1 still available; (5) cut over — Embedded Signup becomes the default entry point, guided-manual v1 steps back to a "Manual Setup" fallback link (only then does the entry screen built for ONBOARD-D gain its "Continue with Meta" action).
+- **Dependencies**: Meta Tech Provider / Embedded Signup approval — an external, non-engineering approval process. The longest lead-time item in the onboarding plan; should be running in parallel with everything else, not gating other work.
 
 ### ONBOARD-F — Go-live, resumability, and polish
 
@@ -337,6 +339,7 @@ Current technical debt is limited to production-infrastructure hardening — see
 - **TASK-007 (Finalize MVP architecture)** — partially blocked until TASK-008, TASK-009, and TASK-010 are decided. Can begin high-level shaping in parallel but cannot be finalized.
 - **TASK-011 (Dev environment setup)** — blocked on TASK-010 (stack/hosting choice).
 - **RES-002 (Pricing model)** — blocked on customer discovery (TASK-003) and vertical selection (TASK-004).
+- **LEGAL-001 (Legal page placeholders need updating post-incorporation)** — 2026-08-12: Privacy/Terms/Data Deletion/Company pages (`frontend/src/app/(legal)/`, facts centralized in `frontend/src/lib/legal.ts`) describe Stoneveil as an unincorporated independent project per the founder's explicit instruction, with no Grievance Officer named and no jurisdiction/court specified in Terms' governing law clause. Update `ENTITY_NAME`/`GOVERNING_LAW` and add a real Grievance Officer once Stoneveil is formally incorporated — before any wider commercial launch, not just "eventually."
 
 ---
 

@@ -20,6 +20,8 @@ import type {
   CreateLeadPayload,
   CustomerDetail,
   Customer,
+  EmbeddedSignupConfig,
+  EmbeddedSignupSession,
   EscalateResult,
   Escalation,
   EscalationAssignedFilter,
@@ -374,6 +376,19 @@ export const api = {
     apiFetch<ApiEnvelope<WhatsAppWebhookConfig>>("/api/v1/whatsapp/webhook-config", getToken).then(
       (r) => r.data,
     ),
+
+  // Embedded Signup (Track B prep) — 404s unless the backend has
+  // ENABLE_EMBEDDED_SIGNUP set; see app/api/embedded_signup.py.
+  getEmbeddedSignupConfig: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<EmbeddedSignupConfig>>(
+      "/api/v1/whatsapp/embedded-signup/config",
+      getToken,
+    ).then((r) => r.data),
+
+  startEmbeddedSignup: (getToken: GetToken) =>
+    apiFetch<ApiEnvelope<EmbeddedSignupSession>>("/api/v1/whatsapp/embedded-signup/start", getToken, {
+      method: "POST",
+    }).then((r) => r.data),
 
   getAvailability: (getToken: GetToken, params: { starts_at: string; ends_at: string }) =>
     apiFetch<ApiEnvelope<AvailabilitySlot[]>>(

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { useKbEntries } from "@/hooks/use-knowledge-base";
+import { embeddedSignupEnabled } from "@/lib/config";
 import type { Business } from "@/lib/types";
 
 type StepStatus = "done" | "available" | "blocked";
@@ -85,7 +86,12 @@ export function OnboardingChecklist({ business }: { business: Business }) {
         </Badge>
       ) : (
         <Button asChild size="sm" variant="outline">
-          <Link href="/settings?whatsapp=connect">{whatsappNeedsRetry ? "Retry" : "Connect"}</Link>
+          {/* Track B (ONBOARD-E): only reroutes here when Embedded Signup is
+           * actually configured — off by default, so this link is
+           * unchanged in production today. */}
+          <Link href={embeddedSignupEnabled ? "/connect-whatsapp" : "/settings?whatsapp=connect"}>
+            {whatsappNeedsRetry ? "Retry" : "Connect"}
+          </Link>
         </Button>
       ),
     },
