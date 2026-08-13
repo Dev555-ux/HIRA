@@ -44,7 +44,7 @@ Update this file whenever something important and lasting is learned. If new inf
 - Next.js dashboard (dashboard, inbox, pending-reply approvals, knowledge base, customers, leads, calendar, appointments; settings/analytics partially built) and a public marketing site.
 - Self-service business signup/provisioning (Clerk sign-up → tenant).
 
-**Not built**: billing, self-serve WhatsApp number connection (still manual via a script), automatic escalation on AI-generation failure, response/output guardrails, any production deployment.
+**Not built**: billing, automatic escalation on AI-generation failure, response/output guardrails, any production deployment. Self-serve WhatsApp number connection **is** built — a guided-manual wizard (DEC-038, hardened DEC-053/054, 2026-08-11) the owner completes themselves in Settings; not the "manual via a script" state this line described until now. The real fix for its remaining jargon/friction is Meta Embedded Signup (DEC-052), designed but blocked on Meta Tech Provider approval — approval is now the top engineering priority; see `TODOS.md` `ONBOARD-E`.
 
 ## Current Stack
 

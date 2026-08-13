@@ -1,5 +1,6 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   AlertTriangle,
   Bot,
@@ -19,6 +20,8 @@ import {
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
@@ -74,7 +77,7 @@ export default function SettingsPage() {
   const { data: calendarStatus } = useCalendarStatus();
   const { data: whatsappStatus } = useWhatsAppStatus();
   const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false);
-  const [wizardStartStep, setWizardStartStep] = useState<WhatsAppWizardStep>("intro");
+  const [wizardStartStep, setWizardStartStep] = useState<WhatsAppWizardStep>("entry");
   const [confirmDisconnectWhatsApp, setConfirmDisconnectWhatsApp] = useState(false);
   const disconnectWhatsApp = useDisconnectWhatsApp();
   const { toast } = useToast();
@@ -104,7 +107,7 @@ export default function SettingsPage() {
   return (
     <>
       <Suspense fallback={null}>
-        <WhatsAppWizardAutoOpen onOpen={() => openWhatsAppWizard("intro")} />
+        <WhatsAppWizardAutoOpen onOpen={() => openWhatsAppWizard("entry")} />
       </Suspense>
       <PageHeader
         title="Settings"
@@ -278,7 +281,7 @@ export default function SettingsPage() {
                     ? "We're finishing your WhatsApp connection. If we need anything else from you, we'll ask for it here."
                     : "Connecting your WhatsApp Business number is what lets HIRA read customer messages and reply from your business's own number — customers keep messaging the number they already know."}
                 </p>
-                <Button size="sm" variant="outline" onClick={() => openWhatsAppWizard("intro")}>
+                <Button size="sm" variant="outline" onClick={() => openWhatsAppWizard("entry")}>
                   <ExternalLink />{" "}
                   {whatsapp.label === "Needs attention" ? "Continue setup" : "Connect WhatsApp"}
                 </Button>
@@ -300,7 +303,6 @@ export default function SettingsPage() {
         <WhatsAppConnectWizard
           open={isWhatsAppWizardOpen}
           onOpenChange={setIsWhatsAppWizardOpen}
-          businessName={business?.name ?? "your business"}
           startStep={wizardStartStep}
         />
       </Section>
@@ -601,24 +603,27 @@ function WhatsAppWizardAutoOpen({ onOpen }: { onOpen: () => void }) {
   return null;
 }
 
-// Sprint 72: a plain-text, collapsible walkthrough — deliberately not
+// Rev 2: plain-text, collapsible walkthroughs — deliberately not
 // screenshots. Meta's own console UI changes often enough that embedded
 // screenshots go stale within a few months and become actively misleading;
 // menu paths and field names are far more durable, and the "official guide"
 // links below point at Meta's own docs, which Meta keeps current so HIRA
-// doesn't have to. Self-contained state (not lifted to the wizard) so it
-// naturally resets each time the intro step remounts.
-const META_SETUP_STEPS: {
-  title: string;
-  description: string;
-  guideUrl: string;
-}[] = [
+// doesn't have to. Split per field (not one upfront wall of text) and
+// collapsed by default, under a "don't have this yet" toggle — an owner who
+// already has these values ready should never have to read past them. HIRA's
+// customers already run WhatsApp Business day to day; what they're less
+// likely to already have is the *developer*-side Meta App/System User/token,
+// which is what these walk through.
+const CREATE_APP_HELP = [
   {
     title: "Create a Meta App",
     description:
       'developers.facebook.com → My Apps → Create App → choose "Business" → add the "WhatsApp" product.',
     guideUrl: "https://developers.facebook.com/docs/development/create-an-app",
   },
+];
+
+const ACCESS_TOKEN_HELP = [
   {
     title: "Create a System User",
     description:
@@ -631,15 +636,15 @@ const META_SETUP_STEPS: {
       'From that System User: Generate New Token → select your App → grant the "whatsapp_business_messaging" and "whatsapp_business_management" permissions → copy the token immediately (Meta only shows it once).',
     guideUrl: "https://developers.facebook.com/docs/whatsapp/business-management-api/get-started",
   },
-  {
-    title: "Configure the webhook",
-    description:
-      'App Dashboard → WhatsApp → Configuration → Webhooks → paste the Callback URL and Verify Token (shown a couple of steps ahead in this wizard) → subscribe to the "messages" field.',
-    guideUrl: "https://developers.facebook.com/docs/whatsapp/cloud-api/guides/set-up-webhooks/",
-  },
 ];
 
-function MetaSetupGuide() {
+function FieldHelp({
+  toggleLabel,
+  steps,
+}: {
+  toggleLabel: string;
+  steps: { title: string; description: string; guideUrl: string }[];
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -650,12 +655,12 @@ function MetaSetupGuide() {
         aria-expanded={open}
         className="flex w-full items-center justify-between gap-2 p-3 text-left text-sm font-medium"
       >
-        Need help finding these values from Meta?
+        {toggleLabel}
         <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
         <ol className="space-y-3 border-t p-3">
-          {META_SETUP_STEPS.map((step, i) => (
+          {steps.map((step, i) => (
             <li key={step.title} className="flex gap-3 text-sm">
               <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
                 {i + 1}
@@ -680,48 +685,144 @@ function MetaSetupGuide() {
   );
 }
 
-type WhatsAppWizardStep = "intro" | "form" | "webhook" | "verify";
+function StepDots({ count, current }: { count: number; current: number }) {
+  return (
+    <div className="flex justify-center gap-1.5" aria-hidden="true">
+      {Array.from({ length: count }).map((_, i) => (
+        <span
+          key={i}
+          className={cn("size-1.5 rounded-full", i <= current ? "bg-primary" : "bg-muted")}
+        />
+      ))}
+    </div>
+  );
+}
+
+const whatsappCredentialsSchema = z.object({
+  phone_number_id: z.string().trim().min(1, "Enter your Phone Number ID"),
+  whatsapp_business_account_id: z.string().trim().min(1, "Enter your WhatsApp Business Account ID"),
+  access_token: z.string().trim().min(1, "Enter your access token"),
+  app_secret: z.string().trim().min(1, "Enter your App Secret"),
+});
+type WhatsAppCredentialsValues = z.infer<typeof whatsappCredentialsSchema>;
+
+const FIELD_STEP_ORDER = ["phone", "waba", "token", "secret"] as const;
+type FieldStep = (typeof FIELD_STEP_ORDER)[number];
+
+// Rev 3: dropped the small Meta-jargon caption line above each input —
+// the screen title now carries the business-language name on its own
+// (§2 of this session's UX pass: "the owner should only see Meta
+// terminology when absolutely unavoidable"). The one exception is the
+// phone/WABA pair: both are plain numeric IDs on the same Meta "API Setup"
+// page, genuinely easy to mix up, so their descriptions keep a small
+// quoted cross-reference to Meta's own field label — not shown as a
+// separate label, just folded into the locating instructions.
+const FIELD_CONFIG: Record<
+  FieldStep,
+  {
+    name: keyof WhatsAppCredentialsValues;
+    title: string;
+    description: string;
+    placeholder: string;
+    type?: string;
+    help?: { toggleLabel: string; steps: typeof CREATE_APP_HELP };
+  }
+> = {
+  phone: {
+    name: "phone_number_id",
+    title: "Your WhatsApp Number",
+    description: 'Meta App dashboard → WhatsApp → API Setup — labeled "Phone number ID."',
+    placeholder: "1234567890",
+    help: { toggleLabel: "Don't have a Meta App yet?", steps: CREATE_APP_HELP },
+  },
+  waba: {
+    name: "whatsapp_business_account_id",
+    title: "Business Account",
+    description: 'Same page — labeled "WhatsApp Business Account ID."',
+    placeholder: "1234567890",
+  },
+  token: {
+    name: "access_token",
+    title: "Access Key",
+    description: "From a System User assigned to this account.",
+    placeholder: "EAAG…",
+    type: "password",
+    help: { toggleLabel: "Don't have an access token yet?", steps: ACCESS_TOKEN_HELP },
+  },
+  secret: {
+    name: "app_secret",
+    title: "App Secret",
+    description: "Meta App dashboard → Settings → Basic.",
+    placeholder: "From App → Settings → Basic",
+    type: "password",
+  },
+};
+
+type WhatsAppWizardStep = "entry" | FieldStep | "webhook" | "verify";
 
 /** Real self-serve connection (Sprint 69, ONBOARD-D "guided-manual v1") —
- * no Embedded Signup (that needs Meta's Tech Provider approval, not yet
- * granted). The business owner creates their own Meta System User token on
- * Meta's own site — same as connecting Google Calendar requires a trip
- * through Google's own consent screen — then pastes the four resulting
- * values here. HIRA verifies them against Meta's API before storing
- * anything (POST /api/v1/whatsapp/connect), so a typo'd token fails
- * immediately with a specific reason instead of on the first real customer
- * message. Submitting again (reconnect) just replaces what's stored.
+ * no Embedded Signup yet (that needs Meta's Tech Provider approval; per
+ * DEC-052 §0 and confirmed directly with the founder, that application has
+ * still not been submitted). The owner already runs WhatsApp Business and
+ * already has customers messaging that number, so there's no
+ * account-creation branch here, no "what is WhatsApp Business" explanation —
+ * just the fastest path to locating four values from an account that
+ * already exists.
+ *
+ * Rev 3 note (reconciled against DEC-052 / WHATSAPP_ONBOARDING_V2_DESIGN.md,
+ * the approved-pending-Meta-approval target design): that document's own
+ * §9/§10 roadmap is explicit that guided-manual v1 stays the *default* entry
+ * point until Embedded Signup is built AND pilot-validated — Embedded Signup
+ * only "cuts over" to become primary at roadmap step 7, not before. So the
+ * `entry` screen below intentionally does NOT show a "Continue with Meta"
+ * button (that's DEC-052 §3.1's Welcome screen, for once Track B exists) —
+ * its copy and single "Connect WhatsApp" action match DEC-052 §3.1's own
+ * Welcome-screen button label, and it leads directly into this same
+ * guided-manual flow, exactly as canonical intends "today."
+ *
+ * One field per screen (Rev 2): each screen has exactly one purpose, and the
+ * rare owner who doesn't yet have the *developer*-side Meta App/System
+ * User/token gets that help collapsed behind a toggle on the field where
+ * it's first needed, not dumped upfront.
+ *
+ * HIRA verifies the four values against Meta's API before storing anything
+ * (POST /api/v1/whatsapp/connect), so a typo'd token fails immediately with
+ * a specific reason instead of on the first real customer message.
+ * Submitting again (reconnect) just replaces what's stored.
  *
  * Sprint 71: credential verification alone doesn't prove real messages can
  * arrive — the business's own Meta App also needs the Callback URL/Verify
  * Token pasted into its webhook config (DEC-038), a step Meta doesn't expose
- * any way to automate here. So a successful connect now moves to a
- * "webhook" step (Task A) showing those exact values, then a "verify" step
- * (Task B) that polls for a real inbound message instead of just trusting
- * the stored credentials. */
+ * any way to automate here. So a successful connect moves to a "webhook"
+ * step (Task A) showing those exact values, then a "verify" step (Task B)
+ * that polls for a real inbound message instead of just trusting the stored
+ * credentials — the one failure mode credential verification can't catch. */
 function WhatsAppConnectWizard({
   open,
   onOpenChange,
-  businessName,
   startStep,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  businessName: string;
   startStep: WhatsAppWizardStep;
 }) {
   const [step, setStep] = useState<WhatsAppWizardStep>(startStep);
-  const [phoneNumberId, setPhoneNumberId] = useState("");
-  const [wabaId, setWabaId] = useState("");
-  const [accessToken, setAccessToken] = useState("");
-  const [appSecret, setAppSecret] = useState("");
   const [error, setError] = useState<string | null>(null);
   const connectWhatsApp = useConnectWhatsApp();
+  const form = useForm<WhatsAppCredentialsValues>({
+    resolver: zodResolver(whatsappCredentialsSchema),
+    defaultValues: {
+      phone_number_id: "",
+      whatsapp_business_account_id: "",
+      access_token: "",
+      app_secret: "",
+    },
+  });
 
   // The dialog stays mounted across open/close (only its content is
   // conditionally rendered below), so re-opening needs an explicit sync to
   // whatever step the caller asked for — e.g. Settings' "Check connection"
-  // button reopens straight at "verify", not back at "intro".
+  // button reopens straight at "verify", not back at the first field.
   useEffect(() => {
     if (open) setStep(startStep);
   }, [open, startStep]);
@@ -730,24 +831,16 @@ function WhatsAppConnectWizard({
     if (connectWhatsApp.isPending) return;
     onOpenChange(open);
     if (!open) {
-      setStep("intro");
-      setPhoneNumberId("");
-      setWabaId("");
-      setAccessToken("");
-      setAppSecret("");
+      setStep("entry");
+      form.reset();
       setError(null);
     }
   }
 
-  async function handleConnect() {
+  async function handleConnect(values: WhatsAppCredentialsValues) {
     setError(null);
     try {
-      await connectWhatsApp.mutateAsync({
-        phone_number_id: phoneNumberId.trim(),
-        whatsapp_business_account_id: wabaId.trim(),
-        access_token: accessToken.trim(),
-        app_secret: appSecret.trim(),
-      });
+      await connectWhatsApp.mutateAsync(values);
       // Not "connected" yet as far as the owner should believe — the
       // webhook and verify steps below are what actually prove it (Task B).
       setStep("webhook");
@@ -756,116 +849,84 @@ function WhatsAppConnectWizard({
     }
   }
 
-  const canSubmit = Boolean(
-    phoneNumberId.trim() && wabaId.trim() && accessToken.trim() && appSecret.trim(),
-  );
+  const fieldIndex = FIELD_STEP_ORDER.indexOf(step as FieldStep);
+  const isFieldStep = fieldIndex !== -1;
+  const fieldConfig = isFieldStep ? FIELD_CONFIG[step as FieldStep] : null;
+
+  async function handleFieldNext() {
+    if (!fieldConfig) return;
+    const valid = await form.trigger(fieldConfig.name);
+    if (!valid) return;
+    if (fieldIndex === FIELD_STEP_ORDER.length - 1) {
+      await form.handleSubmit(handleConnect)();
+    } else {
+      setStep(FIELD_STEP_ORDER[fieldIndex + 1]);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      {open && step === "intro" && (
+      {open && step === "entry" && (
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Connect WhatsApp</DialogTitle>
             <DialogDescription>
-              This is how customers will reach your new employee.
+              Connect your existing WhatsApp Business account. Your customers will continue using
+              the same number.
             </DialogDescription>
           </DialogHeader>
-          <ul className="space-y-3">
-            <li className="flex items-start gap-3 text-sm">
-              <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" />
-              <span className="text-muted-foreground">
-                Customers keep messaging the WhatsApp number they already know — nothing changes
-                for them.
-              </span>
-            </li>
-            <li className="flex items-start gap-3 text-sm">
-              <Bot className="mt-0.5 size-4 shrink-0 text-primary" />
-              <span className="text-muted-foreground">
-                HIRA reads every message and replies from that same number, grounded in what
-                you&apos;ve taught it.
-              </span>
-            </li>
-            <li className="flex items-start gap-3 text-sm">
-              <ExternalLink className="mt-0.5 size-4 shrink-0 text-primary" />
-              <span className="text-muted-foreground">
-                You&apos;ll need four values from your own Meta App: a Phone Number ID, a WhatsApp
-                Business Account ID, a System User access token, and your App Secret.
-              </span>
-            </li>
-          </ul>
-          <MetaSetupGuide />
           <DialogFooter>
-            <Button variant="outline" onClick={() => close(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => setStep("form")}>I have these ready</Button>
+            <Button onClick={() => setStep(FIELD_STEP_ORDER[0])}>Connect WhatsApp</Button>
           </DialogFooter>
         </DialogContent>
       )}
-      {open && step === "form" && (
+      {open && fieldConfig && (
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Connect WhatsApp for {businessName}</DialogTitle>
-            <DialogDescription>
-              From your Meta App&apos;s dashboard — WhatsApp → API Setup, and App → Settings →
-              Basic for the App Secret.
-            </DialogDescription>
+            <DialogTitle>{fieldConfig.title}</DialogTitle>
+            <DialogDescription>{fieldConfig.description}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium">Phone Number ID</span>
-              <Input
-                value={phoneNumberId}
-                onChange={(e) => setPhoneNumberId(e.target.value)}
-                placeholder="1234567890"
-                disabled={connectWhatsApp.isPending}
-              />
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium">WhatsApp Business Account ID</span>
-              <Input
-                value={wabaId}
-                onChange={(e) => setWabaId(e.target.value)}
-                placeholder="1234567890"
-                disabled={connectWhatsApp.isPending}
-              />
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium">System User access token</span>
-              <Input
-                type="password"
-                value={accessToken}
-                onChange={(e) => setAccessToken(e.target.value)}
-                placeholder="EAAG…"
-                disabled={connectWhatsApp.isPending}
-              />
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium">App Secret</span>
-              <Input
-                type="password"
-                value={appSecret}
-                onChange={(e) => setAppSecret(e.target.value)}
-                placeholder="From App → Settings → Basic"
-                disabled={connectWhatsApp.isPending}
-              />
-            </label>
-          </div>
-          {error && (
+          <label className="block space-y-1.5">
+            {/* Visually hidden: the DialogTitle above already carries the
+                business-language name on screen (no need to repeat it or
+                show Meta's jargon term as a visible caption), but the
+                input still needs an accessible name for screen readers. */}
+            <span className="sr-only">{fieldConfig.title}</span>
+            <Input
+              type={fieldConfig.type}
+              placeholder={fieldConfig.placeholder}
+              disabled={connectWhatsApp.isPending}
+              {...form.register(fieldConfig.name)}
+            />
+            {form.formState.errors[fieldConfig.name] && (
+              <span className="block text-xs text-destructive">
+                {form.formState.errors[fieldConfig.name]?.message}
+              </span>
+            )}
+          </label>
+          {fieldConfig.help && (
+            <FieldHelp toggleLabel={fieldConfig.help.toggleLabel} steps={fieldConfig.help.steps} />
+          )}
+          {error && fieldIndex === FIELD_STEP_ORDER.length - 1 && (
             <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive" role="alert">
               {error}
             </p>
           )}
+          <StepDots count={FIELD_STEP_ORDER.length} current={fieldIndex} />
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setStep("intro")}
+              onClick={() => (fieldIndex === 0 ? setStep("entry") : setStep(FIELD_STEP_ORDER[fieldIndex - 1]))}
               disabled={connectWhatsApp.isPending}
             >
               Back
             </Button>
-            <Button onClick={handleConnect} disabled={!canSubmit || connectWhatsApp.isPending}>
-              {connectWhatsApp.isPending ? "Connecting…" : "Connect"}
+            <Button onClick={handleFieldNext} disabled={connectWhatsApp.isPending}>
+              {fieldIndex === FIELD_STEP_ORDER.length - 1
+                ? connectWhatsApp.isPending
+                  ? "Connecting…"
+                  : "Connect"
+                : "Continue"}
             </Button>
           </DialogFooter>
         </DialogContent>

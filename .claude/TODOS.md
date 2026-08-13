@@ -157,9 +157,9 @@ _Empty — no open high-priority items. The WhatsApp access-token replacement is
 
 ### ONBOARD-D — WhatsApp connection (guided-manual, v1)
 
-- **Priority**: P2
+- **Priority**: P3 (frozen — see Status)
 - **Category**: Technical
-- **Status**: Done (Sprint 69, 2026-07-16) — `POST /api/v1/whatsapp/connect`/`GET /status`/`POST /disconnect`, a per-business encrypted `WhatsAppCredential` (DEC-038), and a real form replacing the old copy-to-clipboard wizard. Live-verified against the real Meta Graph API's credential-validation call (a fake token was correctly rejected with a specific reason before anything was stored). Open as a PR, not yet merged.
+- **Status**: **Complete (2026-08-11, DEC-055).** `POST /api/v1/whatsapp/connect`/`GET /status`/`POST /disconnect`, a per-business encrypted `WhatsAppCredential` (DEC-038), UX-hardened across two same-day passes (DEC-053, DEC-054) to assume an existing WhatsApp Business owner rather than a first-timer — single-purpose "Connect WhatsApp" entry screen, one field per screen in business language, jargon-minimized. Live-verified against the real Meta Graph API's credential-validation call. Frozen as-is: no further polish planned. **Only reopen if real user testing surfaces an actual bug** — not for further UX refinement, which is superseded by ONBOARD-E.
 - **Dependencies**: ONBOARD-A. `SEC-1`/`SEC-2` (see `IMPLEMENTATION_PLAN.md` Milestone 0) are both done as of Sprint 50 (2026-07-15), so that precondition is cleared.
 
 ### ONBOARD-E — WhatsApp Embedded Signup (v2)
