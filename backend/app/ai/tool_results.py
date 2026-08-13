@@ -12,6 +12,11 @@ from dataclasses import dataclass
 @dataclass
 class ToolExecutionResult:
     success: bool
+    # Written for logs/traces/founder-facing surfaces — never send this to a
+    # customer directly on failure (it can read like "Requested slot
+    # overlaps an existing appointment" or a governance-policy string, not
+    # something HIRA would actually say). See `reason` below and
+    # app/ai/tools.py::failure_message_for for the customer-facing text.
     message: str
     appointment_id: uuid.UUID | None = None
     lead_id: uuid.UUID | None = None
@@ -21,3 +26,7 @@ class ToolExecutionResult:
     # either nothing needs compensating (e.g. a CRM-only tool) or the tool
     # already committed and handled its own compensation internally.
     on_commit_failure: Callable[[], None] | None = None
+    # Machine-readable failure category (None on success, or when nothing
+    # here has natural phrasing for it yet) — see
+    # app/ai/tools.py::failure_message_for.
+    reason: str | None = None

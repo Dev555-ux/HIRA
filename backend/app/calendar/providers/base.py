@@ -71,6 +71,18 @@ class CalendarNotConnectedError(CalendarError):
     """This business hasn't connected a calendar yet."""
 
 
+class CalendarValidationError(CalendarError):
+    """The requested booking window itself is invalid — in the past, end
+    before start, or outside the business's configured working hours.
+    Raised by AppointmentService (app/calendar/service.py) before a provider
+    is ever called, so no provider needs its own copy of this check."""
+
+
+class CalendarAlreadyCancelledError(CalendarError):
+    """The appointment being rescheduled/modified has already been
+    cancelled — it must be re-booked, not resurrected in place."""
+
+
 class CalendarProvider(ABC):
     @abstractmethod
     def get_availability(self, *, calendar_id: str, window: TimeSlot) -> list[TimeSlot]:

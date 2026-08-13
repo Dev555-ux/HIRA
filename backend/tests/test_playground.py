@@ -277,8 +277,8 @@ def test_playground_executes_two_proposed_actions_sequentially(db_session, monke
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-05T14:00:00",
-            "ends_at": "2026-08-05T15:00:00",
+            "starts_at": _tomorrow_at(14),
+            "ends_at": _tomorrow_at(15),
             "summary": "Cleaning",
         },
     )
@@ -325,15 +325,16 @@ def test_playground_reports_an_honest_failure_for_a_tool_call_that_cant_execute(
     db_session, monkeypatch
 ):
     """A proposed booking for a slot that's already taken must not look like
-    a silent failure or a fake success — the tool's own honest reason becomes
-    the chat reply, same as it would for a real WhatsApp customer.
+    a silent failure or a fake success — HIRA must say so honestly, same as
+    it would for a real WhatsApp customer, but never with
+    ToolExecutionResult.message's raw internal text (Sprint 83, DEC-059:
+    that string used to leak here verbatim — "Requested slot overlaps an
+    existing appointment" — see app/ai/tools.py::failure_message_for).
 
     Sprint 78: a missing Google Calendar connection no longer makes booking
     fail (see app/calendar/factory.py's InternalSchedulerProvider fallback),
     so this now exercises a genuine failure mode that still exists under the
     internal scheduler — a real slot conflict."""
-    from datetime import datetime
-
     from app.ai.llm.base import ToolCall
     from app.ai.tools import BOOK_APPOINTMENT
     from app.models import Appointment, Customer
@@ -342,13 +343,15 @@ def test_playground_reports_an_honest_failure_for_a_tool_call_that_cant_execute(
     blocker_customer = Customer(business_id=biz.id, wa_phone="+15550009999")
     db_session.add(blocker_customer)
     db_session.flush()
+    blocker_starts_at = _tomorrow_at(14)
+    blocker_ends_at = _tomorrow_at(15)
     db_session.add(
         Appointment(
             business_id=biz.id,
             customer_id=blocker_customer.id,
             google_event_id="internal-blocker",
-            starts_at=datetime.fromisoformat("2026-08-05T14:00:00"),
-            ends_at=datetime.fromisoformat("2026-08-05T15:00:00"),
+            starts_at=datetime.fromisoformat(blocker_starts_at),
+            ends_at=datetime.fromisoformat(blocker_ends_at),
             status="booked",
         )
     )
@@ -358,8 +361,8 @@ def test_playground_reports_an_honest_failure_for_a_tool_call_that_cant_execute(
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-05T14:00:00",
-            "ends_at": "2026-08-05T15:00:00",
+            "starts_at": blocker_starts_at,
+            "ends_at": blocker_ends_at,
             "summary": "Cleaning",
         },
     )
@@ -375,7 +378,10 @@ def test_playground_reports_an_honest_failure_for_a_tool_call_that_cant_execute(
 
     assert response.text == ""
     assert tool_outcome == {"name": BOOK_APPOINTMENT, "success": False}
-    assert body == "Requested slot overlaps an existing appointment"
+    assert body == (
+        "That time isn't available because it overlaps another appointment. "
+        "Would you like to choose another time?"
+    )
 
     conversation = get_or_create_playground_conversation(db_session, biz.id)
     outbound = (
@@ -408,13 +414,15 @@ def test_playground_stops_after_a_failed_action_and_never_attempts_the_next(
     blocker_customer = Customer(business_id=biz.id, wa_phone="+15550009999")
     db_session.add(blocker_customer)
     db_session.flush()
+    blocker_starts_at = _tomorrow_at(14)
+    blocker_ends_at = _tomorrow_at(15)
     db_session.add(
         Appointment(
             business_id=biz.id,
             customer_id=blocker_customer.id,
             google_event_id="internal-blocker",
-            starts_at=datetime.fromisoformat("2026-08-05T14:00:00"),
-            ends_at=datetime.fromisoformat("2026-08-05T15:00:00"),
+            starts_at=datetime.fromisoformat(blocker_starts_at),
+            ends_at=datetime.fromisoformat(blocker_ends_at),
             status="booked",
         )
     )
@@ -424,8 +432,8 @@ def test_playground_stops_after_a_failed_action_and_never_attempts_the_next(
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-05T14:00:00",
-            "ends_at": "2026-08-05T15:00:00",
+            "starts_at": blocker_starts_at,
+            "ends_at": blocker_ends_at,
             "summary": "Cleaning",
         },
     )
@@ -445,7 +453,10 @@ def test_playground_stops_after_a_failed_action_and_never_attempts_the_next(
     )
 
     assert tool_outcome == {"name": BOOK_APPOINTMENT, "success": False}
-    assert body == "Requested slot overlaps an existing appointment"
+    assert body == (
+        "That time isn't available because it overlaps another appointment. "
+        "Would you like to choose another time?"
+    )
 
     conversation = get_or_create_playground_conversation(db_session, biz.id)
     outbound = (
@@ -495,19 +506,19 @@ def test_the_teeth_cleaning_demo_scenario_books_via_internal_scheduler_end_to_en
     Appointment row, Founder Dashboard's data, Execution Trace,
     Conversation Replay) reflects it exactly as it would for a
     Google-synced booking."""
-    from datetime import datetime
-
     from app.ai.llm.base import ToolCall
     from app.ai.tools import BOOK_APPOINTMENT
     from app.models import Appointment, ExecutionTrace
 
     biz = _business(db_session)
+    starts_at = _tomorrow_at(15)
+    ends_at = _tomorrow_at(15, 30)
     tool_call = ToolCall(
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-05T15:00:00",
-            "ends_at": "2026-08-05T15:30:00",
+            "starts_at": starts_at,
+            "ends_at": ends_at,
             "summary": "Teeth cleaning",
         },
     )
@@ -526,12 +537,10 @@ def test_the_teeth_cleaning_demo_scenario_books_via_internal_scheduler_end_to_en
     # Appointment Created — a real, persisted Appointment row, booked via
     # InternalSchedulerProvider with no external calendar involved.
     assert tool_outcome == {"name": BOOK_APPOINTMENT, "success": True}
-    assert body == (
-        "You're all set! Teeth cleaning is booked for 2026-08-05T15:00:00 to 2026-08-05T15:30:00."
-    )
+    assert body == f"You're all set! Teeth cleaning is booked for {starts_at} to {ends_at}."
     appointment = db_session.query(Appointment).filter_by(business_id=biz.id).one()
     assert appointment.status == "booked"
-    assert appointment.starts_at == datetime.fromisoformat("2026-08-05T15:00:00")
+    assert appointment.starts_at == datetime.fromisoformat(starts_at)
     assert appointment.google_event_id.startswith("internal-")
 
     # Founder Dashboard reflects the activity — get_upcoming_appointments is
@@ -636,8 +645,8 @@ def test_sprint_80_reproduces_and_fixes_the_exact_reported_production_bug(db_ses
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-06T15:00:00",
-            "ends_at": "2026-08-06T15:30:00",
+            "starts_at": _tomorrow_at(15),
+            "ends_at": _tomorrow_at(15, 30),
             "summary": "Teeth cleaning",
         },
     )
@@ -721,8 +730,8 @@ def test_dec_051_a_cancellation_confirmation_that_echoes_its_own_trigger_word_re
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-06T14:00:00",
-            "ends_at": "2026-08-06T14:30:00",
+            "starts_at": _tomorrow_at(14),
+            "ends_at": _tomorrow_at(14, 30),
             "summary": "Teeth cleaning",
         },
     )

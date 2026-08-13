@@ -18,10 +18,17 @@ from app.ai.tools import (
     confirmation_message_for,
     execute_check_availability,
     execute_tool_call,
+    failure_message_for,
     preview_tool_call,
     response_to_message_fields,
 )
-from app.calendar.providers.base import CalendarEventDraft, CalendarNotConnectedError
+from app.calendar.providers.base import (
+    CalendarAlreadyCancelledError,
+    CalendarConflictError,
+    CalendarEventDraft,
+    CalendarNotConnectedError,
+    CalendarValidationError,
+)
 from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
 from app.models import Business, Customer
@@ -138,6 +145,174 @@ def test_confirmation_lead_tool_differs_from_preview():
 
     assert confirmation == "Thanks — that's been taken care of."
     assert confirmation != preview_tool_call(tool_call)  # "Log as a new lead (source: ...)"
+
+
+# --- failure_message_for (Sprint 83 production bug fix, DEC-059) -----------
+# The live-reproduced bug: a customer heard raw internal strings like
+# "Requested slot overlaps an existing appointment" verbatim. This is the
+# failure-path counterpart to confirmation_message_for above — every case
+# here must never equal the internal result.message it was built from.
+
+
+def test_failure_message_for_conflict():
+    result = ToolExecutionResult(False, "Requested slot overlaps an existing appointment", reason="conflict")
+
+    message = failure_message_for(result)
+
+    assert message == (
+        "That time isn't available because it overlaps another appointment. "
+        "Would you like to choose another time?"
+    )
+    assert message != result.message
+
+
+def test_failure_message_for_needs_confirmation():
+    result = ToolExecutionResult(
+        False,
+        "This action needs to be confirmed with the customer before it can be completed.",
+        reason="needs_confirmation",
+    )
+
+    message = failure_message_for(result)
+
+    assert message == (
+        "I need your confirmation before making that change. Would you like me to proceed?"
+    )
+    assert message != result.message
+
+
+def test_failure_message_for_not_found():
+    result = ToolExecutionResult(False, "No upcoming appointment found to modify.", reason="not_found")
+
+    message = failure_message_for(result)
+
+    assert message == (
+        "I couldn't find an upcoming appointment to change. Can you tell me which appointment you mean?"
+    )
+    assert message != result.message
+
+
+def test_failure_message_for_already_cancelled():
+    result = ToolExecutionResult(
+        False,
+        "This appointment has already been cancelled and can't be rescheduled",
+        reason="already_cancelled",
+    )
+
+    message = failure_message_for(result)
+
+    assert message == (
+        "That appointment has already been cancelled. Would you like to book a new one instead?"
+    )
+    assert message != result.message
+
+
+def test_failure_message_for_invalid_request():
+    result = ToolExecutionResult(
+        False, "Cannot book an appointment in the past.", reason="invalid_request"
+    )
+
+    message = failure_message_for(result)
+
+    assert message == "That time doesn't work — could you try a different date or time?"
+    assert message != result.message
+
+
+def test_failure_message_for_falls_back_to_raw_message_when_reason_is_unmapped():
+    """A CRM failure (or any future CalendarError this fix doesn't cover
+    yet) has no reason, or a reason with no phrasing — unchanged, existing
+    behavior, not something this fix touches."""
+    result = ToolExecutionResult(False, "A lead already exists for this customer.")
+
+    assert failure_message_for(result) == result.message
+
+
+def test_execute_tool_call_tags_a_validation_failure_and_writes_nothing(db_session, monkeypatch):
+    """End-to-end through execute_tool_call (not just the CalendarError ->
+    reason mapping in isolation): a past-dated booking request is rejected
+    by AppointmentService, and the resulting ToolExecutionResult carries the
+    reason failure_message_for needs — not left for the caller to guess at
+    from result.message's text."""
+    from app.models import Appointment
+
+    biz, customer = _business_customer(db_session)
+    monkeypatch.setattr(
+        "app.ai.tools.get_appointment_service",
+        lambda db, business_id: _mock_appointment_service(db, business_id),
+    )
+    past = NOW - timedelta(days=5)
+    tool_call = ToolCall(
+        id="1",
+        name=BOOK_APPOINTMENT,
+        arguments={
+            "starts_at": past.isoformat(),
+            "ends_at": (past + timedelta(minutes=30)).isoformat(),
+            "summary": "Should be rejected",
+        },
+    )
+
+    result = execute_tool_call(
+        db_session, biz.id, tool_call, customer_id=customer.id, conversation_id=None
+    )
+
+    assert result.success is False
+    assert result.reason == "invalid_request"
+    assert failure_message_for(result) == (
+        "That time doesn't work — could you try a different date or time?"
+    )
+    from sqlalchemy import select
+
+    assert db_session.scalars(select(Appointment)).all() == []
+
+
+def test_execute_reschedule_of_an_already_cancelled_appointment_reports_not_found(
+    db_session, monkeypatch
+):
+    """execute_tool_call's reschedule/cancel dispatch resolves "which
+    appointment" via get_upcoming_appointments() (DEC-034), which already
+    excludes cancelled ones — so from the AI/WhatsApp path, a cancelled
+    appointment looks identical to having no upcoming appointment at all,
+    never reaching AppointmentService.reschedule_appointment()'s own
+    CalendarAlreadyCancelledError check. That check exists for the direct
+    REST path instead (app/api/appointments.py, tested in
+    tests/test_appointment_service.py::test_reschedule_rejects_an_already_cancelled_appointment
+    and tests/test_appointments_api.py) — this test documents that this
+    dispatcher is naturally protected already, by construction, not by
+    the new check."""
+    biz, customer = _business_customer(db_session)
+    service = _mock_appointment_service(db_session, biz.id)
+    starts_at = NOW + timedelta(hours=2)
+    ends_at = starts_at + timedelta(minutes=30)
+    appointment = service.book_appointment(
+        customer_id=customer.id,
+        conversation_id=None,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        summary="Dental cleaning",
+    )
+    service.cancel_appointment(appointment_id=appointment.id)
+    monkeypatch.setattr("app.ai.tools.get_appointment_service", lambda db, business_id: service)
+    new_starts_at = starts_at + timedelta(hours=3)
+    new_ends_at = new_starts_at + timedelta(minutes=30)
+    tool_call = ToolCall(
+        id="1",
+        name=RESCHEDULE_APPOINTMENT,
+        arguments={"starts_at": new_starts_at.isoformat(), "ends_at": new_ends_at.isoformat()},
+    )
+
+    result = execute_tool_call(
+        db_session,
+        biz.id,
+        tool_call,
+        customer_id=customer.id,
+        conversation_id=None,
+        human_approved=True,
+    )
+
+    assert result.success is False
+    assert result.reason == "not_found"
+    db_session.refresh(appointment)
+    assert appointment.status == "cancelled"  # untouched
 
 
 # --- response_to_message_fields --------------------------------------------
@@ -315,6 +490,10 @@ def test_execute_book_appointment_reports_conflict(db_session, monkeypatch):
     )
 
     assert result.success is False
+    # Sprint 83 (DEC-059): tagged so failure_message_for can translate this
+    # into natural customer-facing text instead of result.message's raw
+    # "Requested slot overlaps an existing appointment".
+    assert result.reason == "conflict"
 
 
 def test_execute_reschedule_finds_upcoming_appointment(db_session, monkeypatch):
@@ -381,6 +560,7 @@ def test_execute_reschedule_without_confirmation_is_refused(db_session, monkeypa
 
     assert result.success is False
     assert "confirm" in result.message.lower()
+    assert result.reason == "needs_confirmation"
 
 
 def test_execute_reschedule_without_upcoming_appointment_fails_gracefully(db_session, monkeypatch):
@@ -409,6 +589,7 @@ def test_execute_reschedule_without_upcoming_appointment_fails_gracefully(db_ses
 
     assert result.success is False
     assert "No upcoming appointment" in result.message
+    assert result.reason == "not_found"
 
 
 def test_execute_cancel_appointment(db_session, monkeypatch):

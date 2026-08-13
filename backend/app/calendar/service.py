@@ -28,9 +28,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.calendar.providers.base import (
+    CalendarAlreadyCancelledError,
     CalendarEventDraft,
     CalendarEventUpdate,
     CalendarProvider,
+    CalendarValidationError,
     TimeSlot,
 )
 from app.calendar.working_hours import filter_by_working_hours
@@ -98,6 +100,39 @@ class AppointmentService:
             slots, working_hours=self._working_hours, timezone=self._timezone
         )
 
+    def _validate_booking_window(self, starts_at: datetime, ends_at: datetime) -> None:
+        """Shared write-path guard for book_appointment/reschedule_appointment.
+
+        The caller-supplied datetimes (an AI tool call's arguments, or the
+        REST API's request body) were previously trusted as-is and passed
+        straight to the provider — nothing rejected a past date, an inverted
+        range, or a time outside working hours before it reached the
+        calendar/database. This mirrors list_availability's existing
+        working-hours check (filter_by_working_hours, below) rather than
+        introducing a second way to apply the same rule, and runs before any
+        provider call so an invalid request never reaches the provider or
+        writes anything.
+
+        Naive datetimes are treated as UTC (DEC-032, matching every other
+        datetime this schema stores) rather than assumed local, so this
+        behaves the same regardless of whether a caller's ISO string
+        included an explicit UTC offset.
+        """
+        starts = starts_at if starts_at.tzinfo is not None else starts_at.replace(tzinfo=timezone.utc)
+        ends = ends_at if ends_at.tzinfo is not None else ends_at.replace(tzinfo=timezone.utc)
+
+        if ends <= starts:
+            raise CalendarValidationError("The end time must be after the start time.")
+        if starts < datetime.now(timezone.utc):
+            raise CalendarValidationError("Cannot book an appointment in the past.")
+        if self._working_hours:
+            window = TimeSlot(starts_at=starts, ends_at=ends)
+            allowed = filter_by_working_hours(
+                [window], working_hours=self._working_hours, timezone=self._timezone
+            )
+            if allowed != [window]:
+                raise CalendarValidationError("This time is outside business hours.")
+
     def book_appointment(
         self,
         *,
@@ -110,8 +145,12 @@ class AppointmentService:
     ) -> Appointment:
         """Create the event on the calendar, then persist the Appointment row.
 
-        Raises whatever the provider raises (e.g. CalendarConflictError) if
-        the event can't be created — no Appointment row is written in that case.
+        Raises CalendarValidationError if the requested window itself is
+        invalid (past, inverted, or outside working hours) — checked before
+        the provider is ever called, so nothing is written in that case
+        either. Also raises whatever the provider itself raises (e.g.
+        CalendarConflictError) if the event can't be created — no
+        Appointment row is written in that case.
 
         `commit=True` (default): commits immediately, matching every existing
         caller (the REST /appointments endpoint, the demo seed script, direct
@@ -129,6 +168,7 @@ class AppointmentService:
         commit (Section A4) — such a caller is responsible for calling
         `cancel_calendar_event(...)` itself if its own, later commit fails.
         """
+        self._validate_booking_window(starts_at, ends_at)
         event = self._provider.create_event(
             calendar_id=self._calendar_id,
             draft=CalendarEventDraft(starts_at=starts_at, ends_at=ends_at, summary=summary),
@@ -178,9 +218,19 @@ class AppointmentService:
         new_starts_at: datetime,
         new_ends_at: datetime,
     ) -> Appointment:
+        """Raises CalendarAlreadyCancelledError if the appointment was
+        already cancelled — it must be re-booked, not silently resurrected
+        by moving it to a new time — and CalendarValidationError for the
+        same invalid-window cases book_appointment rejects (past, inverted,
+        outside working hours), checked before the provider is called."""
         appointment = get_scoped(self._db, Appointment, self._business_id, appointment_id)
         if appointment is None:
             raise ValueError("Appointment not found for this business")
+        if appointment.status == "cancelled":
+            raise CalendarAlreadyCancelledError(
+                "This appointment has already been cancelled and can't be rescheduled"
+            )
+        self._validate_booking_window(new_starts_at, new_ends_at)
 
         self._provider.update_event(
             calendar_id=self._calendar_id,

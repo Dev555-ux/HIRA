@@ -1005,12 +1005,17 @@ def test_autonomous_mode_executes_two_actions_sequentially_not_in_parallel(db_se
 
     test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
     monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    # A fixed offset from the real current time, not a hardcoded date — see
+    # test_autonomous_mode_executes_tool_call_immediately's identical fix.
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+        hour=14, minute=0, second=0, microsecond=0
+    )
     booking = ToolCall(
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-05T14:00:00",
-            "ends_at": "2026-08-05T15:00:00",
+            "starts_at": tomorrow.isoformat(),
+            "ends_at": tomorrow.replace(hour=15).isoformat(),
             "summary": "Cleaning",
         },
     )
@@ -1254,12 +1259,19 @@ def test_autonomous_mode_executes_tool_call_immediately(db_session, monkeypatch)
 
     test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
     monkeypatch.setattr(processing, "SessionLocal", test_sessionmaker)
+    # A fixed offset from the real current time, not a hardcoded date — a
+    # literal past date rots the moment "today" catches up to it and now
+    # also trips AppointmentService's own past-date validation (Sprint 83).
+    starts_at = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+        hour=14, minute=0, second=0, microsecond=0
+    )
+    ends_at = starts_at.replace(hour=15)
     tool_call = ToolCall(
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-05T14:00:00",
-            "ends_at": "2026-08-05T15:00:00",
+            "starts_at": starts_at.isoformat(),
+            "ends_at": ends_at.isoformat(),
             "summary": "Cleaning",
         },
     )
@@ -1296,7 +1308,7 @@ def test_autonomous_mode_executes_tool_call_immediately(db_session, monkeypatch)
     # (...)") must never be what's actually sent to the customer.
     assert sent["body"] != preview_tool_call(tool_call)
     assert sent["body"] == (
-        "You're all set! Cleaning is booked for 2026-08-05T14:00:00 to 2026-08-05T15:00:00."
+        f"You're all set! Cleaning is booked for {starts_at.isoformat()} to {ends_at.isoformat()}."
     )
 
 
@@ -1724,12 +1736,17 @@ def test_autonomous_mode_final_commit_failure_leaves_no_stale_message_or_appoint
 
     monkeypatch.setattr(processing, "SessionLocal", flaky_session_factory)
 
+    # A fixed offset from the real current time, not a hardcoded date — see
+    # test_autonomous_mode_executes_tool_call_immediately's identical fix.
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+        hour=14, minute=0, second=0, microsecond=0
+    )
     tool_call = ToolCall(
         id="1",
         name=BOOK_APPOINTMENT,
         arguments={
-            "starts_at": "2026-08-05T14:00:00",
-            "ends_at": "2026-08-05T15:00:00",
+            "starts_at": tomorrow.isoformat(),
+            "ends_at": tomorrow.replace(hour=15).isoformat(),
             "summary": "Cleaning",
         },
     )

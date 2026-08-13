@@ -28,12 +28,14 @@ from app.calendar.oauth import OAuthStateError
 from app.core.time import to_iso_utc
 from app.core.timezones import validate_timezone
 from app.calendar.providers.base import (
+    CalendarAlreadyCancelledError,
     CalendarAuthError,
     CalendarConflictError,
     CalendarError,
     CalendarNotConfiguredError,
     CalendarNotConnectedError,
     CalendarNotFoundError,
+    CalendarValidationError,
 )
 from app.core.config import settings
 from app.db.session import get_db
@@ -60,8 +62,10 @@ def map_calendar_error(exc: CalendarError) -> HTTPException:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Calendar integration hasn't been configured yet.",
         )
-    if isinstance(exc, (CalendarNotConnectedError, CalendarConflictError)):
+    if isinstance(exc, (CalendarNotConnectedError, CalendarConflictError, CalendarAlreadyCancelledError)):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    if isinstance(exc, CalendarValidationError):
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     if isinstance(exc, CalendarAuthError):
         # Unlike the two above, this one's message isn't always hand-authored
         # — app/calendar/oauth.py's token-exchange failure wraps whatever the

@@ -379,18 +379,25 @@ def _pending_tool_call_reply(db, *, business_phone="PN1"):
     conv = Conversation(business_id=biz.id, customer_id=customer.id)
     db.add(conv)
     db.flush()
+    # A fixed offset from the real current time, not a hardcoded date — a
+    # literal past date rots the moment "today" catches up to it and now
+    # also trips AppointmentService's own past-date validation (Sprint 83).
+    starts_at = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+        hour=14, minute=0, second=0, microsecond=0
+    )
+    ends_at = starts_at.replace(hour=15)
     msg = Message(
         conversation_id=conv.id,
         business_id=biz.id,
         direction="outbound",
-        body="Book: Cleaning (2026-08-05T14:00:00 – 2026-08-05T15:00:00)",
+        body=f"Book: Cleaning ({starts_at.isoformat()} – {ends_at.isoformat()})",
         type="tool_call",
         status="pending_approval",
         ai_meta={
             "tool_name": BOOK_APPOINTMENT,
             "tool_arguments": {
-                "starts_at": "2026-08-05T14:00:00",
-                "ends_at": "2026-08-05T15:00:00",
+                "starts_at": starts_at.isoformat(),
+                "ends_at": ends_at.isoformat(),
                 "summary": "Cleaning",
             },
         },

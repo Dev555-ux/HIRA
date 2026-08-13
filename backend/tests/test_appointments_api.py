@@ -21,7 +21,9 @@ from app.main import app
 from app.models import Appointment, Business, Customer, User
 from tests.conftest import TEST_DATABASE_URL
 
-NOW = datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc)
+# A fixed offset from the real current time, not a hardcoded date — a
+# literal past date rots the moment "today" catches up to it (Sprint 83).
+NOW = (datetime.now(timezone.utc) + timedelta(days=1)).replace(minute=0, second=0, microsecond=0)
 
 
 def _seed_business(db, name, clerk_user_id, phone="PN1"):
@@ -482,6 +484,62 @@ def test_reschedule_rejects_ends_before_starts(db_session, monkeypatch):
     )
 
     assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
+# --- Sprint 83 (production bug fix, DEC-059): write-path validation --------
+
+
+def test_create_appointment_rejects_a_past_start_time(db_session, monkeypatch):
+    """Live-reproduced bug: POST /appointments with a 2020 date returned 201.
+    AppointmentService now rejects it before any write — see
+    app/calendar/service.py::_validate_booking_window."""
+    _, _, customer = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    _mock_service(monkeypatch)
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    past = datetime.now(timezone.utc) - timedelta(days=5)
+
+    resp = client.post(
+        "/api/v1/appointments",
+        json={
+            "customer_id": str(customer.id),
+            "starts_at": past.isoformat(),
+            "ends_at": (past + timedelta(minutes=30)).isoformat(),
+            "summary": "Should be rejected",
+        },
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
+def test_reschedule_rejects_an_already_cancelled_appointment(db_session, monkeypatch):
+    """Live-reproduced bug: rescheduling a cancelled appointment silently
+    resurrected it (status flipped back to "rescheduled"). Must now be
+    refused with a 409 (a real state conflict, not a validation error) and
+    leave the appointment cancelled."""
+    _, _, customer = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    _mock_service(monkeypatch)
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    appointment = _create_appointment(client, customer.id)
+    client.post(f"/api/v1/appointments/{appointment['id']}/cancel", headers=_auth())
+
+    new_starts_at = NOW + timedelta(hours=5)
+    resp = client.post(
+        f"/api/v1/appointments/{appointment['id']}/reschedule",
+        json={
+            "starts_at": new_starts_at.isoformat(),
+            "ends_at": (new_starts_at + timedelta(hours=1)).isoformat(),
+        },
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 409
+    get_resp = client.get(f"/api/v1/appointments/{appointment['id']}", headers=_auth())
+    assert get_resp.json()["data"]["status"] == "cancelled"
     app.dependency_overrides.clear()
 
 

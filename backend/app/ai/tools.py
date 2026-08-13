@@ -46,7 +46,12 @@ from app.ai.lead_tools import (
 from app.ai.llm.base import LLMResponse, ToolCall, ToolSchema
 from app.ai.tool_results import ToolExecutionResult
 from app.calendar.factory import get_appointment_service
-from app.calendar.providers.base import CalendarError
+from app.calendar.providers.base import (
+    CalendarAlreadyCancelledError,
+    CalendarConflictError,
+    CalendarError,
+    CalendarValidationError,
+)
 from app.calendar.service import get_upcoming_appointments
 
 logger = logging.getLogger(__name__)
@@ -179,6 +184,47 @@ def confirmation_message_for(tool_call: ToolCall, result: ToolExecutionResult) -
     # CRM tools (create_lead, update_lead_stage, set_lead_follow_up) are
     # internal bookkeeping with nothing appointment-specific to confirm.
     return "Thanks — that's been taken care of."
+
+
+# Sprint 83 (production bug fix, DEC-059): natural, customer-facing phrasing
+# for the calendar failure reasons execute_tool_call tags below — keyed by
+# ToolExecutionResult.reason, never by pattern-matching result.message
+# itself. A reason with no entry here (a CRM failure, or a CalendarError
+# subtype this doesn't have specific wording for yet, e.g.
+# CalendarProviderUnavailableError) falls through to result.message
+# unchanged in failure_message_for — today's existing behavior for those,
+# not something this fix touches.
+_FAILURE_MESSAGES: dict[str, str] = {
+    "conflict": (
+        "That time isn't available because it overlaps another appointment. "
+        "Would you like to choose another time?"
+    ),
+    "needs_confirmation": (
+        "I need your confirmation before making that change. Would you like me to proceed?"
+    ),
+    "not_found": (
+        "I couldn't find an upcoming appointment to change. Can you tell me which appointment you mean?"
+    ),
+    "already_cancelled": (
+        "That appointment has already been cancelled. Would you like to book a new one instead?"
+    ),
+    "invalid_request": "That time doesn't work — could you try a different date or time?",
+}
+
+
+def failure_message_for(result: ToolExecutionResult) -> str:
+    """Customer-facing text for a failed tool call — the failure-path
+    counterpart to confirmation_message_for above. `result.message` is
+    written for logs/execution traces/founder-facing surfaces (e.g.
+    "Requested slot overlaps an existing appointment", or a governance
+    policy string) and must never be sent to a customer directly; this is
+    the one place that translates a tagged `result.reason` into something
+    HIRA would actually say. Falls back to `result.message` unchanged when
+    there's no reason, or no mapping for it yet — today's existing
+    behavior, not a regression, for any failure this fix doesn't cover."""
+    if result.reason is not None and result.reason in _FAILURE_MESSAGES:
+        return _FAILURE_MESSAGES[result.reason]
+    return result.message
 
 
 #: Sprint 74 Phase 1 (DEC-043): the model may propose more than one action in
@@ -314,6 +360,7 @@ def execute_tool_call(
             return ToolExecutionResult(
                 False,
                 "This action needs to be confirmed with the customer before it can be completed.",
+                reason="needs_confirmation",
             )
 
     if tool_call.name in LEAD_TOOL_NAMES:
@@ -350,7 +397,9 @@ def execute_tool_call(
             # appointment" instead (DEC-034: shared with app/ai/context.py).
             upcoming = get_upcoming_appointments(db, business_id, customer_id, limit=1)
             if not upcoming:
-                return ToolExecutionResult(False, "No upcoming appointment found to modify.")
+                return ToolExecutionResult(
+                    False, "No upcoming appointment found to modify.", reason="not_found"
+                )
             appointment = upcoming[0]
 
             if tool_call.name == RESCHEDULE_APPOINTMENT:
@@ -365,7 +414,20 @@ def execute_tool_call(
             return ToolExecutionResult(True, "Appointment cancelled.", updated.id)
 
         return ToolExecutionResult(False, f"Unknown tool '{tool_call.name}'.")
+    except CalendarConflictError as exc:
+        logger.warning("Tool call %s failed for business %s: %s", tool_call.name, business_id, exc)
+        return ToolExecutionResult(False, str(exc), reason="conflict")
+    except CalendarAlreadyCancelledError as exc:
+        logger.warning("Tool call %s failed for business %s: %s", tool_call.name, business_id, exc)
+        return ToolExecutionResult(False, str(exc), reason="already_cancelled")
+    except CalendarValidationError as exc:
+        logger.warning("Tool call %s failed for business %s: %s", tool_call.name, business_id, exc)
+        return ToolExecutionResult(False, str(exc), reason="invalid_request")
     except CalendarError as exc:
+        # Any other CalendarError (auth/not-configured/not-connected/
+        # provider-unavailable) — unchanged from before this fix; none of
+        # these were part of the reported leak (all operational/setup
+        # issues, not phrasing a customer would misread as a real answer).
         logger.warning("Tool call %s failed for business %s: %s", tool_call.name, business_id, exc)
         return ToolExecutionResult(False, str(exc))
     except (KeyError, ValueError) as exc:

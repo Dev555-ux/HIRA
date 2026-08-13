@@ -32,7 +32,12 @@ from app.ai.llm.base import ToolCall
 from app.ai.orchestrator import generate_reply
 from app.ai.plan import ExecutionPlan
 from app.ai.roles import RECEPTIONIST, role_for_tool
-from app.ai.tools import confirmation_message_for, execute_tool_call, response_to_message_fields
+from app.ai.tools import (
+    confirmation_message_for,
+    execute_tool_call,
+    failure_message_for,
+    response_to_message_fields,
+)
 from app.models import Conversation, Customer, KbEntry, Message
 from app.services.execution_traces import get_pending_action, record_execution_trace
 
@@ -192,11 +197,18 @@ def playground_reply(
             # Either way, the customer-visible text is a resolved outcome,
             # never the Pending queue's internal "Book: ..." editable
             # preview (Section A1's same fix, applied here) — success gets
-            # the deterministic confirmation text; failure gets the tool's
-            # own honest reason (e.g. "This business has not connected a
-            # Google Calendar").
+            # the deterministic confirmation text; failure gets a natural-
+            # language explanation of what actually went wrong, never
+            # result.message directly (Sprint 83, DEC-059: that string is
+            # written for logs/traces, not customers — see
+            # app/ai/tools.py::failure_message_for). ai_meta["tool_result"]
+            # above still keeps the raw reason for Founder Ops.
             message_type = "text"
-            body = confirmation_message_for(tool_call, result) if result.success else result.message
+            body = (
+                confirmation_message_for(tool_call, result)
+                if result.success
+                else failure_message_for(result)
+            )
 
         outbound = Message(
             conversation_id=conversation.id,
