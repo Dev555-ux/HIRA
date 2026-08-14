@@ -14,7 +14,7 @@ from app.auth.dependencies import get_token_verifier
 from app.core.config import settings
 from app.db.session import get_db
 from app.main import app
-from app.models import Business, Conversation, Customer, Message, User
+from app.models import Business, Conversation, Customer, ExecutionTrace, Message, User
 from app.whatsapp.credentials import store_credentials
 from tests.test_knowledge_base import FakeEmbeddingProvider
 
@@ -506,4 +506,210 @@ def test_escalate_rejects_already_approved_message(db_session):
     resp = client.post(f"/api/v1/messages/{msg.id}/escalate", headers=_auth())
 
     assert resp.status_code == 404
+    app.dependency_overrides.clear()
+
+
+# --- GET /activity (Sprint 84, Dashboard Foundation) -------------------------
+
+
+def _activity_conversation(db, business, *, display_name="Priya"):
+    customer = Customer(business_id=business.id, wa_phone="+15559990000", display_name=display_name)
+    db.add(customer)
+    db.flush()
+    conv = Conversation(business_id=business.id, customer_id=customer.id)
+    db.add(conv)
+    db.flush()
+    return conv
+
+
+def _activity_result_message(db, conversation, business, *, status="sent", ai_meta=None):
+    message = Message(
+        conversation_id=conversation.id,
+        business_id=business.id,
+        direction="outbound",
+        body="ok",
+        type="text",
+        status=status,
+        ai_meta=ai_meta,
+    )
+    db.add(message)
+    db.flush()
+    return message
+
+
+def _activity_trace(
+    db,
+    business,
+    conversation,
+    *,
+    category="action",
+    steps=None,
+    result_messages=(),
+):
+    trace = ExecutionTrace(
+        business_id=business.id,
+        conversation_id=conversation.id,
+        trigger_message_id=None,
+        category=category,
+        plan={"category": category, "steps": steps or [], "clarification_hint": None},
+        proposed_tool_calls=[],
+        result_message_ids=[str(m.id) for m in result_messages],
+        duration_ms=100,
+    )
+    db.add(trace)
+    db.flush()
+    return trace
+
+
+def test_activity_requires_authentication(db_session):
+    biz, _, _ = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+
+    resp = client.get("/api/v1/activity")
+
+    assert resp.status_code == 401
+    app.dependency_overrides.clear()
+
+
+def test_activity_is_tenant_scoped(db_session):
+    biz_a, _, _ = _seed_business(db_session, "A", "user_a", phone="PN_A")
+    biz_b, _, _ = _seed_business(db_session, "B", "user_b", phone="PN_B")
+    conv_a = _activity_conversation(db_session, biz_a)
+    conv_b = _activity_conversation(db_session, biz_b)
+    _activity_trace(
+        db_session,
+        biz_a,
+        conv_a,
+        steps=[{"domain": "calendar", "action": "calendar_booking", "role": "scheduler"}],
+        result_messages=[_activity_result_message(db_session, conv_a, biz_a)],
+    )
+    _activity_trace(
+        db_session,
+        biz_b,
+        conv_b,
+        steps=[{"domain": "crm", "action": "crm_lead", "role": "sales_executive"}],
+        result_messages=[_activity_result_message(db_session, conv_b, biz_b)],
+    )
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.get("/api/v1/activity", headers=_auth())
+
+    assert resp.status_code == 200
+    rows = resp.json()["data"]
+    assert len(rows) == 1
+    assert "Priya" in rows[0]["summary"]
+    app.dependency_overrides.clear()
+
+
+def test_activity_summarizes_a_successful_booking(db_session):
+    biz, _, _ = _seed_business(db_session, "A", "user_a")
+    conv = _activity_conversation(db_session, biz, display_name="Kabir")
+    _activity_trace(
+        db_session,
+        biz,
+        conv,
+        steps=[{"domain": "calendar", "action": "calendar_booking", "role": "scheduler"}],
+        result_messages=[_activity_result_message(db_session, conv, biz, status="sent")],
+    )
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.get("/api/v1/activity", headers=_auth())
+
+    row = resp.json()["data"][0]
+    assert row["summary"] == "Booked an appointment for Kabir"
+    assert row["outcome"] == "sent"
+    assert row["customer"]["display_name"] == "Kabir"
+    app.dependency_overrides.clear()
+
+
+def test_activity_reflects_escalated_outcome_over_category(db_session):
+    biz, _, _ = _seed_business(db_session, "A", "user_a")
+    conv = _activity_conversation(db_session, biz, display_name="Morgan")
+    _activity_trace(
+        db_session,
+        biz,
+        conv,
+        category="knowledge",
+        result_messages=[_activity_result_message(db_session, conv, biz, status="escalated")],
+    )
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.get("/api/v1/activity", headers=_auth())
+
+    row = resp.json()["data"][0]
+    assert row["summary"] == "Escalated a message from Morgan to you"
+    assert row["outcome"] == "escalated"
+    app.dependency_overrides.clear()
+
+
+def test_activity_includes_grounding_count_for_knowledge_replies(db_session):
+    biz, _, _ = _seed_business(db_session, "A", "user_a")
+    conv = _activity_conversation(db_session, biz, display_name="Sam")
+    _activity_trace(
+        db_session,
+        biz,
+        conv,
+        category="knowledge",
+        result_messages=[
+            _activity_result_message(
+                db_session, conv, biz, status="sent", ai_meta={"retrieved_count": 2}
+            )
+        ],
+    )
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.get("/api/v1/activity", headers=_auth())
+
+    row = resp.json()["data"][0]
+    assert row["summary"] == "Answered a question from Sam, grounded in 2 knowledge sources"
+    app.dependency_overrides.clear()
+
+
+def test_activity_drops_traces_with_no_result(db_session):
+    biz, _, _ = _seed_business(db_session, "A", "user_a")
+    conv = _activity_conversation(db_session, biz)
+    _activity_trace(db_session, biz, conv, category="conversation", result_messages=[])
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.get("/api/v1/activity", headers=_auth())
+
+    assert resp.json()["data"] == []
+    app.dependency_overrides.clear()
+
+
+def test_activity_orders_newest_first(db_session):
+    biz, _, _ = _seed_business(db_session, "A", "user_a")
+    conv = _activity_conversation(db_session, biz)
+    older = _activity_trace(
+        db_session,
+        biz,
+        conv,
+        category="action",
+        steps=[{"domain": "calendar", "action": "calendar_booking", "role": "scheduler"}],
+        result_messages=[_activity_result_message(db_session, conv, biz)],
+    )
+    db_session.flush()
+    older.created_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+    newer = _activity_trace(
+        db_session,
+        biz,
+        conv,
+        category="action",
+        steps=[{"domain": "crm", "action": "crm_lead", "role": "sales_executive"}],
+        result_messages=[_activity_result_message(db_session, conv, biz)],
+    )
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.get("/api/v1/activity", headers=_auth())
+
+    rows = resp.json()["data"]
+    assert [r["id"] for r in rows] == [str(newer.id), str(older.id)]
     app.dependency_overrides.clear()

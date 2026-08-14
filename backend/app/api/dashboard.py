@@ -25,6 +25,7 @@ from app.db.session import get_db
 from app.db.tenant import tenant_query
 from app.models import Conversation, Customer, Message
 from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError, send_text
+from app.services.execution_traces import list_activity_for_dashboard
 from app.services.replies import (
     WhatsAppWindowExpiredError,
     approve_and_send,
@@ -47,6 +48,12 @@ MAX_DRAFT_LENGTH = 4096
 # so today's "see everything" behavior is preserved for any realistic backlog.
 DEFAULT_PENDING_LIMIT = 200
 MAX_PENDING_LIMIT = 200
+
+# Sprint 84 (Dashboard Foundation): the Home "AI activity" feed only ever
+# shows a handful of most-recent rows — unlike /pending, this is a narrative
+# preview, not a backlog a business needs to see every row of.
+DEFAULT_ACTIVITY_LIMIT = 20
+MAX_ACTIVITY_LIMIT = 50
 
 
 class UpdateDraftRequest(BaseModel):
@@ -129,6 +136,24 @@ def list_pending(
             for m in rows
         ],
         "meta": {"total": total, "limit": limit, "offset": offset},
+    }
+
+
+@router.get("/activity")
+def list_activity(
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    limit: int = Query(default=DEFAULT_ACTIVITY_LIMIT, ge=1, le=MAX_ACTIVITY_LIMIT),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """Sprint 84 (Dashboard Foundation): the Home "AI activity" feed,
+    replacing the frontend's old client-synthesized "Recent activity" —
+    real execution_traces, read back as a narrative. See
+    app/services/execution_traces.py::list_activity_for_dashboard."""
+    return {
+        "data": list_activity_for_dashboard(
+            db, business_id=principal.business_id, limit=limit, offset=offset
+        )
     }
 
 

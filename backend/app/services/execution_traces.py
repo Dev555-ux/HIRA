@@ -10,7 +10,11 @@ this module never needs to reach into or mutate the approval flow.
 
 Read helpers here back both Founder Ops (Objective B: AI metrics, Objective
 C: replay) and app/ai/evaluation.py (Objective D) — one place that knows how
-to turn a trace + its current Messages into a coherent "what happened".
+to turn a trace + its current Messages into a coherent "what happened". Sprint
+84 (Dashboard Foundation) adds a third reader: the owner-facing "AI activity"
+feed (`list_activity_for_dashboard` / `summarize_activity` below) — the same
+traces, read back as a one-line narrative instead of Founder Ops's replay-list
+shape. No new signal, only a new read of data already durably stored per turn.
 """
 
 from __future__ import annotations
@@ -20,8 +24,10 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.time import to_iso_utc
+
 from app.ai.plan import ExecutionPlan
-from app.models import ExecutionTrace, Message
+from app.models import Conversation, Customer, ExecutionTrace, Message
 
 
 def _serialize_plan(plan: ExecutionPlan) -> dict:
@@ -198,3 +204,143 @@ def resolve_outcome(messages: list[Message]) -> str:
         if status in statuses:
             return status
     return "sent"
+
+
+# Action name (from an ExecutionPlan step, app/ai/governance.py's vocabulary)
+# -> a past-tense sentence template. Only the two actions actually cleared for
+# EXECUTE_NOW today (calendar_booking, crm_lead) plus the two that reach
+# "sent" via in-chat confirmation (calendar_reschedule, calendar_cancel) have
+# real traces to summarize; anything else falls through to the generic
+# fallback in summarize_activity() below rather than guessing a phrase for a
+# capability that doesn't exist yet (refund, payment, ... — see governance.py).
+_ACTION_PHRASES: dict[str, str] = {
+    "calendar_booking": "Booked an appointment for {name}",
+    "calendar_reschedule": "Rescheduled {name}'s appointment",
+    "calendar_cancel": "Cancelled {name}'s appointment",
+    "crm_lead": "Logged {name} as a new lead",
+}
+
+
+def summarize_activity(
+    *,
+    category: str,
+    action: str | None,
+    outcome: str,
+    customer_name: str,
+    retrieved_count: int | None,
+) -> str:
+    """One past-tense sentence for the owner-facing AI Activity feed. Every
+    branch reads a real field off the trace/outcome — nothing here is
+    fabricated (Dashboard Foundation spec's "show finished work, not raw
+    logs" principle). `outcome` takes precedence over `category`: a trace
+    that ended up escalated or failed says so, regardless of what it was
+    originally trying to do.
+    """
+    if outcome == "escalated":
+        return f"Escalated a message from {customer_name} to you"
+    if outcome == "failed":
+        return f"Couldn't send a reply to {customer_name} — check Escalations"
+    if outcome == "rejected":
+        return f"You rejected a drafted reply to {customer_name}"
+    if outcome == "pending_approval":
+        return f"Drafted a reply for {customer_name}, waiting on your approval"
+    if outcome == "sending":
+        return f"Sending a reply to {customer_name}…"
+
+    # outcome == "sent"
+    if category == "action" and action in _ACTION_PHRASES:
+        return _ACTION_PHRASES[action].format(name=customer_name)
+    if category == "knowledge":
+        base = f"Answered a question from {customer_name}"
+        if retrieved_count:
+            source_word = "source" if retrieved_count == 1 else "sources"
+            return f"{base}, grounded in {retrieved_count} knowledge {source_word}"
+        return base
+    if category == "capability":
+        return f"Told {customer_name} what HIRA can help with"
+    return f"Replied to {customer_name}"
+
+
+def list_activity_for_dashboard(
+    db: Session, *, business_id: uuid.UUID, limit: int = 20, offset: int = 0
+) -> list[dict]:
+    """Owner-facing "AI activity" feed (Sprint 84, Dashboard Foundation) —
+    the same execution_traces this module already records, read back as a
+    narrative instead of Founder Ops's replay-list shape (see
+    app/services/founder_ops.py::list_traces_for_dashboard for that reader).
+    Traces with no real outcome ("no_result" — an empty/non-action turn)
+    are dropped; there's nothing to narrate. Bulk-loads customers and result
+    messages the same way founder_ops does, so cost scales with the number
+    of query round trips, not the number of traces returned.
+    """
+    traces = list_traces(db, business_id=business_id, limit=limit, offset=offset)
+    if not traces:
+        return []
+
+    conversation_ids = {trace.conversation_id for trace in traces}
+    customers_by_conversation = {
+        row[0]: row[1]
+        for row in db.execute(
+            select(Conversation.id, Customer)
+            .join(Customer, Customer.id == Conversation.customer_id)
+            .where(Conversation.id.in_(conversation_ids))
+        ).all()
+    }
+
+    all_result_ids = {
+        uuid.UUID(message_id) for trace in traces for message_id in trace.result_message_ids
+    }
+    messages_by_id = {}
+    if all_result_ids:
+        messages_by_id = {
+            message.id: message
+            for message in db.scalars(select(Message).where(Message.id.in_(all_result_ids)))
+        }
+
+    rows = []
+    for trace in traces:
+        result_messages = [
+            messages_by_id[uuid.UUID(message_id)]
+            for message_id in trace.result_message_ids
+            if uuid.UUID(message_id) in messages_by_id
+        ]
+        outcome = resolve_outcome(result_messages)
+        if outcome == "no_result":
+            continue
+
+        customer = customers_by_conversation.get(trace.conversation_id)
+        customer_name = customer.display_name if customer and customer.display_name else "a customer"
+
+        steps = trace.plan.get("steps") or []
+        action = steps[0].get("action") if steps else None
+
+        retrieved_count = None
+        for message in reversed(result_messages):
+            if message.direction == "outbound":
+                count = (message.ai_meta or {}).get("retrieved_count")
+                if isinstance(count, int):
+                    retrieved_count = count
+                    break
+
+        rows.append(
+            {
+                "id": str(trace.id),
+                "conversation_id": str(trace.conversation_id),
+                "customer": (
+                    {"id": str(customer.id), "display_name": customer.display_name}
+                    if customer
+                    else None
+                ),
+                "category": trace.category,
+                "outcome": outcome,
+                "summary": summarize_activity(
+                    category=trace.category,
+                    action=action,
+                    outcome=outcome,
+                    customer_name=customer_name,
+                    retrieved_count=retrieved_count,
+                ),
+                "created_at": to_iso_utc(trace.created_at),
+            }
+        )
+    return rows
