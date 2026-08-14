@@ -169,8 +169,13 @@ describe("AnalyticsPage", () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue(POPULATED_DASHBOARD);
     renderWithProviders(<AnalyticsPage />);
 
-    expect(await screen.findByText("128")).toBeInTheDocument();
-    expect(screen.getByText("Total conversations")).toBeInTheDocument();
+    // "128" legitimately also appears in the conversations-by-status donut's
+    // center total (its segments sum to the same real number) — scope to
+    // the KPI stat card specifically rather than asserting it's unique
+    // page-wide.
+    const label = await screen.findByText("Total conversations");
+    const statCard = label.closest<HTMLElement>(".rounded-2xl")!;
+    expect(within(statCard).getByText("128")).toBeInTheDocument();
     expect(screen.getByText("1m")).toBeInTheDocument();
   });
 
@@ -218,7 +223,9 @@ describe("AnalyticsPage", () => {
     await screen.findByText("Conversations over time");
     const charts = screen.getAllByRole("img", { name: /over time/i });
     expect(charts.length).toBe(4);
-    expect(screen.getAllByText("View as table").length).toBe(4);
+    // 4 trend charts + 2 donuts (conversation/appointment status), each with
+    // its own accessible table fallback.
+    expect(screen.getAllByText("View as table").length).toBe(6);
   });
 
   it("renders operational/customer/appointment breakdowns from real counts", async () => {
@@ -226,9 +233,11 @@ describe("AnalyticsPage", () => {
     renderWithProviders(<AnalyticsPage />);
 
     expect(await screen.findByText("Conversations by status")).toBeInTheDocument();
-    expect(screen.getByText("Escalated")).toBeInTheDocument(); // CONVERSATION_STATUS_BADGE label
-    expect(screen.getByText("Won")).toBeInTheDocument(); // STAGE_LABEL
-    expect(screen.getByText("Booked")).toBeInTheDocument(); // APPOINTMENT_STATUS_BADGE label
+    // Each donut label appears twice — once in the visible legend, once in
+    // its table fallback — so these assert presence, not uniqueness.
+    expect(screen.getAllByText("Escalated").length).toBeGreaterThan(0); // CONVERSATION_STATUS_BADGE label
+    expect(screen.getByText("Won")).toBeInTheDocument(); // STAGE_LABEL — leads stay a bar, only rendered once
+    expect(screen.getAllByText("Booked").length).toBeGreaterThan(0); // APPOINTMENT_STATUS_BADGE label
   });
 
   it("renders AI Performance using the same shared summary Ops uses", async () => {
