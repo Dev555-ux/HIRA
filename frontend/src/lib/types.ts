@@ -52,6 +52,34 @@ export interface EscalateResult {
   escalation: EscalationInfo;
 }
 
+// AI Activity feed (/api/v1/activity, Sprint 84 — Dashboard Foundation).
+// Read-only narrative view over execution_traces; see backend/app/services/
+// execution_traces.py::list_activity_for_dashboard for how `summary` and
+// `outcome` are derived (never fabricated — every field traces to a real
+// trace/message).
+export type AiActivityOutcome =
+  | "sent"
+  | "pending_approval"
+  | "sending"
+  | "rejected"
+  | "escalated"
+  | "failed";
+
+export interface AiActivityCustomer {
+  id: string;
+  display_name: string | null;
+}
+
+export interface AiActivityEntry {
+  id: string;
+  conversation_id: string;
+  customer: AiActivityCustomer | null;
+  category: "conversation" | "capability" | "knowledge" | "action";
+  outcome: AiActivityOutcome;
+  summary: string;
+  created_at: string;
+}
+
 export interface ApiEnvelope<T> {
   data: T;
 }

@@ -10,7 +10,7 @@ describe("AskHiraBar", () => {
     window.addEventListener("keydown", spy);
 
     render(<AskHiraBar />);
-    await user.click(screen.getByRole("button", { name: /ask hira/i }));
+    await user.click(screen.getByRole("button", { name: /search hira/i }));
 
     expect(spy).toHaveBeenCalledOnce();
     const event = spy.mock.calls[0][0] as KeyboardEvent;
@@ -43,5 +43,11 @@ describe("AskHiraBar", () => {
   it("labels the quick links as navigation, not chat suggestions", () => {
     render(<AskHiraBar />);
     expect(screen.getByText("Jump to")).toBeInTheDocument();
+  });
+
+  it("never claims conversational AI it doesn't deliver (Sprint 84 fix)", () => {
+    render(<AskHiraBar />);
+    expect(screen.queryByText(/ask hira anything/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Search HIRA")).toBeInTheDocument();
   });
 });

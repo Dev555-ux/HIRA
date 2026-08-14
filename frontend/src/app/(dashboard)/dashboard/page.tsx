@@ -20,21 +20,22 @@ import { BusinessHealthCard } from "@/components/ui/business-health-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MemoryBadge } from "@/components/ui/memory-badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/ui/status-pill";
 import { TaskCard } from "@/components/ui/task-card";
 import { useToast } from "@/components/ui/toast";
+import { useAiActivity } from "@/hooks/use-activity";
 import { useAnalyticsDashboard } from "@/hooks/use-analytics";
 import { useAppointments } from "@/hooks/use-appointments";
 import { useAuthContext } from "@/lib/auth-context";
-import { useConversations } from "@/hooks/use-conversations";
 import { useEscalations } from "@/hooks/use-escalations";
 import { useKbEntries } from "@/hooks/use-knowledge-base";
 import { useLeads } from "@/hooks/use-leads";
 import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { useApprove, usePending, useReject, useUpdateDraft } from "@/hooks/use-pending";
-import type { Appointment, Escalation, PendingReply } from "@/lib/types";
+import type { AiActivityOutcome, Appointment, Escalation, PendingReply } from "@/lib/types";
 import { APPOINTMENT_STATUS, APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
-import { formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
 // How many rows each preview widget shows before "View all" takes over —
 // kept small and consistent across widgets so the page reads as an at-a-
@@ -60,12 +61,16 @@ function isToday(iso: string): boolean {
   );
 }
 
-interface ActivityEntry {
-  id: string;
-  icon: typeof CheckCheck;
-  title: string;
-  detail: string;
-  timestamp: string;
+// Sprint 84 (Dashboard Foundation): outcome -> icon for the AI Activity feed.
+// No new icon imports needed — every outcome maps to one of the icons this
+// page already uses elsewhere (Morning Brief highlights, Needs your
+// attention), so the feed and the rest of Home stay visually consistent.
+function activityIcon(outcome: AiActivityOutcome): typeof CheckCheck {
+  if (outcome === "escalated" || outcome === "failed") return AlertTriangle;
+  if (outcome === "pending_approval" || outcome === "sending" || outcome === "rejected") {
+    return MessageSquare;
+  }
+  return CheckCheck;
 }
 
 export default function DashboardPage() {
@@ -80,12 +85,17 @@ export default function DashboardPage() {
   } = usePending();
   const { data: onboarding, isFetching: isFetchingOnboarding, refetch: refetchOnboarding } =
     useOnboardingStatus();
+  // AI activity (Sprint 84, Dashboard Foundation) — a real read over
+  // execution_traces (GET /api/v1/activity), replacing the old client-side
+  // merge of conversations/pending/appointments. See
+  // app/services/execution_traces.py::list_activity_for_dashboard.
   const {
-    data: recentConversationsPage,
-    isFetching: isFetchingConversations,
-    isError: isRecentConversationsError,
-    refetch: refetchConversations,
-  } = useConversations({ limit: PREVIEW_ROWS });
+    data: aiActivityResult,
+    isPending: isLoadingActivity,
+    isFetching: isFetchingActivity,
+    isError: isActivityError,
+    refetch: refetchActivity,
+  } = useAiActivity(ACTIVITY_ROWS);
   // Morning Brief's "N new leads" line — same small-page-then-client-filter
   // pattern as "Learned today" below (no new endpoint, no date-range param
   // on this list endpoint to ask the backend for "today" directly).
@@ -132,10 +142,7 @@ export default function DashboardPage() {
     () => upcomingAppointmentsResult ?? [],
     [upcomingAppointmentsResult],
   );
-  const recentConversations = useMemo(
-    () => recentConversationsPage?.data ?? [],
-    [recentConversationsPage],
-  );
+  const aiActivity = useMemo(() => aiActivityResult ?? [], [aiActivityResult]);
   const openEscalations = useMemo(() => openEscalationsResult?.data ?? [], [openEscalationsResult]);
   const learnedToday = useMemo(
     () => (kbEntries ?? []).filter((entry) => isToday(entry.created_at)),
@@ -186,7 +193,7 @@ export default function DashboardPage() {
   const isRefreshing =
     isFetchingPending ||
     isFetchingOnboarding ||
-    isFetchingConversations ||
+    isFetchingActivity ||
     isFetchingLeads ||
     isFetchingAppointments ||
     isFetchingEscalations ||
@@ -196,59 +203,13 @@ export default function DashboardPage() {
   function refreshAll() {
     refetchPending();
     refetchOnboarding();
-    refetchConversations();
+    refetchActivity();
     refetchLeads();
     refetchAppointments();
     refetchEscalations();
     refetchAnalytics();
     refetchKb();
   }
-
-  // A compact, chronological merge of activity already fetched for the KPIs
-  // and preview widgets above — no new endpoint, no invented events. Each
-  // source contributes a short, distinctly-framed line so it reads as a log
-  // of what happened rather than repeating "Needs your attention"'s full
-  // draft text or "Upcoming appointments"'s own listing verbatim.
-  const activity = useMemo<ActivityEntry[]>(() => {
-    const entries: ActivityEntry[] = [];
-    const pendingConversationIds = new Set((pending ?? []).map((p) => p.conversation_id));
-    for (const p of pending ?? []) {
-      entries.push({
-        id: `pending-${p.id}`,
-        icon: CheckCheck,
-        title: customerLabel(p.customer),
-        detail: "Reply drafted, awaiting your approval",
-        timestamp: p.created_at,
-      });
-    }
-    for (const c of recentConversations) {
-      // A conversation whose latest message *is* a still-pending draft
-      // already has its own, more specific entry above (and its own badge
-      // in "Needs your attention") — showing it again here with the same
-      // draft text as a generic "conversation preview" read as the same
-      // event happening twice.
-      if (pendingConversationIds.has(c.id)) continue;
-      entries.push({
-        id: `conversation-${c.id}`,
-        icon: MessageSquare,
-        title: customerLabel(c.customer),
-        detail: c.preview ?? "Started a conversation",
-        timestamp: c.last_message_at ?? c.created_at,
-      });
-    }
-    for (const a of upcomingAppointments) {
-      entries.push({
-        id: `appointment-${a.id}`,
-        icon: CalendarClock,
-        title: customerLabel(a.customer),
-        detail: `Appointment booked for ${formatAppointmentRange(a.starts_at, a.ends_at)}`,
-        timestamp: a.created_at,
-      });
-    }
-    return entries
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, ACTIVITY_ROWS);
-  }, [pending, recentConversations, upcomingAppointments]);
 
   const pendingCount = pending?.length ?? 0;
   const escalationCount = openEscalations.length;
@@ -271,9 +232,9 @@ export default function DashboardPage() {
       : baseSummary;
 
   // "Needs your attention" (§3): pending replies + open escalations, merged.
-  // The whole section disappears when there's genuinely nothing and nothing
-  // failed to load — an executive briefing doesn't dedicate a card to
-  // announcing that nothing needs it.
+  // Sprint 84: this now always renders (see the Card below) — attentionEmpty
+  // only decides which body it shows (the queue, or a calm "nothing needs
+  // you" state), not whether the card exists at all.
   const attentionHasError = isPendingError || isEscalationsError;
   const attentionEmpty = !attentionHasError && pendingCount === 0 && escalationCount === 0;
 
@@ -297,64 +258,74 @@ export default function DashboardPage() {
         <OnboardingChecklist business={onboarding.business} />
       )}
 
-      {!attentionEmpty && (
-        <Card interactive className="mb-8 border-l-2 border-l-warning">
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle className="text-base">Needs your attention</CardTitle>
-            <Button asChild size="sm" variant="ghost">
-              <Link href="/pending">View all</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {isPendingError ? (
-              <EmptyState
-                icon={AlertTriangle}
-                title="Couldn't load pending approvals"
-                description="Something went wrong — please try again."
-                action={
-                  <Button size="sm" onClick={() => refetchPending()}>
-                    Retry
-                  </Button>
-                }
-                className="border-0 py-12"
-              />
-            ) : (
-              <div className="space-y-4">
-                {(pending ?? []).slice(0, PREVIEW_ROWS).map((p: PendingReply) => (
-                  <DashboardReviewCard key={p.id} reply={p} />
-                ))}
-                {isEscalationsError ? (
-                  <EmptyState
-                    icon={AlertTriangle}
-                    title="Couldn't load escalations"
-                    description="Something went wrong — please try again."
-                    action={
-                      <Button size="sm" onClick={() => refetchEscalations()}>
-                        Retry
-                      </Button>
+      {/* Sprint 84 (Dashboard Foundation): Needs Your Attention is the
+          primary workspace, not a card that disappears when there's nothing
+          to review — it always renders, with a calm, positive empty state
+          when there's genuinely nothing pending. The warning-colored spine
+          only appears when something actually needs a decision. */}
+      <Card interactive className={cn("mb-8", !attentionEmpty && "border-l-2 border-l-warning")}>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle className="text-base">Needs your attention</CardTitle>
+          <Button asChild size="sm" variant="ghost">
+            <Link href="/pending">View all</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isPendingError ? (
+            <EmptyState
+              icon={AlertTriangle}
+              title="Couldn't load pending approvals"
+              description="Something went wrong — please try again."
+              action={
+                <Button size="sm" onClick={() => refetchPending()}>
+                  Retry
+                </Button>
+              }
+              className="border-0 py-12"
+            />
+          ) : attentionEmpty ? (
+            <EmptyState
+              icon={CheckCheck}
+              title="Nothing needs you right now"
+              description="Approvals and escalated conversations will show up here the moment something needs a decision."
+              className="border-0 py-12"
+            />
+          ) : (
+            <div className="space-y-4">
+              {(pending ?? []).slice(0, PREVIEW_ROWS).map((p: PendingReply) => (
+                <DashboardReviewCard key={p.id} reply={p} />
+              ))}
+              {isEscalationsError ? (
+                <EmptyState
+                  icon={AlertTriangle}
+                  title="Couldn't load escalations"
+                  description="Something went wrong — please try again."
+                  action={
+                    <Button size="sm" onClick={() => refetchEscalations()}>
+                      Retry
+                    </Button>
+                  }
+                  className="border-0 py-6"
+                />
+              ) : (
+                openEscalations.slice(0, PREVIEW_ROWS).map((escalation: Escalation) => (
+                  <TaskCard
+                    key={escalation.id}
+                    title={customerLabel(escalation.conversation.customer)}
+                    description="Escalated — needs your review"
+                    meta={
+                      <span className="type-caption text-muted-foreground">
+                        {formatRelativeTime(escalation.created_at)}
+                      </span>
                     }
-                    className="border-0 py-6"
+                    action={{ label: "Review", onClick: () => router.push("/escalations") }}
                   />
-                ) : (
-                  openEscalations.slice(0, PREVIEW_ROWS).map((escalation: Escalation) => (
-                    <TaskCard
-                      key={escalation.id}
-                      title={customerLabel(escalation.conversation.customer)}
-                      description="Escalated — needs your review"
-                      meta={
-                        <span className="type-caption text-muted-foreground">
-                          {formatRelativeTime(escalation.created_at)}
-                        </span>
-                      }
-                      action={{ label: "Review", onClick: () => router.push("/escalations") }}
-                    />
-                  ))
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+                ))
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {analyticsDashboard?.business_health && (
         <div className="mb-8">
@@ -362,31 +333,37 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Secondary row: a compact, chronological log across conversations,
-          approvals, and bookings — a retrospective "what happened" view,
-          distinct from "Needs your attention"'s prescriptive "what to do
-          now." */}
+      {/* AI activity (Sprint 84, Dashboard Foundation) — real execution_traces,
+          read back as a narrative log ("what HIRA has actually done"),
+          replacing the old client-synthesized feed. Distinct from "Needs
+          your attention"'s prescriptive "what to do now." */}
       <Card interactive className="mt-8">
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Recent activity</CardTitle>
+          <CardTitle className="text-base">AI activity</CardTitle>
           <Button asChild size="sm" variant="ghost">
             <Link href="/inbox">View all</Link>
           </Button>
         </CardHeader>
         <CardContent className="p-0">
-          {isRecentConversationsError ? (
+          {isActivityError ? (
             <EmptyState
               icon={AlertTriangle}
               title="Couldn't load activity"
               description="Something went wrong — please try again."
               action={
-                <Button size="sm" onClick={() => refetchConversations()}>
+                <Button size="sm" onClick={() => refetchActivity()}>
                   Retry
                 </Button>
               }
               className="border-0 py-12"
             />
-          ) : activity.length === 0 ? (
+          ) : isLoadingActivity ? (
+            <div className="space-y-3 px-6 py-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          ) : aiActivity.length === 0 ? (
             <EmptyState
               icon={Sparkles}
               title="Waiting for your first customer"
@@ -400,32 +377,32 @@ export default function DashboardPage() {
             />
           ) : (
             <ul className="divide-y" data-testid="activity-feed">
-              {activity.map((entry) => (
-                <li key={entry.id} className="group flex items-center gap-3 px-6 py-3">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 transition-colors duration-200 group-hover:bg-primary/15">
-                    <entry.icon className="size-4 text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{entry.title}</p>
-                    <p className="truncate text-xs text-muted-foreground">{entry.detail}</p>
-                  </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {formatRelativeTime(entry.timestamp)}
-                  </span>
-                </li>
-              ))}
+              {aiActivity.map((entry) => {
+                const Icon = activityIcon(entry.outcome);
+                return (
+                  <li key={entry.id} className="group flex items-center gap-3 px-6 py-3">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 transition-colors duration-200 group-hover:bg-primary/15">
+                      <Icon className="size-4 text-primary" />
+                    </div>
+                    <p className="min-w-0 flex-1 truncate text-sm font-medium">{entry.summary}</p>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatRelativeTime(entry.created_at)}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </CardContent>
       </Card>
 
-      {/* Upcoming appointments — reference material for "what's coming up
-          next," not one of the first-viewport questions, so it sits here,
+      {/* Today's schedule — reference material for "what's coming up next,"
+          not one of the first-viewport questions, so it sits here,
           lightweight (muted surface, not `interactive`), after the sections
           that actually answer those questions. */}
       <Card className="mt-8 bg-muted/30">
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Upcoming appointments</CardTitle>
+          <CardTitle className="text-base">Today's schedule</CardTitle>
           <Button asChild size="sm" variant="ghost">
             <Link href="/appointments">View all</Link>
           </Button>

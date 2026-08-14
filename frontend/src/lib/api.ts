@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "./config";
 import type {
+  AiActivityEntry,
   AnalyticsDashboard,
   AnalyticsRange,
   ApiEnvelope,
@@ -116,6 +117,12 @@ export const api = {
     apiFetch<ApiEnvelope<PendingReply[]>>("/api/v1/pending", getToken).then(
       (r) => r.data,
     ),
+
+  listActivity: (getToken: GetToken, limit = 6) =>
+    apiFetch<ApiEnvelope<AiActivityEntry[]>>(
+      `/api/v1/activity${buildQuery({ limit })}`,
+      getToken,
+    ).then((r) => r.data),
 
   approveMessage: (getToken: GetToken, messageId: string) =>
     apiFetch<ApiEnvelope<ApproveResult>>(

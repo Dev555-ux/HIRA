@@ -32,6 +32,14 @@ import { cn } from "@/lib/utils";
 // (never a question, never a command verb pretending an answer is coming)
 // specifically so the affordance reads as "jump to a real page," matching
 // what actually happens — not a fabricated Q&A engine.
+//
+// Sprint 84 (Dashboard Foundation): the headline above this bar had the same
+// problem the V6 note above already fixed for the quick links — "Ask HIRA
+// anything about your business" promised free-text conversational AI this
+// bar has never delivered. Reworded to "Search HIRA," which is what the
+// click actually opens. This is a copy-only fix, not a redesign: the real
+// conversational assistant is a future sprint (see the approved Dashboard
+// spec's §6/§12) — when it ships, it earns this headline back.
 const QUICK_LINKS: { label: string; href: string }[] = [
   { label: "Pending approvals", href: "/pending" },
   { label: "Escalations", href: "/escalations" },
@@ -71,7 +79,7 @@ export function AskHiraBar() {
         <AIAvatar name="HIRA" size="xl" />
         <span className="min-w-0 flex-1">
           <span className="block text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-            Ask HIRA anything about your business
+            Search HIRA
           </span>
           <span className="mt-1 block text-sm text-muted-foreground">
             Search customers, jump to a page, or find what you need

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "@/components/ui/toast";
 import { AuthContext, type AuthContextValue } from "@/lib/auth-context";
-import type { Appointment, AnalyticsDashboard, Conversation, OnboardingStatus } from "@/lib/types";
+import type { Appointment, AnalyticsDashboard, OnboardingStatus } from "@/lib/types";
 import DashboardPage from "./page";
 
 const routerPush = vi.fn();
@@ -17,7 +17,7 @@ vi.mock("@/lib/api", () => ({
   api: {
     listPending: vi.fn(),
     getOnboardingStatus: vi.fn(),
-    listConversations: vi.fn(),
+    listActivity: vi.fn(),
     listLeads: vi.fn(),
     listAppointments: vi.fn(),
     listEscalations: vi.fn(),
@@ -114,10 +114,7 @@ describe("DashboardPage", () => {
     vi.mocked(api.getOnboardingStatus).mockResolvedValue(onboardingStatus);
     // Safe defaults so every test only needs to override what it cares about.
     vi.mocked(api.listPending).mockResolvedValue([]);
-    vi.mocked(api.listConversations).mockResolvedValue({
-      data: [],
-      meta: { total: 0, limit: 1, offset: 0 },
-    });
+    vi.mocked(api.listActivity).mockResolvedValue([]);
     vi.mocked(api.listLeads).mockResolvedValue({
       data: [],
       meta: { total: 0, limit: 5, offset: 0 },
@@ -175,7 +172,10 @@ describe("DashboardPage", () => {
       },
     ]);
     renderWithProviders(<DashboardPage />);
-    await screen.findByText("Needs your attention");
+    // Sprint 84: "Needs your attention" now renders on first paint regardless
+    // of data state, so it's no longer a reliable settle-anchor for "pending
+    // data has loaded" — wait for the reply itself instead.
+    await screen.findByText("Yes, we're open!");
     expect(screen.queryByText("Nothing urgent requires you.")).not.toBeInTheDocument();
   });
 
@@ -194,8 +194,6 @@ describe("DashboardPage", () => {
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("Yes, we're open!")).toBeInTheDocument();
-    // Appears twice deliberately: once in "Needs your attention" (the full
-    // draft) and once in "Recent activity" (the compact log entry).
     expect(screen.getAllByText("Jordan Lee").length).toBeGreaterThan(0);
   });
 
@@ -223,15 +221,10 @@ describe("DashboardPage", () => {
 
     renderWithProviders(<DashboardPage />);
 
-    // Wait for the appointment data itself to render before asserting the
-    // rest — "Upcoming appointments" is static label text present from the
-    // first render, so it resolves before the async data does.
-    // Appears twice deliberately: once in "Upcoming appointments" and once
-    // in "Recent activity" (the same booking, logged).
+    // "Today's schedule" is static label text present from the first
+    // render, so wait for the appointment data itself before asserting.
     await waitFor(() => expect(screen.getAllByText("Jordan Lee").length).toBeGreaterThan(0));
-    // "Upcoming appointments" now also appears as an Ask HIRA quick link
-    // (§ ask-hira-bar.tsx) — three legitimate appearances, not two.
-    expect(screen.getAllByText("Upcoming appointments").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Today's schedule")).toBeInTheDocument();
     expect(screen.getByText("Booked")).toBeInTheDocument();
   });
 
@@ -253,103 +246,62 @@ describe("DashboardPage", () => {
     expect(await screen.findAllByText("Couldn't load")).not.toHaveLength(0);
   });
 
-  it("merges conversations into Recent activity with their message preview", async () => {
-    const conversation: Conversation = {
-      id: "conv-1",
-      status: "escalated",
-      customer: { id: "cust-2", display_name: "Morgan Reyes", wa_phone: "+15559876543" },
-      last_message_at: new Date().toISOString(),
-      preview: "Can I speak to someone about a refund?",
-      has_pending_approval: false,
-      created_at: new Date().toISOString(),
-    };
-    vi.mocked(api.listConversations).mockResolvedValue({
-      data: [conversation],
-      meta: { total: 1, limit: 5, offset: 0 },
-    });
+  // Sprint 84 (Dashboard Foundation): AI Activity replaces the old
+  // client-synthesized "Recent activity" feed — the page now renders
+  // whatever GET /api/v1/activity returns, trusting the backend's ordering
+  // and phrasing (see backend/tests/test_dashboard_api.py for coverage of
+  // summarize_activity()'s sentence-building logic itself).
+  it("renders each AI activity entry's real summary sentence and timestamp", async () => {
+    vi.mocked(api.listActivity).mockResolvedValue([
+      {
+        id: "trace-1",
+        conversation_id: "conv-1",
+        customer: { id: "cust-3", display_name: "Sam Torres" },
+        category: "action",
+        outcome: "sent",
+        summary: "Booked an appointment for Sam Torres",
+        created_at: new Date().toISOString(),
+      },
+    ]);
 
     renderWithProviders(<DashboardPage />);
 
-    expect(await screen.findByText("Morgan Reyes")).toBeInTheDocument();
-    expect(screen.getByText("Can I speak to someone about a refund?")).toBeInTheDocument();
+    const feed = await screen.findByTestId("activity-feed");
+    expect(within(feed).getByText("Booked an appointment for Sam Torres")).toBeInTheDocument();
   });
 
-  it("merges pending replies and appointments into Recent activity, most recent first", async () => {
-    vi.mocked(api.listPending).mockResolvedValue([
+  it("renders AI activity entries in the order the backend returns them", async () => {
+    vi.mocked(api.listActivity).mockResolvedValue([
       {
-        id: "msg-1",
-        conversation_id: "conv-1",
-        body: "Yes, we're open!",
-        created_at: "2026-08-01T12:00:00Z",
-        customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
-        conversation_preview: null,
-      },
-    ]);
-    vi.mocked(api.listAppointments).mockResolvedValue([
-      {
-        id: "appt-1",
-        customer: { id: "cust-3", display_name: "Sam Torres", wa_phone: "+15557654321" },
-        conversation_id: null,
-        starts_at: "2026-08-05T14:00:00",
-        ends_at: "2026-08-05T15:00:00",
-        status: "booked",
+        id: "trace-2",
+        conversation_id: "conv-2",
+        customer: { id: "cust-3", display_name: "Sam Torres" },
+        category: "action",
+        outcome: "sent",
+        summary: "Booked an appointment for Sam Torres",
         created_at: "2026-08-02T09:00:00Z",
-        updated_at: "2026-08-02T09:00:00Z",
       },
-    ]);
-
-    renderWithProviders(<DashboardPage />);
-
-    expect(await screen.findByText("Reply drafted, awaiting your approval")).toBeInTheDocument();
-    expect(screen.getByText(/Appointment booked for/)).toBeInTheDocument();
-    expect(screen.getAllByText("Sam Torres").length).toBeGreaterThan(0);
-
-    // Sam Torres's appointment was created after Jordan Lee's pending reply,
-    // so it should appear first in the feed.
-    const feed = await screen.findByTestId("activity-feed");
-    const names = Array.from(feed.querySelectorAll("p.font-medium")).map((el) => el.textContent);
-    expect(names.indexOf("Sam Torres")).toBeLessThan(names.indexOf("Jordan Lee"));
-  });
-
-  it("doesn't show the same pending draft twice in Recent activity", async () => {
-    // A conversation whose latest message IS the still-pending draft used to
-    // produce two rows for the same event: "Reply drafted, awaiting your
-    // approval" (from the pending list) and the draft's own text again (from
-    // the conversation preview, since that draft is the conversation's most
-    // recent message).
-    vi.mocked(api.listPending).mockResolvedValue([
       {
-        id: "msg-1",
+        id: "trace-1",
         conversation_id: "conv-1",
-        body: "Yes, we're open Saturday from 9 to 5 -- would you like to book a slot?",
+        customer: { id: "cust-1", display_name: "Jordan Lee" },
+        category: "knowledge",
+        outcome: "sent",
+        summary: "Answered a question from Jordan Lee",
         created_at: "2026-08-01T12:00:00Z",
-        customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
-        conversation_preview: null,
       },
     ]);
-    vi.mocked(api.listConversations).mockResolvedValue({
-      data: [
-        {
-          id: "conv-1",
-          status: "active",
-          customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
-          last_message_at: "2026-08-01T12:00:00Z",
-          preview: "Yes, we're open Saturday from 9 to 5 -- would you like to book a slot?",
-          has_pending_approval: true,
-          created_at: "2026-08-01T12:00:00Z",
-        },
-      ],
-      meta: { total: 1, limit: 5, offset: 0 },
-    });
 
     renderWithProviders(<DashboardPage />);
 
-    expect(await screen.findByText("Reply drafted, awaiting your approval")).toBeInTheDocument();
     const feed = await screen.findByTestId("activity-feed");
-    expect(within(feed).getAllByText("Jordan Lee")).toHaveLength(1);
+    const rows = Array.from(feed.querySelectorAll("p.font-medium")).map((el) => el.textContent);
+    expect(rows.indexOf("Booked an appointment for Sam Torres")).toBeLessThan(
+      rows.indexOf("Answered a question from Jordan Lee"),
+    );
   });
 
-  it("shows a meaningful empty state when there is no recent activity", async () => {
+  it("shows a meaningful empty state when there is no AI activity yet", async () => {
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("Waiting for your first customer")).toBeInTheDocument();
@@ -357,6 +309,17 @@ describe("DashboardPage", () => {
       "href",
       "/demo",
     );
+  });
+
+  it("shows a retryable error instead of a misleading empty state when AI activity fails to load", async () => {
+    vi.mocked(api.listActivity).mockRejectedValue(new Error("Network error"));
+
+    renderWithProviders(<DashboardPage />);
+
+    expect(await screen.findByText("Couldn't load activity")).toBeInTheDocument();
+    vi.mocked(api.listActivity).mockClear();
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(api.listActivity).toHaveBeenCalled();
   });
 
   it("shows real WhatsApp status via Business Health, never internal AI provider/model names", async () => {
@@ -385,13 +348,12 @@ describe("DashboardPage", () => {
 
   it("refreshes every dashboard data source when Refresh is clicked", async () => {
     renderWithProviders(<DashboardPage />);
-    // "Needs your attention" is hidden entirely with nothing pending and no
-    // escalations, so the Morning Brief's own settled summary sentence is
-    // the reliable settle-anchor.
+    // The Morning Brief's own settled summary sentence is a reliable
+    // settle-anchor, present whether or not anything needs attention.
     await screen.findByText("You have no replies waiting for review and no appointments booked.");
     vi.mocked(api.listPending).mockClear();
     vi.mocked(api.getOnboardingStatus).mockClear();
-    vi.mocked(api.listConversations).mockClear();
+    vi.mocked(api.listActivity).mockClear();
     vi.mocked(api.listLeads).mockClear();
     vi.mocked(api.listAppointments).mockClear();
     vi.mocked(api.listEscalations).mockClear();
@@ -402,7 +364,7 @@ describe("DashboardPage", () => {
 
     expect(api.listPending).toHaveBeenCalled();
     expect(api.getOnboardingStatus).toHaveBeenCalled();
-    expect(api.listConversations).toHaveBeenCalled();
+    expect(api.listActivity).toHaveBeenCalled();
     expect(api.listLeads).toHaveBeenCalled();
     expect(api.listEscalations).toHaveBeenCalled();
     expect(api.getAnalyticsDashboard).toHaveBeenCalled();
@@ -469,8 +431,6 @@ describe("DashboardPage", () => {
         expect(api.updateDraft).toHaveBeenCalledWith(expect.any(Function), "msg-1", "revised"),
       );
       // Still awaiting review, still visible — an edit doesn't remove the card.
-      // "Jordan Lee" also appears in Recent activity (existing behavior,
-      // unrelated to this change), so scope to "Needs your attention".
       const section = (await screen.findByText("Needs your attention")).closest<HTMLElement>(".rounded-2xl")!;
       expect(within(section).getByText("Jordan Lee")).toBeInTheDocument();
     });
@@ -508,22 +468,26 @@ describe("DashboardPage", () => {
 
   // HIRA v2 Phase 4 — Home redesign.
   describe("Phase 4 — Home redesign", () => {
-    it("shows a prominent Ask HIRA entry point that opens the existing command palette", async () => {
+    it("shows a prominent Search HIRA entry point that opens the existing command palette", async () => {
       const user = userEvent.setup();
       const spy = vi.fn();
       window.addEventListener("keydown", spy);
 
       renderWithProviders(<DashboardPage />);
-      await user.click(screen.getByRole("button", { name: /ask hira/i }));
+      await user.click(screen.getByRole("button", { name: /search hira/i }));
 
       expect(spy).toHaveBeenCalledOnce();
       window.removeEventListener("keydown", spy);
     });
 
-    it("hides Needs your attention entirely when there's nothing pending and no open escalations", async () => {
+    // Sprint 84 (Dashboard Foundation): Needs Your Attention is the primary
+    // workspace now — it always renders, showing a calm positive state
+    // instead of disappearing when there's genuinely nothing to review.
+    it("shows Needs your attention with a positive empty state when there's nothing pending and no open escalations", async () => {
       renderWithProviders(<DashboardPage />);
       await screen.findByText("You have no replies waiting for review and no appointments booked.");
-      expect(screen.queryByText("Needs your attention")).not.toBeInTheDocument();
+      expect(screen.getByText("Needs your attention")).toBeInTheDocument();
+      expect(screen.getByText("Nothing needs you right now")).toBeInTheDocument();
     });
 
     it("shows Needs your attention with an open escalation, even with nothing pending", async () => {
@@ -548,8 +512,10 @@ describe("DashboardPage", () => {
 
       renderWithProviders(<DashboardPage />);
 
-      expect(await screen.findByText("Needs your attention")).toBeInTheDocument();
-      expect(screen.getByText("Priya Shah")).toBeInTheDocument();
+      // Sprint 84: "Needs your attention" renders immediately regardless of
+      // data state, so wait for the escalation itself to settle first.
+      expect(await screen.findByText("Priya Shah")).toBeInTheDocument();
+      expect(screen.getByText("Needs your attention")).toBeInTheDocument();
       expect(screen.getByText("Escalated — needs your review")).toBeInTheDocument();
     });
 
