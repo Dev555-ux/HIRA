@@ -402,7 +402,7 @@ export default function DashboardPage() {
           that actually answer those questions. */}
       <Card className="mt-8 bg-muted/30">
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Today's schedule</CardTitle>
+          <CardTitle className="text-base">Today&apos;s schedule</CardTitle>
           <Button asChild size="sm" variant="ghost">
             <Link href="/appointments">View all</Link>
           </Button>
