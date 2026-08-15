@@ -30,6 +30,12 @@ export interface DonutSegment {
 // and never actually improves comprehension — see Sprint 84.3 design
 // review). Used only for genuine part-to-whole state breakdowns (≤6
 // segments): conversation status, appointment status.
+//
+// Sprint 85: the sweep-in animation was previously off (isAnimationActive
+// was explicitly false) — turned on with a restrained 700ms ease-out, and
+// each slice now also takes a thin gradient stroke of its own fill (not a
+// flat outline) for a touch more edge definition — still no literal 3D,
+// still no WebGL, per Sprint 85's explicit constraint.
 export function DonutChart({ title, segments }: { title: string; segments: DonutSegment[] }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const gradId = useId();
@@ -45,7 +51,7 @@ export function DonutChart({ title, segments }: { title: string; segments: Donut
   return (
     <div>
       <div className="flex items-center gap-5" role="img" aria-label={summary}>
-        <div className="relative size-[136px] shrink-0" style={{ filter: "drop-shadow(0 6px 14px rgb(0 0 0 / 0.12))" }}>
+        <div className="relative size-[148px] shrink-0" style={{ filter: "drop-shadow(0 6px 14px rgb(0 0 0 / 0.12))" }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <defs>
@@ -65,8 +71,9 @@ export function DonutChart({ title, segments }: { title: string; segments: Donut
                 startAngle={90}
                 endAngle={-270}
                 paddingAngle={segments.length > 1 ? 2 : 0}
-                stroke="none"
-                isAnimationActive={false}
+                isAnimationActive
+                animationDuration={700}
+                animationEasing="ease-out"
                 onMouseEnter={(_, index) => setActiveIndex(index)}
                 onMouseLeave={() => setActiveIndex(null)}
               >
@@ -74,6 +81,8 @@ export function DonutChart({ title, segments }: { title: string; segments: Donut
                   <Cell
                     key={s.key}
                     fill={`url(#${gradId}-${i})`}
+                    stroke={`url(#${gradId}-${i})`}
+                    strokeWidth={1}
                     opacity={activeIndex === null || activeIndex === i ? 1 : 0.32}
                   />
                 ))}
@@ -81,17 +90,17 @@ export function DonutChart({ title, segments }: { title: string; segments: Donut
             </PieChart>
           </ResponsiveContainer>
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <div className="text-xl font-semibold tabular-nums tracking-tight">{total}</div>
+            <div className="text-2xl font-bold tabular-nums tracking-tight">{total}</div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">total</div>
           </div>
         </div>
-        <ul className="flex-1 space-y-1">
+        <ul className="flex-1 space-y-1.5">
           {segments.map((s, i) => {
             const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
             return (
               <li
                 key={s.key}
-                className="-ml-1 flex items-center gap-2 rounded-md px-1 py-1 text-sm transition-colors hover:bg-muted"
+                className="-ml-1 flex items-center gap-2 rounded-md px-1.5 py-1.5 text-sm transition-colors hover:bg-muted"
                 onMouseEnter={() => setActiveIndex(i)}
                 onMouseLeave={() => setActiveIndex(null)}
               >
