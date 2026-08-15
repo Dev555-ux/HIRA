@@ -322,7 +322,7 @@ describe("DashboardPage", () => {
     expect(api.listActivity).toHaveBeenCalled();
   });
 
-  it("shows real WhatsApp status via Business Health, never internal AI provider/model names", async () => {
+  it("shows real WhatsApp status via the Health Score strip, never internal AI provider/model names", async () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue({
       ...EMPTY_ANALYTICS_DASHBOARD,
       business_health: {
@@ -579,7 +579,7 @@ describe("DashboardPage", () => {
       expect(screen.queryByText("Nothing urgent requires you.")).not.toBeInTheDocument();
     });
 
-    it("shows Business Health, reusing the shared BusinessHealthCard with real analytics data", async () => {
+    it("shows the Health Score strip with real analytics data (Sprint 86 — replaces BusinessHealthCard)", async () => {
       vi.mocked(api.getAnalyticsDashboard).mockResolvedValue({
         ...EMPTY_ANALYTICS_DASHBOARD,
         business_health: {
@@ -590,8 +590,8 @@ describe("DashboardPage", () => {
 
       renderWithProviders(<DashboardPage />);
 
-      expect(await screen.findByText("Business health")).toBeInTheDocument();
-      expect(screen.getByText("WhatsApp Connected")).toBeInTheDocument();
+      const list = await screen.findByRole("list", { name: /business health signals/i });
+      expect(within(list).getByText("WhatsApp Connected")).toBeInTheDocument();
     });
 
     it("hides Learned today when no knowledge entry was created today", async () => {
