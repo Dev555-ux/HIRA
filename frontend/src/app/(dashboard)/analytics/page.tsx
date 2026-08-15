@@ -3,14 +3,15 @@
 import { AlertTriangle, BarChart3, CheckCheck, Clock, MessageSquare, Send } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { AiMetricsSummary } from "@/components/ai-metrics-section";
+import { AiImpactCard } from "@/components/analytics-ai-impact";
 import { AiInsightsCard } from "@/components/analytics-ai-insights";
+import { AiPerformanceCard } from "@/components/analytics-ai-performance";
 import { ExecutiveSummary } from "@/components/analytics-executive-summary";
+import { HealthScore } from "@/components/analytics-health-score";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
-import { aiSurfaceClassName } from "@/components/ui/ai-surface";
-import { BusinessHealthCard } from "@/components/ui/business-health-card";
+import { ActivityDot } from "@/components/ui/activity-dot";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DonutChart } from "@/components/ui/donut-chart";
@@ -23,6 +24,7 @@ import { CONVERSATION_STATUS_BADGE } from "@/lib/conversations";
 import { STAGE_LABEL } from "@/lib/leads";
 import { VARIANT_TO_STATE } from "@/lib/status";
 import type {
+  AnalyticsDashboard,
   AnalyticsRange,
   AnalyticsTrendPoint,
   Appointment,
@@ -36,6 +38,12 @@ const RANGE_OPTIONS: { label: string; value: AnalyticsRange }[] = [
   { label: "90d", value: "90d" },
 ];
 
+const RANGE_PERIOD_LABEL: Record<AnalyticsRange, string> = {
+  "7d": "Last 7 Days",
+  "30d": "Last 30 Days",
+  "90d": "Last 90 Days",
+};
+
 function formatDuration(seconds: number | null): string {
   if (seconds == null) return "—";
   if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -44,15 +52,20 @@ function formatDuration(seconds: number | null): string {
   return `${Math.round(minutes / 60)}h`;
 }
 
+// Sprint 85 stagger — each top-level section fades/slides in with a small
+// per-index delay via the existing animate-fade-in-up utility. Fill-mode
+// "backwards" is set inline (not in the shared utility) so this section
+// stays hidden through its own delay window instead of flashing visible
+// then re-animating; globals.css's reduced-motion guard forces both
+// animation-duration and animation-delay to ~0, so this collapses to an
+// instant, undelayed reveal for anyone who's asked for reduced motion.
+function reveal(index: number): React.CSSProperties {
+  return { animationDelay: `${index * 60}ms`, animationFillMode: "backwards" };
+}
+
 export default function AnalyticsPage() {
   const [range, setRange] = useState<AnalyticsRange>("30d");
   const { data, isPending, isError, refetch, isFetching } = useAnalyticsDashboard(range);
-  const leadsTotal = data
-    ? Object.values(data.business_health.leads_by_stage).reduce((a, b) => a + b, 0)
-    : 0;
-  const appointmentsTotal = data
-    ? Object.values(data.business_health.appointments_by_status).reduce((a, b) => a + b, 0)
-    : 0;
 
   return (
     <>
@@ -77,13 +90,14 @@ export default function AnalyticsPage() {
 
       {isPending && (
         <div className="space-y-4">
-          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-40 w-full" />
+          <Skeleton className="h-8 w-2/3" />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-28 w-full" />
             ))}
           </div>
-          <Skeleton className="h-40 w-full" />
+          <Skeleton className="h-72 w-full" />
         </div>
       )}
 
@@ -109,219 +123,268 @@ export default function AnalyticsPage() {
       )}
 
       {!isPending && !isError && data && data.overview.total_conversations > 0 && (
-        <div className="space-y-6">
-          <ExecutiveSummary data={data} />
-
-          <BusinessHealthCard health={data.business_health} />
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <StatCard
-              label="Total conversations"
-              value={data.overview.total_conversations}
-              icon={MessageSquare}
-            />
-            <StatCard label="Messages today" value={data.overview.messages_today} icon={Send} />
-            <StatCard
-              label="AI responses today"
-              value={data.overview.ai_responses_today}
-              icon={CheckCheck}
-            />
-            <StatCard
-              label="Failed responses today"
-              value={data.overview.failed_responses_today}
-              icon={AlertTriangle}
-            />
-            <StatCard
-              label="Avg response time"
-              value={formatDuration(data.overview.avg_response_time_seconds)}
-              icon={Clock}
-            />
-          </div>
-
-          <Card className={aiSurfaceClassName}>
-            <CardHeader>
-              <CardTitle className="text-base">AI Impact · last {range}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <AiImpactStat label="Conversations handled" value={data.ai_impact.conversations_handled} />
-                <AiImpactStat label="Escalated to a human" value={data.ai_impact.human_escalations} />
-                <AiImpactStat label="Leads created" value={data.ai_impact.leads_created} />
-                <AiImpactStat label="Appointments booked" value={data.ai_impact.appointments_booked} />
-                <AiImpactStat label="KB-grounded replies" value={data.ai_impact.kb_grounded_replies} />
-                <AiImpactStat label="AI responses sent" value={data.ai_impact.ai_responses} />
-                <AiImpactStat
-                  label="Estimated work saved"
-                  value={`≈${data.ai_impact.estimated_hours_saved}h`}
-                  hint="Rough estimate, not a measured benchmark"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <AiInsightsCard data={data} />
-
-          <div>
-            <h2 className="mb-3 text-sm font-medium text-muted-foreground">Trends</h2>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card interactive>
-                <TrendCardHeader title="Conversations over time" data={data.trends.conversations} />
-                <CardContent>
-                  <TrendChart title="Conversations over time" data={data.trends.conversations} />
-                </CardContent>
-              </Card>
-              <Card interactive>
-                <TrendCardHeader title="Messages over time" data={data.trends.messages} />
-                <CardContent>
-                  <TrendChart title="Messages over time" data={data.trends.messages} />
-                </CardContent>
-              </Card>
-              <Card interactive>
-                <TrendCardHeader title="Leads over time" data={data.trends.leads} />
-                <CardContent>
-                  <TrendChart title="Leads over time" data={data.trends.leads} />
-                </CardContent>
-              </Card>
-              <Card interactive>
-                <TrendCardHeader title="Appointments over time" data={data.trends.appointments} />
-                <CardContent>
-                  <TrendChart title="Appointments over time" data={data.trends.appointments} />
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          <div>
-            <h2 className="mb-3 text-sm font-medium text-muted-foreground">Breakdowns</h2>
-            <div className="grid gap-4 lg:grid-cols-3">
-              <Card interactive>
-                <CardHeader className="flex-row items-baseline justify-between space-y-0">
-                  <CardTitle className="text-base">Conversations by status</CardTitle>
-                  <span className="text-xs text-muted-foreground">this period</span>
-                </CardHeader>
-                <CardContent>
-                  <DonutChart
-                    title="Conversations by status"
-                    segments={Object.entries(data.business_health.conversations_by_status).map(
-                      ([key, value]) => {
-                        const badge = CONVERSATION_STATUS_BADGE[key as Conversation["status"]];
-                        return {
-                          key,
-                          label: badge?.label ?? key,
-                          value,
-                          state: VARIANT_TO_STATE[badge?.variant ?? "secondary"],
-                        };
-                      },
-                    )}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card interactive>
-                <CardHeader className="flex-row items-baseline justify-between space-y-0">
-                  <CardTitle className="text-base">Leads by stage</CardTitle>
-                  <span className="text-xs text-muted-foreground">full pipeline</span>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {leadsTotal === 0 ? (
-                    <EmptyState
-                      icon={BarChart3}
-                      title="No leads yet"
-                      description="HIRA creates a lead automatically when a conversation shows buying intent."
-                      className="py-8"
-                      action={
-                        <Button asChild size="sm" variant="outline">
-                          <Link href="/leads">View Leads</Link>
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <>
-                      <p className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">
-                        Ordered pipeline — kept as a bar; 7 sequential stages read better as a funnel than a
-                        donut
-                      </p>
-                      <BreakdownList
-                        entries={Object.entries(data.business_health.leads_by_stage)}
-                        labelFor={(key) => STAGE_LABEL[key as LeadStage] ?? key}
-                      />
-                      {Object.keys(data.business_health.leads_by_source).length > 0 && (
-                        <>
-                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                            By source
-                          </p>
-                          <BreakdownList entries={Object.entries(data.business_health.leads_by_source)} />
-                        </>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card interactive>
-                <CardHeader className="flex-row items-baseline justify-between space-y-0">
-                  <CardTitle className="text-base">Appointments by status</CardTitle>
-                  <span className="text-xs text-muted-foreground">this period</span>
-                </CardHeader>
-                <CardContent>
-                  {appointmentsTotal === 0 ? (
-                    <EmptyState
-                      icon={BarChart3}
-                      title="No appointments booked"
-                      description="These appear once HIRA books one from a conversation, or you connect Google Calendar."
-                      className="py-8"
-                      action={
-                        <Button asChild size="sm" variant="outline">
-                          <Link href="/calendar">Go to Calendar</Link>
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <DonutChart
-                      title="Appointments by status"
-                      segments={Object.entries(data.business_health.appointments_by_status).map(
-                        ([key, value]) => ({
-                          key,
-                          label: APPOINTMENT_STATUS_BADGE[key as Appointment["status"]]?.label ?? key,
-                          value,
-                          state: APPOINTMENT_STATUS[key as Appointment["status"]] ?? "idle",
-                        }),
-                      )}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          <Card id="ai-performance">
-            <CardHeader>
-              <CardTitle className="text-base">AI Performance</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <AiMetricsSummary data={data.ai_performance} isPending={false} isError={false} />
-            </CardContent>
-          </Card>
-        </div>
+        <AnalyticsContent data={data} range={range} />
       )}
     </>
   );
 }
 
-function AiImpactStat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: React.ReactNode;
-  hint?: string;
-}) {
+function AnalyticsContent({ data, range }: { data: AnalyticsDashboard; range: AnalyticsRange }) {
+  const leadsTotal = Object.values(data.business_health.leads_by_stage).reduce((a, b) => a + b, 0);
+  const appointmentsTotal = Object.values(data.business_health.appointments_by_status).reduce((a, b) => a + b, 0);
+  const convDelta = periodTrendPct(data.trends.conversations);
+  const responseSlow =
+    data.overview.avg_response_time_seconds !== null && data.overview.avg_response_time_seconds > 600;
+
   return (
-    <div>
-      <div className="font-mono text-xl font-semibold tabular-nums tracking-tight">{value}</div>
-      <div className="mt-0.5 text-xs text-muted-foreground">{label}</div>
-      {hint && <div className="mt-0.5 text-[10px] text-muted-foreground/70">{hint}</div>}
+    <div className="space-y-6">
+      <div className="animate-fade-in-up" style={reveal(0)}>
+        <ExecutiveSummary data={data} />
+      </div>
+
+      <div className="animate-fade-in-up" style={reveal(1)}>
+        <HealthScore data={data} />
+      </div>
+
+      {/* KPI strip — Total conversations leads at a larger size; the other
+          four are today-only snapshots, so they get an honest "Today"
+          period instead of a fabricated delta. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6 animate-fade-in-up" style={reveal(2)}>
+        <div className="lg:col-span-2">
+          <StatCard
+            label="Total conversations"
+            countTo={data.overview.total_conversations}
+            icon={MessageSquare}
+            period={RANGE_PERIOD_LABEL[range]}
+            delta={convDelta !== null ? { pct: Math.abs(convDelta), direction: convDelta >= 0 ? "up" : "down" } : null}
+            sparkline={data.trends.conversations}
+            value={data.overview.total_conversations}
+          />
+        </div>
+        <StatCard
+          label="Messages today"
+          countTo={data.overview.messages_today}
+          icon={Send}
+          period="Today"
+          sparkline={data.trends.messages}
+          value={data.overview.messages_today}
+        />
+        <StatCard
+          label="AI responses today"
+          countTo={data.overview.ai_responses_today}
+          icon={CheckCheck}
+          period="Today"
+          value={data.overview.ai_responses_today}
+        />
+        <StatCard
+          label="Failed responses today"
+          countTo={data.overview.failed_responses_today}
+          icon={AlertTriangle}
+          period="Today"
+          tone="warning"
+          value={data.overview.failed_responses_today}
+        />
+        <StatCard
+          label="Avg response time"
+          icon={Clock}
+          period="Today"
+          value={formatDuration(data.overview.avg_response_time_seconds)}
+        />
+      </div>
+
+      {/* Hero — Conversation Trend, the page's visual centerpiece. */}
+      <Card interactive className="shadow-e3 animate-fade-in-up" style={reveal(3)}>
+        <CardHeader className="flex-row items-baseline justify-between space-y-0">
+          <CardTitle className="text-base">Conversation trend</CardTitle>
+          <span className="text-xs text-muted-foreground">{RANGE_PERIOD_LABEL[range]}</span>
+        </CardHeader>
+        <CardContent>
+          <TrendChart title="Conversations over time" data={data.trends.conversations} variant="hero" />
+        </CardContent>
+      </Card>
+
+      {/* Coverage + Response Health */}
+      <div className="grid gap-4 lg:grid-cols-2 animate-fade-in-up" style={reveal(4)}>
+        <Card interactive>
+          <CardHeader>
+            <CardTitle className="text-base">AI coverage</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DonutChart
+              title="AI coverage"
+              segments={[
+                { key: "handled", label: "Handled by AI", value: data.ai_impact.conversations_handled, state: "success" },
+                { key: "escalated", label: "Escalated to human", value: data.ai_impact.human_escalations, state: "waiting" },
+              ]}
+            />
+          </CardContent>
+        </Card>
+
+        <Card interactive>
+          <CardHeader>
+            <CardTitle className="text-base">Response health</CardTitle>
+          </CardHeader>
+          {/* Qualitative status, not a second copy of the KPI strip's raw
+              numbers — those already show "Failed responses today" and
+              "Avg response time" as bare figures above; repeating them here
+              verbatim would be redundant on the page and ambiguous to a
+              screen reader. This card answers "is it healthy", not "what's
+              the number". */}
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-2.5 text-sm">
+              <ActivityDot state={data.overview.failed_responses_today > 0 ? "error" : "success"} />
+              {data.overview.failed_responses_today > 0
+                ? `${data.overview.failed_responses_today} response${data.overview.failed_responses_today === 1 ? "" : "s"} failed today`
+                : "No failed responses today"}
+            </div>
+            <div className="flex items-center gap-2.5 text-sm">
+              <ActivityDot state={responseSlow ? "waiting" : "success"} />
+              {responseSlow
+                ? `Slower than usual — ${formatDuration(data.overview.avg_response_time_seconds)} avg`
+                : `Responding in ${formatDuration(data.overview.avg_response_time_seconds)} on average`}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="animate-fade-in-up" style={reveal(5)}>
+        <AiImpactCard impact={data.ai_impact} range={range} />
+      </div>
+
+      <div className="animate-fade-in-up" style={reveal(6)}>
+        <AiInsightsCard data={data} />
+      </div>
+
+      <div className="animate-fade-in-up" style={reveal(7)}>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Trends</h2>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card interactive>
+            <TrendCardHeader title="Messages over time" data={data.trends.messages} />
+            <CardContent>
+              <TrendChart title="Messages over time" data={data.trends.messages} />
+            </CardContent>
+          </Card>
+          <Card interactive>
+            <TrendCardHeader title="Leads over time" data={data.trends.leads} />
+            <CardContent>
+              <TrendChart title="Leads over time" data={data.trends.leads} />
+            </CardContent>
+          </Card>
+          <Card interactive>
+            <TrendCardHeader title="Appointments over time" data={data.trends.appointments} />
+            <CardContent>
+              <TrendChart title="Appointments over time" data={data.trends.appointments} />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div className="animate-fade-in-up" style={reveal(8)}>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Business breakdowns</h2>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card interactive>
+            <CardHeader className="flex-row items-baseline justify-between space-y-0">
+              <CardTitle className="text-base">Conversations by status</CardTitle>
+              <span className="text-xs text-muted-foreground">this period</span>
+            </CardHeader>
+            <CardContent>
+              <DonutChart
+                title="Conversations by status"
+                segments={Object.entries(data.business_health.conversations_by_status).map(
+                  ([key, value]) => {
+                    const badge = CONVERSATION_STATUS_BADGE[key as Conversation["status"]];
+                    return {
+                      key,
+                      label: badge?.label ?? key,
+                      value,
+                      state: VARIANT_TO_STATE[badge?.variant ?? "secondary"],
+                    };
+                  },
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          <Card interactive>
+            <CardHeader className="flex-row items-baseline justify-between space-y-0">
+              <CardTitle className="text-base">Leads by stage</CardTitle>
+              <span className="text-xs text-muted-foreground">full pipeline</span>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {leadsTotal === 0 ? (
+                <EmptyState
+                  icon={BarChart3}
+                  title="No leads yet"
+                  description="HIRA creates a lead automatically when a conversation shows buying intent."
+                  className="py-8"
+                  action={
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/leads">View Leads</Link>
+                    </Button>
+                  }
+                />
+              ) : (
+                <>
+                  <p className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">
+                    Ordered pipeline — kept as a bar; 7 sequential stages read better as a funnel than a
+                    donut
+                  </p>
+                  <BreakdownList
+                    entries={Object.entries(data.business_health.leads_by_stage)}
+                    labelFor={(key) => STAGE_LABEL[key as LeadStage] ?? key}
+                  />
+                  {Object.keys(data.business_health.leads_by_source).length > 0 && (
+                    <>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        By source
+                      </p>
+                      <BreakdownList entries={Object.entries(data.business_health.leads_by_source)} />
+                    </>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card interactive>
+            <CardHeader className="flex-row items-baseline justify-between space-y-0">
+              <CardTitle className="text-base">Appointments by status</CardTitle>
+              <span className="text-xs text-muted-foreground">this period</span>
+            </CardHeader>
+            <CardContent>
+              {appointmentsTotal === 0 ? (
+                <EmptyState
+                  icon={BarChart3}
+                  title="No appointments booked"
+                  description="These appear once HIRA books one from a conversation, or you connect Google Calendar."
+                  className="py-8"
+                  action={
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/calendar">Go to Calendar</Link>
+                    </Button>
+                  }
+                />
+              ) : (
+                <DonutChart
+                  title="Appointments by status"
+                  segments={Object.entries(data.business_health.appointments_by_status).map(
+                    ([key, value]) => ({
+                      key,
+                      label: APPOINTMENT_STATUS_BADGE[key as Appointment["status"]]?.label ?? key,
+                      value,
+                      state: APPOINTMENT_STATUS[key as Appointment["status"]] ?? "idle",
+                    }),
+                  )}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div id="ai-performance" className="animate-fade-in-up" style={reveal(9)}>
+        <AiPerformanceCard data={data.ai_performance} />
+      </div>
     </div>
   );
 }
@@ -362,7 +425,7 @@ function BreakdownList({
   }
   const max = Math.max(...entries.map(([, count]) => count));
   return (
-    <ul className="space-y-2">
+    <ul className="space-y-2.5">
       {entries.map(([key, count]) => (
         <li key={key} className="space-y-1">
           <div className="flex items-center justify-between text-sm">
@@ -371,7 +434,7 @@ function BreakdownList({
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-primary"
+              className="h-full rounded-full bg-foreground/75 transition-[width] duration-700 ease-out"
               style={{ width: `${max > 0 ? (count / max) * 100 : 0}%` }}
             />
           </div>

@@ -160,7 +160,7 @@ describe("AnalyticsPage", () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue(POPULATED_DASHBOARD);
     renderWithProviders(<AnalyticsPage />);
 
-    await screen.findByText("Business health");
+    await screen.findByText("This period, at a glance");
     expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/placeholder/i)).not.toBeInTheDocument();
   });
@@ -176,23 +176,24 @@ describe("AnalyticsPage", () => {
     const label = await screen.findByText("Total conversations");
     const statCard = label.closest<HTMLElement>(".rounded-2xl")!;
     expect(within(statCard).getByText("128")).toBeInTheDocument();
+    // Avg response time (84s) renders as "1m" in the KPI strip; Response
+    // Health phrases the same real value in its own sentence rather than
+    // repeating the bare "1m" a second time on the page (Sprint 85).
     expect(screen.getByText("1m")).toBeInTheDocument();
+    expect(screen.getByText(/Responding in 1m on average/)).toBeInTheDocument();
   });
 
-  it("shows business health: WhatsApp status, onboarding, knowledge base, alerts", async () => {
+  it("shows Executive Health Score signals derived from real business health fields", async () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue(POPULATED_DASHBOARD);
     renderWithProviders(<AnalyticsPage />);
 
-    const card = (await screen.findByText("Business health")).closest<HTMLElement>(".rounded-2xl")!;
-    expect(within(card).getByText("WhatsApp Connected")).toBeInTheDocument();
-    expect(within(card).getByText(/Onboarding/)).toBeInTheDocument();
-    // "Live" now renders as its own StatusPill (M15A), not a plain text run.
-    expect(within(card).getByText("Live")).toBeInTheDocument();
-    expect(within(card).getByText(/18 published, 2 draft/)).toBeInTheDocument();
-    expect(within(card).getByText("No alerts")).toBeInTheDocument();
+    const list = await screen.findByRole("list", { name: /business health signals/i });
+    expect(within(list).getByText("Onboarding Live")).toBeInTheDocument();
+    expect(within(list).getByText("WhatsApp Connected")).toBeInTheDocument();
+    expect(within(list).getByText("Knowledge Base Healthy")).toBeInTheDocument();
   });
 
-  it("shows real alert labels when the business has active alerts", async () => {
+  it("reflects real alerts in the Executive Health Score", async () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue({
       ...POPULATED_DASHBOARD,
       business_health: {
@@ -202,7 +203,26 @@ describe("AnalyticsPage", () => {
     });
     renderWithProviders(<AnalyticsPage />);
 
-    expect(await screen.findByText("No Knowledge Base · AI failures")).toBeInTheDocument();
+    const list = await screen.findByRole("list", { name: /business health signals/i });
+    expect(within(list).getByText("Knowledge Base Empty")).toBeInTheDocument();
+    expect(within(list).getByText("AI Failures Today")).toBeInTheDocument();
+  });
+
+  it("shows real alert labels, each linking to where it gets fixed, in Executive Summary", async () => {
+    vi.mocked(api.getAnalyticsDashboard).mockResolvedValue({
+      ...POPULATED_DASHBOARD,
+      business_health: {
+        ...POPULATED_DASHBOARD.business_health,
+        alerts: ["missing_knowledge_base", "ai_failures"],
+      },
+    });
+    renderWithProviders(<AnalyticsPage />);
+
+    expect(await screen.findByRole("link", { name: /No Knowledge Base/ })).toHaveAttribute(
+      "href",
+      "/knowledge-base",
+    );
+    expect(screen.getByRole("link", { name: /AI failures/ })).toHaveAttribute("href", "#ai-performance");
   });
 
   it("marks AI Impact with the AI-identity spine and shows real figures", async () => {
@@ -220,12 +240,16 @@ describe("AnalyticsPage", () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue(POPULATED_DASHBOARD);
     renderWithProviders(<AnalyticsPage />);
 
-    await screen.findByText("Conversations over time");
+    // "Conversations over time" is the hero chart's accessible title (used
+    // in its aria-label), not its visible heading — the visible card title
+    // is "Conversation trend" (Sprint 85).
+    await screen.findByText("Conversation trend");
     const charts = screen.getAllByRole("img", { name: /over time/i });
     expect(charts.length).toBe(4);
-    // 4 trend charts + 2 donuts (conversation/appointment status), each with
-    // its own accessible table fallback.
-    expect(screen.getAllByText("View as table").length).toBe(6);
+    // 4 trend charts + 3 donuts (AI coverage, conversation status, appointment
+    // status — Sprint 85 added the AI coverage donut), each with its own
+    // accessible table fallback.
+    expect(screen.getAllByText("View as table").length).toBe(7);
   });
 
   it("renders operational/customer/appointment breakdowns from real counts", async () => {
@@ -240,13 +264,17 @@ describe("AnalyticsPage", () => {
     expect(screen.getAllByText("Booked").length).toBeGreaterThan(0); // APPOINTMENT_STATUS_BADGE label
   });
 
-  it("renders AI Performance using the same shared summary Ops uses", async () => {
+  it("renders AI Performance as grouped diagnostics with real reliability figures", async () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue(POPULATED_DASHBOARD);
     renderWithProviders(<AnalyticsPage />);
 
     expect(await screen.findByText("AI Performance")).toBeInTheDocument();
     expect(screen.getByText("Turns traced")).toBeInTheDocument();
     expect(screen.getByText("book_appointment")).toBeInTheDocument();
+    // POPULATED_DASHBOARD has real failures (failed_tool_executions: 2,
+    // governance_blocks: 1), so the section should say so, not "operating
+    // normally".
+    expect(screen.getByText("Needs a look")).toBeInTheDocument();
   });
 
   it("switching the range re-fetches with the new range and issues exactly one request", async () => {
@@ -254,7 +282,7 @@ describe("AnalyticsPage", () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue(POPULATED_DASHBOARD);
     renderWithProviders(<AnalyticsPage />);
 
-    await screen.findByText("Business health");
+    await screen.findByText("This period, at a glance");
     expect(api.getAnalyticsDashboard).toHaveBeenCalledTimes(1);
     expect(api.getAnalyticsDashboard).toHaveBeenCalledWith(expect.any(Function), "30d");
 
