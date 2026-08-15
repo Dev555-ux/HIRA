@@ -11,3 +11,16 @@ export const ALERT_LABEL: Record<FounderAlert, string> = {
   ai_failures: "AI failures",
   no_recent_activity: "No recent activity",
 };
+
+// Where each alert actually gets fixed — same alert set business_health
+// already computes, just pointed at a real route each time instead of only
+// being displayed as a badge. Sprint 85: originated in
+// analytics-executive-summary.tsx; moved here (Sprint 86) once Dashboard's
+// Needs Attention needed the same mapping — single source rather than two
+// copies that could drift.
+export const ALERT_HREF: Record<FounderAlert, string> = {
+  whatsapp_disconnected: "/connect-whatsapp",
+  missing_knowledge_base: "/knowledge-base",
+  ai_failures: "#ai-performance",
+  no_recent_activity: "/inbox",
+};

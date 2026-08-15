@@ -91,6 +91,8 @@ export function StatCard({
   period,
   delta,
   countTo,
+  prefix,
+  suffix,
   sparkline,
   tone = "neutral",
 }: {
@@ -105,6 +107,10 @@ export function StatCard({
   delta?: { pct: number; direction: "up" | "down" } | null;
   /** When set, animates the displayed number from 0 to this value instead of rendering `value` statically. */
   countTo?: number;
+  /** Rendered before the animated number, e.g. "≈" — only applies when `countTo` is set. */
+  prefix?: string;
+  /** Rendered after the animated number, e.g. "%" or "h" — only applies when `countTo` is set. */
+  suffix?: string;
   /** Optional real daily series for a mini trend line under the number. */
   sparkline?: AnalyticsTrendPoint[];
   /** "warning" tints the icon chip for metrics that are a caution signal, not a plain volume metric. */
@@ -121,7 +127,15 @@ export function StatCard({
               <Skeleton className="h-9 w-16" />
             ) : (
               <p className="animate-fade-in text-3xl font-semibold tabular-nums tracking-tight">
-                {countTo !== undefined ? animated.toLocaleString() : value}
+                {countTo !== undefined ? (
+                  <>
+                    {prefix}
+                    {animated.toLocaleString()}
+                    {suffix}
+                  </>
+                ) : (
+                  value
+                )}
               </p>
             )}
             <p className="mt-1.5 text-sm text-muted-foreground">{label}</p>

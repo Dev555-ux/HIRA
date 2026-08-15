@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import type { ActivityState } from "@/components/ui/activity-dot";
+import { cn } from "@/lib/utils";
 
 // ActivityState -> a real color value (not a Tailwind class) for use inside
 // an SVG gradient stop. Same semantic mapping as ActivityDot's dotColor —
@@ -36,7 +37,23 @@ export interface DonutSegment {
 // each slice now also takes a thin gradient stroke of its own fill (not a
 // flat outline) for a touch more edge definition — still no literal 3D,
 // still no WebGL, per Sprint 85's explicit constraint.
-export function DonutChart({ title, segments }: { title: string; segments: DonutSegment[] }) {
+export function DonutChart({
+  title,
+  segments,
+  size = 148,
+  showLegend = true,
+}: {
+  title: string;
+  segments: DonutSegment[];
+  /** Sprint 86: the Dashboard hero renders this larger (~200px) as its AI
+   *  coverage visual — defaults to the original fixed size so every
+   *  existing caller is pixel-identical. */
+  size?: number;
+  /** Sprint 86: the hero wants a clean iconic ring with no legend list next
+   *  to it — the real per-segment values still live in the accessible
+   *  aria-label and the "View as table" fallback either way. */
+  showLegend?: boolean;
+}) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const gradId = useId();
   const total = segments.reduce((sum, s) => sum + s.value, 0);
@@ -51,7 +68,10 @@ export function DonutChart({ title, segments }: { title: string; segments: Donut
   return (
     <div>
       <div className="flex items-center gap-5" role="img" aria-label={summary}>
-        <div className="relative size-[148px] shrink-0" style={{ filter: "drop-shadow(0 6px 14px rgb(0 0 0 / 0.12))" }}>
+        <div
+          className="relative shrink-0"
+          style={{ width: size, height: size, filter: "drop-shadow(0 6px 14px rgb(0 0 0 / 0.12))" }}
+        >
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <defs>
@@ -90,10 +110,13 @@ export function DonutChart({ title, segments }: { title: string; segments: Donut
             </PieChart>
           </ResponsiveContainer>
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <div className="text-2xl font-bold tabular-nums tracking-tight">{total}</div>
+            <div className={cn("font-bold tabular-nums tracking-tight", size >= 180 ? "text-4xl" : "text-2xl")}>
+              {total}
+            </div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">total</div>
           </div>
         </div>
+        {showLegend && (
         <ul className="flex-1 space-y-1.5">
           {segments.map((s, i) => {
             const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
@@ -116,6 +139,7 @@ export function DonutChart({ title, segments }: { title: string; segments: Donut
             );
           })}
         </ul>
+        )}
       </div>
       <details className="mt-2">
         <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">

@@ -2,21 +2,10 @@ import { CheckCircle2, MessageSquare, ShieldAlert, Sparkles } from "lucide-react
 import Link from "next/link";
 import { aiSurfaceClassName } from "@/components/ui/ai-surface";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { ALERT_LABEL } from "@/lib/alerts";
+import { ALERT_HREF, ALERT_LABEL } from "@/lib/alerts";
 import { aiCoveragePct, periodTrendPct } from "@/lib/analytics-insights";
 import { cn } from "@/lib/utils";
-import type { AnalyticsDashboard, FounderAlert } from "@/lib/types";
-
-// Where each alert actually gets fixed — same alert set business_health
-// already computes (business_alerts() in app/services/analytics.py, shared
-// with Ops via lib/alerts.ts), just pointed at a real route each time
-// instead of only being displayed as a badge.
-const ALERT_HREF: Record<FounderAlert, string> = {
-  whatsapp_disconnected: "/connect-whatsapp",
-  missing_knowledge_base: "/knowledge-base",
-  ai_failures: "#ai-performance",
-  no_recent_activity: "/inbox",
-};
+import type { AnalyticsDashboard } from "@/lib/types";
 
 // The 3-second read at the top of Analytics: what happened, what deserves
 // attention, what did it save. Three columns, three real answers — no new

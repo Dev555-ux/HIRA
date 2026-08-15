@@ -551,6 +551,25 @@
   animation: signature-pulse 1.8s linear infinite;
 }
 
+/* Sprint 86 — a slow ambient "alive" breath for the Dashboard hero's AI
+   coverage visual (a ring behind the donut, low-opacity, never on the data
+   itself). Reuses --motion-ambient rather than a new duration; collapses
+   under the reduced-motion guard below like every other animation here. */
+@keyframes ambient-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.15;
+  }
+}
+@utility animate-ambient-pulse {
+  animation: ambient-pulse var(--motion-ambient) ease-in-out infinite;
+}
+
 /* ============================================================================
    TYPOGRAPHY ROLES (Frontend PR1) — the six-level hierarchy as reusable classes
    (DESIGN-MOTION-001 companion; type roles). Named .type-* to avoid colliding

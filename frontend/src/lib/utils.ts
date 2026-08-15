@@ -38,6 +38,19 @@ export function describeOnboardingStatus(
     : { label: "Setting up", variant: "secondary" };
 }
 
+// A response-time duration ("5m", "1h") — distinct from formatRelativeTime's
+// "10m ago" (a point in time relative to now). Moved here (Sprint 86) from
+// being duplicated locally on the Analytics page; Dashboard's AI Workspace
+// panel needed the same formatting for the same real field
+// (overview.avg_response_time_seconds).
+export function formatDuration(seconds: number | null): string {
+  if (seconds == null) return "—";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.round(minutes / 60)}h`;
+}
+
 // Per-message chat timestamp ("2:34 PM"), distinct from formatRelativeTime's
 // "10m ago" — a persistent transcript reads better with a fixed clock time
 // than a relative one that changes every time you look at it.

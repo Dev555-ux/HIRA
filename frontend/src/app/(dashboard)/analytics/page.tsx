@@ -7,8 +7,8 @@ import { AiImpactCard } from "@/components/analytics-ai-impact";
 import { AiInsightsCard } from "@/components/analytics-ai-insights";
 import { AiPerformanceCard } from "@/components/analytics-ai-performance";
 import { ExecutiveSummary } from "@/components/analytics-executive-summary";
-import { HealthScore } from "@/components/analytics-health-score";
 import { EmptyState } from "@/components/empty-state";
+import { HealthScore } from "@/components/health-score";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { ActivityDot } from "@/components/ui/activity-dot";
@@ -23,6 +23,7 @@ import { APPOINTMENT_STATUS, APPOINTMENT_STATUS_BADGE } from "@/lib/appointments
 import { CONVERSATION_STATUS_BADGE } from "@/lib/conversations";
 import { STAGE_LABEL } from "@/lib/leads";
 import { VARIANT_TO_STATE } from "@/lib/status";
+import { formatDuration } from "@/lib/utils";
 import type {
   AnalyticsDashboard,
   AnalyticsRange,
@@ -43,14 +44,6 @@ const RANGE_PERIOD_LABEL: Record<AnalyticsRange, string> = {
   "30d": "Last 30 Days",
   "90d": "Last 90 Days",
 };
-
-function formatDuration(seconds: number | null): string {
-  if (seconds == null) return "—";
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.round(minutes / 60)}h`;
-}
 
 // Sprint 85 stagger — each top-level section fades/slides in with a small
 // per-index delay via the existing animate-fade-in-up utility. Fill-mode
