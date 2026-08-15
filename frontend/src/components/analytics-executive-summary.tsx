@@ -1,9 +1,10 @@
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, MessageSquare, ShieldAlert, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { aiSurfaceClassName } from "@/components/ui/ai-surface";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { ALERT_LABEL } from "@/lib/alerts";
-import { periodTrendPct } from "@/lib/analytics-insights";
+import { aiCoveragePct, periodTrendPct } from "@/lib/analytics-insights";
+import { cn } from "@/lib/utils";
 import type { AnalyticsDashboard, FounderAlert } from "@/lib/types";
 
 // Where each alert actually gets fixed — same alert set business_health
@@ -23,47 +24,46 @@ const ALERT_HREF: Record<FounderAlert, string> = {
 // the page already fetched. Sprint 84.3.
 export function ExecutiveSummary({ data }: { data: AnalyticsDashboard }) {
   const { overview, ai_impact, business_health, trends } = data;
-  const aiHandledPct =
-    overview.total_conversations > 0
-      ? Math.round((ai_impact.conversations_handled / overview.total_conversations) * 100)
-      : null;
+  const aiHandledPct = aiCoveragePct(overview, ai_impact);
   const trendPct = periodTrendPct(trends.conversations);
 
   return (
-    <Card className={aiSurfaceClassName}>
+    <Card className={cn(aiSurfaceClassName, "shadow-e3")}>
       <CardHeader>
         <CardTitle className="text-base">This period, at a glance</CardTitle>
       </CardHeader>
-      <div className="grid divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-        <div className="p-6 pt-0 sm:pt-6">
-          <p className="type-caption font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className="grid gap-8 p-6 pt-0 sm:grid-cols-3">
+        <div>
+          <div className="flex items-center gap-2 type-caption font-semibold uppercase tracking-wide text-muted-foreground">
+            <MessageSquare className="size-3.5 text-brand" aria-hidden="true" />
             What happened
-          </p>
-          <p className="mt-2 text-lg font-semibold tracking-tight tabular-nums">
-            {overview.total_conversations} conversation{overview.total_conversations === 1 ? "" : "s"}
+          </div>
+          <p className="mt-2.5 text-4xl font-bold tracking-tight tabular-nums">
+            {overview.total_conversations}
             {trendPct !== null && (
-              <span className={trendPct >= 0 ? "text-success" : "text-muted-foreground"}>
-                {" "}
+              <span className={cn("ml-2 text-lg font-semibold", trendPct >= 0 ? "text-success" : "text-muted-foreground")}>
                 {trendPct >= 0 ? "↑" : "↓"} {Math.abs(trendPct)}%
               </span>
             )}
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            conversation{overview.total_conversations === 1 ? "" : "s"} ·{" "}
             {aiHandledPct === null
-              ? "No conversations yet this period."
-              : `AI handled ${aiHandledPct}% of them without a human.`}
+              ? "no conversations yet this period."
+              : `AI handled ${aiHandledPct}% without a human.`}
             {trendPct !== null && (trendPct >= 0 ? " Picking up across this period." : " Slowing across this period.")}
           </p>
         </div>
 
-        <div className="p-6 pt-0 sm:pt-6">
-          <p className="type-caption font-semibold uppercase tracking-wide text-muted-foreground">
+        <div>
+          <div className="flex items-center gap-2 type-caption font-semibold uppercase tracking-wide text-muted-foreground">
+            <ShieldAlert className="size-3.5 text-brand" aria-hidden="true" />
             Deserves attention
-          </p>
+          </div>
           {business_health.alerts.length === 0 ? (
-            <div className="mt-2 flex items-center gap-2 text-sm font-medium text-success">
-              <CheckCircle2 className="size-4 shrink-0" />
-              All clear — nothing needs attention.
+            <div className="mt-2.5 flex items-center gap-2 text-2xl font-bold tracking-tight text-success">
+              <CheckCircle2 className="size-6 shrink-0" aria-hidden="true" />
+              All clear
             </div>
           ) : (
             <ul className="mt-2 space-y-1">
@@ -81,18 +81,20 @@ export function ExecutiveSummary({ data }: { data: AnalyticsDashboard }) {
               ))}
             </ul>
           )}
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {business_health.alerts.length === 0
+              ? "Nothing needs attention right now."
+              : `${business_health.alerts.length} thing${business_health.alerts.length === 1 ? "" : "s"} to look at.`}
+          </p>
         </div>
 
-        <div className="p-6 pt-0 sm:pt-6">
-          <p className="type-caption font-semibold uppercase tracking-wide text-muted-foreground">
+        <div>
+          <div className="flex items-center gap-2 type-caption font-semibold uppercase tracking-wide text-muted-foreground">
+            <Sparkles className="size-3.5 text-brand" aria-hidden="true" />
             Work saved
-          </p>
-          <p className="mt-2 text-lg font-semibold tracking-tight tabular-nums">
-            ≈{ai_impact.estimated_hours_saved}h
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Estimated from AI-handled volume — not a measured benchmark.
-          </p>
+          </div>
+          <p className="mt-2.5 text-4xl font-bold tracking-tight tabular-nums">≈{ai_impact.estimated_hours_saved}h</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">Estimated from AI-handled volume — not a measured benchmark.</p>
         </div>
       </div>
     </Card>

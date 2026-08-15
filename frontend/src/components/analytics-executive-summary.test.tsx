@@ -59,8 +59,8 @@ function makeData(overrides: Partial<AnalyticsDashboard> = {}): AnalyticsDashboa
 describe("ExecutiveSummary", () => {
   it("shows the real conversation count and AI-handled percentage", () => {
     render(<ExecutiveSummary data={makeData()} />);
-    expect(screen.getByText(/20 conversations/)).toBeInTheDocument();
-    expect(screen.getByText(/AI handled 90% of them/)).toBeInTheDocument();
+    expect(screen.getByText("20", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/AI handled 90% without a human/)).toBeInTheDocument();
   });
 
   it("shows all-clear when there are no alerts", () => {

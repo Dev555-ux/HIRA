@@ -2,12 +2,27 @@ import { AlertTriangle, CalendarDays, CheckCheck, TrendingUp } from "lucide-reac
 import Link from "next/link";
 import { aiSurfaceClassName } from "@/components/ui/ai-surface";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { dayOfWeekPeak } from "@/lib/analytics-insights";
+import { aiCoveragePct, dayOfWeekPeak, kbGroundedPct } from "@/lib/analytics-insights";
+import { cn } from "@/lib/utils";
 import type { AnalyticsDashboard } from "@/lib/types";
 
+// Distinct visual treatment per category — success shouldn't look like a
+// warning. Every category still draws only from the existing semantic color
+// tokens (success/warning/brand), never a new hue.
+type InsightCategory = "success" | "opportunity" | "recommendation" | "attention";
+
+const CATEGORY_STYLE: Record<InsightCategory, { chip: string; icon: string; kicker: string }> = {
+  success: { chip: "bg-success/15 ring-success/20", icon: "text-success", kicker: "text-success" },
+  opportunity: { chip: "bg-brand/15 ring-brand/20", icon: "text-brand", kicker: "text-brand" },
+  recommendation: { chip: "bg-brand/15 ring-brand/20", icon: "text-brand", kicker: "text-brand" },
+  attention: { chip: "bg-warning/15 ring-warning/20", icon: "text-warning", kicker: "text-warning" },
+};
+
 interface Insight {
-  kicker: "What happened" | "Why" | "What to do next";
+  category: InsightCategory;
+  kicker: "Success" | "Opportunity" | "Recommendation" | "Needs attention";
   icon: typeof TrendingUp;
+  title: string;
   body: React.ReactNode;
   action?: { label: string; href: string };
 }
@@ -29,10 +44,12 @@ export function AiInsightsCard({ data }: { data: AnalyticsDashboard }) {
 
   const insights: Insight[] = [];
 
-  const aiHandledPct = Math.round((ai_impact.conversations_handled / overview.total_conversations) * 100);
+  const aiHandledPct = aiCoveragePct(overview, ai_impact) ?? 0;
   insights.push({
-    kicker: "What happened",
+    category: "success",
+    kicker: "Success",
     icon: CheckCheck,
+    title: "AI is handling most conversations",
     body: (
       <>
         AI handled <b className="font-semibold">{aiHandledPct}%</b> of conversations this period — only{" "}
@@ -44,8 +61,10 @@ export function AiInsightsCard({ data }: { data: AnalyticsDashboard }) {
   const peakLeadDay = dayOfWeekPeak(trends.leads);
   if (peakLeadDay) {
     insights.push({
-      kicker: "What happened",
+      category: "opportunity",
+      kicker: "Opportunity",
       icon: CalendarDays,
+      title: `Leads peak on ${peakLeadDay}s`,
       body: (
         <>
           Leads peaked on <b className="font-semibold">{peakLeadDay}s</b> this period.
@@ -55,11 +74,13 @@ export function AiInsightsCard({ data }: { data: AnalyticsDashboard }) {
     });
   }
 
-  if (ai_impact.ai_responses > 0) {
-    const kbPct = Math.round((ai_impact.kb_grounded_replies / ai_impact.ai_responses) * 100);
+  const kbPct = kbGroundedPct(ai_impact);
+  if (kbPct !== null) {
     insights.push({
-      kicker: "Why",
+      category: "recommendation",
+      kicker: "Recommendation",
       icon: TrendingUp,
+      title: "Knowledge Base is reducing escalations",
       body: (
         <>
           <b className="font-semibold">{kbPct}%</b> of AI responses were grounded in your Knowledge Base, while{" "}
@@ -74,8 +95,10 @@ export function AiInsightsCard({ data }: { data: AnalyticsDashboard }) {
 
   if (overview.failed_responses_today > 0) {
     insights.push({
-      kicker: "What to do next",
+      category: "attention",
+      kicker: "Needs attention",
       icon: AlertTriangle,
+      title: "AI responses failed today",
       body: (
         <>
           <b className="font-semibold">{overview.failed_responses_today}</b> AI response
@@ -87,31 +110,35 @@ export function AiInsightsCard({ data }: { data: AnalyticsDashboard }) {
   }
 
   return (
-    <Card className={aiSurfaceClassName}>
+    <Card className={cn(aiSurfaceClassName, "shadow-e2")}>
       <CardHeader>
         <CardTitle className="text-base">AI Insights</CardTitle>
       </CardHeader>
       <CardContent>
         <ul className="relative space-y-1 before:absolute before:bottom-4 before:left-[15px] before:top-4 before:w-px before:bg-gradient-to-b before:from-brand/35 before:to-transparent">
-          {insights.map((insight, i) => (
-            <li key={i} className="relative flex items-start gap-3.5 py-2.5">
-              <span className="z-10 flex size-8 shrink-0 items-center justify-center rounded-full bg-brand/15 ring-1 ring-inset ring-brand/20">
-                <insight.icon className="size-3.5 text-brand" />
-              </span>
-              <div className="min-w-0">
-                <p className="type-caption font-semibold uppercase tracking-wide text-brand">{insight.kicker}</p>
-                <p className="mt-0.5 text-sm leading-relaxed">{insight.body}</p>
-                {insight.action && (
-                  <Link
-                    href={insight.action.href}
-                    className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-brand hover:underline"
-                  >
-                    {insight.action.label} →
-                  </Link>
-                )}
-              </div>
-            </li>
-          ))}
+          {insights.map((insight, i) => {
+            const style = CATEGORY_STYLE[insight.category];
+            return (
+              <li key={i} className="relative flex items-start gap-3.5 py-2.5">
+                <span className={cn("z-10 flex size-8 shrink-0 items-center justify-center rounded-full ring-1 ring-inset", style.chip)}>
+                  <insight.icon className={cn("size-3.5", style.icon)} aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className={cn("type-caption font-semibold uppercase tracking-wide", style.kicker)}>{insight.kicker}</p>
+                  <p className="mt-0.5 text-sm font-semibold">{insight.title}</p>
+                  <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{insight.body}</p>
+                  {insight.action && (
+                    <Link
+                      href={insight.action.href}
+                      className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-brand hover:underline"
+                    >
+                      {insight.action.label} →
+                    </Link>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
         <p className="mt-4 border-t pt-3.5 text-xs text-muted-foreground">
           Computed from this period&apos;s data — no LLM call, no new endpoint.
