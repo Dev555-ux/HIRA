@@ -11,7 +11,7 @@ const ROLE_LABEL: Record<string, string> = {
   bookkeeper: "Bookkeeper",
 };
 
-function roleLabel(role: string): string {
+export function roleLabel(role: string): string {
   return ROLE_LABEL[role] ?? role;
 }
 
