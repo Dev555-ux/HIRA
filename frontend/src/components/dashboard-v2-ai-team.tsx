@@ -4,7 +4,7 @@ import { roleLabel } from "@/components/ai-metrics-section";
 import { AIAvatar } from "@/components/ui/ai-avatar";
 import { MemoryBadge } from "@/components/ui/memory-badge";
 import type { RosterEntry } from "@/components/dashboard-v2-hero";
-import { formatDuration } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 
 // Dashboard V2's AI Workspace — a real team roster instead of a stat list.
 // Every row is `RosterEntry` data the page derived from `ai_performance.
@@ -13,6 +13,11 @@ import { formatDuration } from "@/lib/utils";
 // or "confidence" score — no such field exists on FounderAiMetrics, so
 // none is shown (same "omit rather than invent" rule V1's Recent Leads
 // already follows for AI recommendation/confidence).
+//
+// `variant="console"` (Sprint 89, Dashboard V3 only — default "panel" keeps
+// every existing caller byte-identical) leans the same data into a control-
+// panel reading: a recessed inset surface instead of a flat card, a live
+// status dot, tabular-numeric readouts. No new data, no new component.
 export function AiTeamPanel({
   roster,
   totalTurns,
@@ -20,6 +25,7 @@ export function AiTeamPanel({
   escalations,
   kbPublished,
   learnedTodayCount,
+  variant = "panel",
 }: {
   /** Active roles only (count > 0) — a "0 turns" row here would be
    *  telemetry with no outcome, not useful list content. The hero's
@@ -34,12 +40,25 @@ export function AiTeamPanel({
   escalations: number;
   kbPublished: number;
   learnedTodayCount: number;
+  variant?: "panel" | "console";
 }) {
+  const isConsole = variant === "console";
+
   return (
-    <div className="flex h-full flex-col rounded-2xl bg-card p-6 shadow-e2 sm:p-7">
+    <div
+      className={cn(
+        "flex h-full flex-col rounded-2xl p-6 sm:p-7",
+        isConsole ? "bg-muted/30 shadow-e1 ring-1 ring-inset ring-border/60" : "bg-card shadow-e2",
+      )}
+    >
       <div className="mb-5 flex items-center justify-between">
-        <h2 className="type-title">AI workspace</h2>
-        <span className="text-xs text-muted-foreground">
+        <h2 className={isConsole ? "type-caption font-semibold uppercase tracking-wide text-muted-foreground" : "type-title"}>
+          AI workspace
+        </h2>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {isConsole && totalTurns > 0 && (
+            <span className="size-1.5 rounded-full bg-success animate-ambient-pulse" aria-hidden="true" />
+          )}
           {totalTurns > 0 ? `${totalTurns} turns · Last 30 days` : "Last 30 days"}
         </span>
       </div>
@@ -80,14 +99,14 @@ export function AiTeamPanel({
             <Clock className="size-3.5" aria-hidden="true" />
             Avg response time
           </span>
-          <span className="text-sm font-semibold">{formatDuration(avgResponseSeconds)}</span>
+          <span className="text-sm font-semibold tabular-nums">{formatDuration(avgResponseSeconds)}</span>
         </div>
         <div className="flex items-center justify-between gap-3 py-1.5">
           <span className="flex items-center gap-2 text-sm text-muted-foreground">
             <AlertTriangle className={escalations > 0 ? "size-3.5 text-warning" : "size-3.5"} aria-hidden="true" />
             Escalated to a human
           </span>
-          <span className={escalations > 0 ? "text-sm font-semibold text-warning" : "text-sm font-semibold"}>
+          <span className={cn("text-sm font-semibold tabular-nums", escalations > 0 && "text-warning")}>
             {escalations}
           </span>
         </div>
@@ -99,7 +118,7 @@ export function AiTeamPanel({
             </Link>
           </span>
           <span className="flex items-center gap-2">
-            <span className="text-sm font-semibold">{kbPublished} published</span>
+            <span className="text-sm font-semibold tabular-nums">{kbPublished} published</span>
             {learnedTodayCount > 0 && <MemoryBadge>+{learnedTodayCount} today</MemoryBadge>}
           </span>
         </div>

@@ -62,7 +62,7 @@ function radialPosition(index: number, total: number, radius = 36): { x: number;
 // permanent "alive" signal, not a scripted sequence) — the honest read of
 // 30-day aggregate data, since there's no real live "who's working right
 // now" signal to show.
-function AiNetwork({ roster, hubState }: { roster: RosterEntry[]; hubState: ActivityState }) {
+export function AiNetwork({ roster, hubState }: { roster: RosterEntry[]; hubState: ActivityState }) {
   const anyActive = roster.some((r) => r.active);
 
   if (!anyActive) {

@@ -1,5 +1,6 @@
 import { Users } from "lucide-react";
 import Link from "next/link";
+import { ActivityDot } from "@/components/ui/activity-dot";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { STAGE_LABEL, STAGE_STATUS } from "@/lib/leads";
@@ -27,7 +28,23 @@ function customerName(customer: Customer): string {
 // relationship-health score is shown — neither exists on this data, and
 // inventing one would violate the no-fake-data constraint this whole
 // rebuild operates under.
-export function RecentCustomersPanel({ customers }: { customers: Customer[] }) {
+//
+// `variant="feed"` (Sprint 90, Dashboard V3 only — default "list" keeps
+// every existing caller byte-identical) reshapes the same rows into a
+// messaging-app contact list: a larger avatar, the timestamp promoted to
+// where a chat app puts it (top-right, next to the name), the lead stage
+// demoted from a chip to a small meaningful dot so the row reads as a
+// person, not a CRM record. Same data, same link, same empty-state icon —
+// presentation only.
+export function RecentCustomersPanel({
+  customers,
+  variant = "list",
+}: {
+  customers: Customer[];
+  variant?: "list" | "feed";
+}) {
+  const isFeed = variant === "feed";
+
   return (
     <div className="h-full rounded-2xl bg-card p-6 shadow-e2 sm:p-7">
       <div className="mb-5 flex items-center justify-between">
@@ -40,8 +57,51 @@ export function RecentCustomersPanel({ customers }: { customers: Customer[] }) {
       {customers.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-8 text-center">
           <Users className="size-6 text-muted-foreground" aria-hidden="true" />
-          <p className="text-sm text-muted-foreground">No customers yet — new ones appear here as they come in.</p>
+          <p className="text-sm text-muted-foreground">
+            {isFeed
+              ? "HIRA is waiting for your first conversation."
+              : "No customers yet — new ones appear here as they come in."}
+          </p>
         </div>
+      ) : isFeed ? (
+        <ul className="-mx-2.5">
+          {customers.map((customer) => {
+            const name = customerName(customer);
+            return (
+              <li key={customer.id}>
+                <Link
+                  href="/customers"
+                  className="group flex items-center gap-3.5 rounded-xl px-2.5 py-3 transition-colors duration-150 hover:bg-accent/70 focus-visible:focus-ring"
+                >
+                  <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary ring-1 ring-inset ring-border/40 transition-transform duration-150 group-hover:scale-105">
+                    {initials(name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="truncate text-sm font-semibold">{name}</p>
+                      {customer.last_message_at && (
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          {formatRelativeTime(customer.last_message_at)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {customer.conversation_count} {customer.conversation_count === 1 ? "conversation" : "conversations"}
+                      {customer.lead && ` · ${STAGE_LABEL[customer.lead.stage]}`}
+                    </p>
+                  </div>
+                  {customer.lead && (
+                    <ActivityDot
+                      state={STAGE_STATUS[customer.lead.stage]}
+                      label={STAGE_LABEL[customer.lead.stage]}
+                      className="mt-1 shrink-0"
+                    />
+                  )}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       ) : (
         <ul className="space-y-1">
           {customers.map((customer) => {

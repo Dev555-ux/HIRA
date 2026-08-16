@@ -24,7 +24,19 @@ function initials(name: string): string {
 // PREVIEW_ROWS }) for the hero's "N new leads today" count, but the rows
 // themselves went unused. This surfaces those same real rows instead of a
 // second request.
-export function RecentLeadsCard({ leads, className }: { leads: Lead[]; className?: string }) {
+//
+// `polished` (Sprint 90, Dashboard V3 only — default false keeps V1's
+// `/dashboard` byte-identical) tightens the row's hover/focus micro-
+// interactions and softens the empty state copy. No layout or data change.
+export function RecentLeadsCard({
+  leads,
+  className,
+  polished = false,
+}: {
+  leads: Lead[];
+  className?: string;
+  polished?: boolean;
+}) {
   return (
     <Card interactive className={cn("h-full", className)}>
       <CardHeader className="flex-row items-center justify-between">
@@ -37,7 +49,11 @@ export function RecentLeadsCard({ leads, className }: { leads: Lead[]; className
         {leads.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
             <UserPlus className="size-6 text-muted-foreground" aria-hidden="true" />
-            <p className="text-sm text-muted-foreground">No leads yet — new ones appear here as they come in.</p>
+            <p className="text-sm text-muted-foreground">
+              {polished
+                ? "No leads yet — HIRA will log them here the moment one comes in."
+                : "No leads yet — new ones appear here as they come in."}
+            </p>
           </div>
         ) : (
           <ul className="space-y-1">
@@ -47,7 +63,10 @@ export function RecentLeadsCard({ leads, className }: { leads: Lead[]; className
                 <li key={lead.id}>
                   <Link
                     href="/leads"
-                    className="flex items-center gap-3 rounded-lg -mx-2 px-2 py-2 transition-colors hover:bg-accent"
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg -mx-2 px-2 py-2 transition-colors duration-150 hover:bg-accent",
+                      polished && "focus-visible:focus-ring",
+                    )}
                   >
                     <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                       {initials(name)}
