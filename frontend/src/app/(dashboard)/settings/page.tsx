@@ -64,12 +64,6 @@ import { cn, describeOnboardingStatus, describeWhatsAppConnection, formatRelativ
 // at the dialog after sending themselves a WhatsApp message.
 const VERIFY_POLL_INTERVAL_MS = 3_000;
 
-// Shared, restrained hover treatment (Sprint 46's dashboard pattern, reused
-// here rather than forked into a shared component — it's a plain Tailwind
-// string, not a component).
-const CARD_HOVER =
-  "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md";
-
 export default function SettingsPage() {
   const { openProfile } = useAuthContext();
   const { data: onboarding } = useOnboardingStatus();
@@ -115,7 +109,7 @@ export default function SettingsPage() {
       />
 
       <Section title="Your business">
-        <Card className={cn("lg:col-span-2", CARD_HOVER)}>
+        <Card interactive className="lg:col-span-2">
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={Building2} />
             <CardTitle className="text-base">Business profile</CardTitle>
@@ -157,7 +151,7 @@ export default function SettingsPage() {
 
         <AiReplyModeCard />
 
-        <Card className={CARD_HOVER}>
+        <Card interactive>
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={BookOpen} />
             <CardTitle className="text-base">Business Knowledge</CardTitle>
@@ -181,7 +175,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className={CARD_HOVER}>
+        <Card interactive>
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={CalendarClock} />
             <CardTitle className="text-base">HIRA Calendar</CardTitle>
@@ -213,7 +207,7 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Connections">
-        <Card className={cn("lg:col-span-2", CARD_HOVER)}>
+        <Card interactive className="lg:col-span-2">
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={MessageCircle} />
             <CardTitle className="text-base">WhatsApp</CardTitle>
@@ -308,7 +302,7 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Account">
-        <Card className={CARD_HOVER}>
+        <Card interactive>
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={Palette} />
             <CardTitle className="text-base">Appearance</CardTitle>
@@ -321,7 +315,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className={CARD_HOVER}>
+        <Card interactive>
           <CardHeader className="flex-row items-center gap-3 space-y-0">
             <SectionIcon icon={ShieldCheck} />
             <CardTitle className="text-base">Security</CardTitle>
@@ -389,7 +383,7 @@ function AiEmployeeCard({
   const onboarding = describeOnboardingStatus(business?.onboarding_status);
 
   return (
-    <Card className={CARD_HOVER}>
+    <Card interactive>
       <CardHeader className="flex-row items-center gap-3 space-y-0">
         <SectionIcon icon={Bot} />
         <CardTitle className="text-base">AI Employee</CardTitle>
@@ -485,7 +479,7 @@ function AiReplyModeCard() {
     // M13: the one settings control that directly governs AI behavior gets
     // the AI-identity spine (M4's aiSurfaceClassName) — combined with the
     // page's existing hover treatment, not replacing it.
-    <Card className={cn(CARD_HOVER, aiSurfaceClassName)}>
+    <Card interactive className={aiSurfaceClassName}>
       <CardHeader className="flex-row items-center gap-3 space-y-0">
         <SectionIcon icon={Globe} />
         <CardTitle className="text-base">How your employee responds</CardTitle>
@@ -554,7 +548,7 @@ function ModeOption({
   return (
     <label
       className={cn(
-        "flex items-start gap-3 rounded-lg border p-4 transition-colors",
+        "flex items-start gap-3 rounded-md border p-4 transition-colors",
         checked ? "border-primary bg-accent/50" : "border-input hover:bg-accent/30",
         disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
       )}
@@ -648,15 +642,15 @@ function FieldHelp({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-md border">
+    <div className="overflow-hidden rounded-md border">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 p-3 text-left text-sm font-medium"
+        className="flex w-full items-center justify-between gap-2 p-3 text-left text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
         {toggleLabel}
-        <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("size-4 shrink-0 transition-transform duration-[var(--motion-fast)]", open && "rotate-180")} />
       </button>
       {open && (
         <ol className="space-y-3 border-t p-3">

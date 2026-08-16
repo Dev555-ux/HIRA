@@ -216,7 +216,7 @@ function ConversationList({
                     type="button"
                     onClick={() => onSelect(conv.id)}
                     className={cn(
-                      "flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-accent/50",
+                      "flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       selectedId === conv.id && "bg-accent",
                     )}
                   >
@@ -375,10 +375,10 @@ function MessageBubble({ message }: { message: Message }) {
     >
       <div
         className={cn(
-          "max-w-[80%] rounded-md px-3 py-2 text-sm",
+          "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm",
           message.direction === "outbound"
-            ? "bg-secondary text-secondary-foreground"
-            : "bg-muted",
+            ? "rounded-tr-sm bg-secondary text-secondary-foreground"
+            : "rounded-tl-sm bg-muted",
         )}
       >
         {message.body}

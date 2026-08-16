@@ -81,7 +81,7 @@ export default function CalendarPage() {
   return (
     <>
       <PageHeader
-        title="HIRA Calendar"
+        title="Calendar"
         description="Manages your appointments and availability automatically. Optionally connect Google Calendar to keep everything in sync."
       />
       <Suspense fallback={null}>

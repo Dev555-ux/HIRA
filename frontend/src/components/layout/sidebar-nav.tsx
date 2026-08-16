@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { navGroups, type NavItem } from "@/lib/nav";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 function NavLink({
@@ -20,28 +21,50 @@ function NavLink({
   linkRef: (node: HTMLAnchorElement | null) => void;
 }) {
   const Icon = item.icon;
-  return (
+  const link = (
     <Link
       ref={linkRef}
       href={item.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      // Native tooltip is the icon-only affordance when collapsed; the
-      // label stays the accessible name via the sr-only span below.
-      title={collapsed ? item.label : undefined}
       className={cn(
-        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-[color,background-color,transform,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:shadow-e1 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         collapsed && "justify-center",
         active
           ? "bg-secondary text-secondary-foreground"
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
       )}
     >
-      <Icon className="size-4 shrink-0" aria-hidden="true" />
-      {/* Kept in the accessibility tree even when collapsed, so the icon-
-          only link still has a name for screen readers. */}
-      <span className={cn(collapsed && "sr-only")}>{item.label}</span>
+      <Icon
+        className="size-4 shrink-0 transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out-quart)] group-hover:translate-x-0.5 group-hover:scale-110 group-active:scale-95"
+        aria-hidden="true"
+      />
+      {/* max-w/margin/opacity (not sr-only, not a `gap` on the row — gap
+          doesn't shrink away with this element, which would leave the icon
+          permanently off-center when collapsed) so collapse is a fade+clip
+          in step with the sidebar's own width transition, not an instant
+          snap. Still fully in the accessibility tree either way — opacity
+          and max-width, unlike display/visibility, never remove a node
+          from it. */}
+      <span
+        className={cn(
+          "overflow-hidden whitespace-nowrap transition-[opacity,max-width,margin-left] duration-[var(--motion-slow)] ease-[var(--ease-in-out-quart)]",
+          collapsed ? "ml-0 max-w-0 opacity-0" : "ml-3 max-w-[10rem] opacity-100 delay-[190ms]",
+        )}
+      >
+        {item.label}
+      </span>
     </Link>
+  );
+  // The tooltip is the icon-only affordance when collapsed (DESIGN-MOTION-001
+  // §10.30: open-delay + warm-window, already built) — replaces the old
+  // native `title` attribute, which had no styling or timing control.
+  return collapsed ? (
+    <Tooltip content={item.label} side="right">
+      {link}
+    </Tooltip>
+  ) : (
+    link
   );
 }
 
@@ -55,6 +78,7 @@ export function SidebarNav({
   const pathname = usePathname();
   const headingIdBase = useId();
   const navRef = useRef<HTMLElement>(null);
+  const indicatorRef = useRef<HTMLSpanElement>(null);
   const linkNodes = useRef(new Map<string, HTMLAnchorElement>());
   // DESIGN-MOTION-001 §5.4: "a single pill/left-bar that slides from the old
   // active item to the new one — one indicator that moves, never one that
@@ -77,13 +101,35 @@ export function SidebarNav({
     // Centers a fixed 20px (h-5) bar on the active row, matching the old
     // per-item indicator's own size — only how it moves between rows changed.
     setIndicatorTop(linkRect.top - navTop + linkRect.height / 2 - 10);
+
+    // §3.3 confidence spring on arrival: the slide itself is the CSS
+    // `transition` below (a spring-*curve* would fight the transition), so
+    // the landing bounce is a separate, imperatively-restarted keyframe
+    // animation layered on top — restarting a CSS animation via className
+    // alone doesn't work unless the class is removed, reflowed, and
+    // re-added, since React re-rendering the same class string is a no-op
+    // to the browser's animation engine.
+    const el = indicatorRef.current;
+    if (el) {
+      el.classList.remove("animate-spring-settle");
+      void el.offsetWidth;
+      el.classList.add("animate-spring-settle");
+    }
   }, [pathname, collapsed]);
 
   return (
-    <nav ref={navRef} className="relative flex flex-col gap-4 px-3 py-4" aria-label="Primary">
+    <nav ref={navRef} className="relative flex flex-col gap-6 px-3 py-4" aria-label="Primary">
       <span
+        ref={indicatorRef}
         aria-hidden="true"
-        className="pointer-events-none absolute left-0 h-5 w-0.5 rounded-full bg-brand transition-[transform,opacity] duration-[var(--motion-slow)] ease-[var(--ease-in-out-quart)]"
+        // top-0 anchors this to the nav's own top edge — without it, the
+        // absolutely-positioned span falls back to its in-flow static
+        // position (after the nav's py-4 padding), and the translateY math
+        // below (which assumes a top-0px baseline) lands 16px+ too low.
+        // The glow (§7 "active-state glow") rides on the same brand token
+        // as the bar itself, so it stays in sync across light/dark without
+        // a second hand-picked color.
+        className="pointer-events-none absolute left-0 top-0 h-5 w-0.5 rounded-full bg-brand shadow-[0_0_8px_1px_var(--brand-glow)] transition-[transform,opacity] duration-[var(--motion-slow)] ease-[var(--ease-in-out-quart)]"
         style={{
           transform: `translateY(${indicatorTop ?? 0}px)`,
           opacity: indicatorTop === null ? 0 : 1,

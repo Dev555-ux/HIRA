@@ -378,7 +378,7 @@ function DraftBatchCard({
         {batch.entries.map((entry) => (
           <div
             key={entry.id}
-            className="flex items-start justify-between gap-4 rounded-lg border bg-background p-3"
+            className="flex items-start justify-between gap-4 rounded-md border bg-background p-3"
           >
             <p className="text-sm text-muted-foreground">{entry.content}</p>
             <div className="flex shrink-0 gap-1">
@@ -551,7 +551,7 @@ function ImportWebsiteDialog({
           </DialogDescription>
         </DialogHeader>
         {preview.length > 0 && (
-          <ul className="space-y-2.5 rounded-lg border p-4">
+          <ul className="space-y-2.5 rounded-md border p-4">
             {preview.map((entry) => (
               <li key={entry.id} className="flex items-start gap-2 text-sm">
                 <Clock className="mt-0.5 size-4 shrink-0 text-warning" />
@@ -579,7 +579,7 @@ function ImportWebsiteDialog({
           <DialogTitle>Teaching HIRA about your business</DialogTitle>
           <DialogDescription>This usually takes a few seconds.</DialogDescription>
         </DialogHeader>
-        <div className="flex items-center gap-3 rounded-lg border p-4">
+        <div className="flex items-center gap-3 rounded-md border p-4">
           <RefreshCw className="size-5 shrink-0 animate-spin text-muted-foreground" />
           <p key={caption} className="animate-fade-in text-sm text-muted-foreground">
             {caption}

@@ -215,7 +215,7 @@ function LeadList({
                   type="button"
                   onClick={() => onSelect(lead.customer.id)}
                   className={cn(
-                    "flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-accent/50",
+                    "flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                     selectedCustomerId === lead.customer.id && "bg-accent",
                   )}
                 >

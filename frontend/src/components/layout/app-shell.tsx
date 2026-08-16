@@ -19,15 +19,25 @@ function Brand({ collapsed = false, action }: { collapsed?: boolean; action?: Re
   return (
     <div
       className={cn(
-        "flex h-14 items-center border-b",
-        collapsed ? "justify-center px-2" : "justify-between gap-2 px-5",
+        "flex h-14 items-center border-b transition-[padding] duration-[var(--motion-slow)] ease-[var(--ease-in-out-quart)]",
+        collapsed ? "justify-center px-2" : "justify-between px-5",
       )}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand text-brand-foreground">
           <Bot className="size-4" aria-hidden="true" />
         </div>
-        {!collapsed && <span className="text-sm font-semibold tracking-tight">HIRA</span>}
+        {/* Same fade+clip as the nav labels, rather than an instant
+            mount/unmount, so the wordmark disappears in step with the
+            sidebar's own width transition. */}
+        <span
+          className={cn(
+            "overflow-hidden whitespace-nowrap text-sm font-semibold tracking-tight transition-[opacity,max-width,margin-left] duration-[var(--motion-slow)] ease-[var(--ease-in-out-quart)]",
+            collapsed ? "ml-0 max-w-0 opacity-0" : "ml-2 max-w-[8rem] opacity-100 delay-[190ms]",
+          )}
+        >
+          HIRA
+        </span>
       </div>
       {action}
     </div>
@@ -106,18 +116,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             aria-expanded={!collapsed}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             className={cn(
-              "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex w-full items-center rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               collapsed && "justify-center",
             )}
           >
             {collapsed ? (
               <PanelLeft className="size-4" aria-hidden="true" />
             ) : (
-              <>
-                <PanelLeftClose className="size-4" aria-hidden="true" />
-                <span>Collapse</span>
-              </>
+              <PanelLeftClose className="size-4" aria-hidden="true" />
             )}
+            <span
+              className={cn(
+                "overflow-hidden whitespace-nowrap transition-[opacity,max-width,margin-left] duration-[var(--motion-slow)] ease-[var(--ease-in-out-quart)]",
+                collapsed ? "ml-0 max-w-0 opacity-0" : "ml-3 max-w-[6rem] opacity-100 delay-[190ms]",
+              )}
+            >
+              Collapse
+            </span>
           </button>
         </div>
       </aside>

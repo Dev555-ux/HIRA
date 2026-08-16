@@ -214,6 +214,10 @@
      destructive's red (4°). */
   --brand: hsl(18 82% 54%);
   --brand-foreground: hsl(30 20% 98%);
+  /* Sprint 94 — the sidebar's active-indicator glow, derived from --brand
+     rather than a second hand-picked color so light/dark stay in sync with
+     the brand token above automatically. */
+  --brand-glow: color-mix(in srgb, var(--brand) 45%, transparent);
 }
 
 .dark {
@@ -237,6 +241,7 @@
      the lighter fill. */
   --brand: hsl(20 100% 68%);
   --brand-foreground: hsl(20 12% 10%);
+  --brand-glow: color-mix(in srgb, var(--brand) 55%, transparent);
 }
 
 @theme inline {
