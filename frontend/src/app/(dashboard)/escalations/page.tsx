@@ -20,12 +20,8 @@ import {
 } from "@/hooks/use-escalations";
 import { ApiError } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
-import type {
-  Escalation,
-  EscalationAssignedFilter,
-  EscalationReason,
-  EscalationStatusFilter,
-} from "@/lib/types";
+import { REASON_LABEL } from "@/lib/escalations";
+import type { Escalation, EscalationAssignedFilter, EscalationStatusFilter } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/utils";
 
 const STATUS_FILTERS: { label: string; value: EscalationStatusFilter | undefined }[] = [
@@ -39,14 +35,6 @@ const ASSIGNED_FILTERS: { label: string; value: EscalationAssignedFilter | undef
   { label: "Unassigned", value: "unassigned" },
   { label: "Mine", value: "mine" },
 ];
-
-const REASON_LABEL: Record<EscalationReason, string> = {
-  low_confidence: "AI wasn't confident",
-  customer_request: "Customer asked for a human",
-  external_failure: "Message failed to send",
-  automation_failed: "Autonomous action couldn't complete",
-  other: "Other",
-};
 
 // M8: StatusPill's status→dot-color mapping, single consumer (this file),
 // so kept local rather than a new lib/escalations.ts. Preserves today's

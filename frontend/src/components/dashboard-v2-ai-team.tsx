@@ -15,12 +15,21 @@ import { formatDuration } from "@/lib/utils";
 // already follows for AI recommendation/confidence).
 export function AiTeamPanel({
   roster,
+  totalTurns,
   avgResponseSeconds,
   escalations,
   kbPublished,
   learnedTodayCount,
 }: {
+  /** Active roles only (count > 0) — a "0 turns" row here would be
+   *  telemetry with no outcome, not useful list content. The hero's
+   *  AiNetwork is the one place the *full*, always-4 roster belongs. */
   roster: RosterEntry[];
+  /** Real ai_performance.total_turns — shown so each row's "%" has a
+   *  visible denominator (Sprint 88: the bare percentages had no context
+   *  for why they didn't sum to 100 — not every turn is attributed to one
+   *  of the four named roles). */
+  totalTurns: number;
   avgResponseSeconds: number | null;
   escalations: number;
   kbPublished: number;
@@ -30,7 +39,9 @@ export function AiTeamPanel({
     <div className="flex h-full flex-col rounded-2xl bg-card p-6 shadow-e2 sm:p-7">
       <div className="mb-5 flex items-center justify-between">
         <h2 className="type-title">AI workspace</h2>
-        <span className="text-xs text-muted-foreground">Last 30 days</span>
+        <span className="text-xs text-muted-foreground">
+          {totalTurns > 0 ? `${totalTurns} turns · Last 30 days` : "Last 30 days"}
+        </span>
       </div>
 
       {roster.length === 0 ? (

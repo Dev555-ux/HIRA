@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 import Link from "next/link";
 import { ActivityTimeline } from "@/components/dashboard-activity-timeline";
+import { ROLE_LABEL } from "@/components/ai-metrics-section";
 import { AiTeamPanel } from "@/components/dashboard-v2-ai-team";
 import { AttentionQueue, type AttentionItem } from "@/components/dashboard-v2-attention-queue";
 import { RecentCustomersPanel } from "@/components/dashboard-v2-customers";
@@ -31,8 +32,14 @@ import { useKbEntries } from "@/hooks/use-knowledge-base";
 import { useLeads } from "@/hooks/use-leads";
 import { usePending } from "@/hooks/use-pending";
 import { ALERT_HREF, ALERT_LABEL } from "@/lib/alerts";
+import { REASON_LABEL } from "@/lib/escalations";
 
 const ACTIVITY_ROWS = 6;
+// Fetched larger than the 5 actually shown so Recent Customers can sort by
+// real last_message_at client-side (Sprint 88 finding: the backend orders
+// by created_at, which surfaced a customer who signed up recently but
+// hasn't messaged in 50 days as "recent" — not who matters today).
+const CUSTOMER_FETCH = 20;
 const CUSTOMER_ROWS = 5;
 
 function customerLabel(customer: { display_name: string | null; wa_phone: string | null } | null): string {
@@ -74,13 +81,26 @@ export default function DashboardV2Page() {
   const { data: openEscalationsResult } = useEscalations({ status: "open", limit: 5 });
   const { data: analyticsDashboard } = useAnalyticsDashboard("30d");
   const { data: kbEntries } = useKbEntries();
-  const { data: customersPage, isPending: isLoadingCustomers } = useCustomers({ limit: CUSTOMER_ROWS });
+  const { data: customersPage, isPending: isLoadingCustomers } = useCustomers({ limit: CUSTOMER_FETCH });
 
   const upcomingAppointments = useMemo(() => upcomingAppointmentsResult ?? [], [upcomingAppointmentsResult]);
   const aiActivity = useMemo(() => aiActivityResult ?? [], [aiActivityResult]);
   const openEscalations = useMemo(() => openEscalationsResult?.data ?? [], [openEscalationsResult]);
   const recentLeads = useMemo(() => recentLeadsPage?.data ?? [], [recentLeadsPage]);
-  const customers = useMemo(() => customersPage?.data ?? [], [customersPage]);
+  // Real last_message_at, not the backend's created_at ordering — see
+  // CUSTOMER_FETCH's comment above for why. Customers who have never
+  // messaged (last_message_at === null) sort last rather than first.
+  const customers = useMemo(() => {
+    const all = customersPage?.data ?? [];
+    return [...all]
+      .sort((a, b) => {
+        if (!a.last_message_at && !b.last_message_at) return 0;
+        if (!a.last_message_at) return 1;
+        if (!b.last_message_at) return -1;
+        return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
+      })
+      .slice(0, CUSTOMER_ROWS);
+  }, [customersPage]);
   const learnedToday = useMemo(
     () => (kbEntries ?? []).filter((entry) => isToday(entry.created_at)),
     [kbEntries],
@@ -90,23 +110,33 @@ export default function DashboardV2Page() {
     [analyticsDashboard],
   );
 
-  // The AI team roster (Business Snapshot's network visual + AI Workspace
-  // panel both read from this) — real 30-day turn counts per role, sorted
-  // busiest-first, zero-count roles omitted entirely rather than shown as
-  // fake "idle" placeholders.
+  // The full AI team roster — Sprint 88 dogfooding found that only showing
+  // roles with real activity made the hero's network render as an awkward
+  // 2-node line whenever most roles were idle, and made the other real
+  // employee roles look like they didn't exist rather than "not busy yet."
+  // ROLE_LABEL's four keys are HIRA's fixed, real employee-role set (not
+  // per-business config), so listing all four — dimmed when idle — is a
+  // more honest "this is my whole team" than hiding the quiet ones. The AI
+  // Workspace panel (a list, not a spatial team portrait) still only wants
+  // the active ones — a "0 turns" row there is pure noise, not an outcome —
+  // so it's given `activeRoster` below instead of this full array.
+  const totalTurns = analyticsDashboard?.ai_performance.total_turns ?? 0;
   const roster = useMemo<RosterEntry[]>(() => {
     const utilisation = analyticsDashboard?.ai_performance.employee_utilisation ?? {};
-    const total = analyticsDashboard?.ai_performance.total_turns ?? 0;
-    return Object.entries(utilisation)
-      .filter(([, count]) => count > 0)
-      .sort((a, b) => b[1] - a[1])
-      .map(([role, count]) => ({
-        role,
-        count,
-        pct: total > 0 ? Math.round((count / total) * 100) : 0,
-        mostActive: role === analyticsDashboard?.ai_performance.most_used_employee,
-      }));
-  }, [analyticsDashboard]);
+    return Object.keys(ROLE_LABEL)
+      .map((role) => {
+        const count = utilisation[role] ?? 0;
+        return {
+          role,
+          count,
+          pct: totalTurns > 0 ? Math.round((count / totalTurns) * 100) : 0,
+          mostActive: role === analyticsDashboard?.ai_performance.most_used_employee,
+          active: count > 0,
+        };
+      })
+      .sort((a, b) => b.count - a.count);
+  }, [analyticsDashboard, totalTurns]);
+  const activeRoster = useMemo(() => roster.filter((r) => r.active), [roster]);
 
   const pendingCount = pending?.length ?? 0;
   const escalationCount = openEscalations.length;
@@ -151,6 +181,15 @@ export default function DashboardV2Page() {
   const attentionEmpty = pendingCount === 0 && escalationCount === 0 && healthAlerts.length === 0;
   const summary = "Here's what's happening with your business.";
 
+  // The hero hub's own status dot (Sprint 88 fix — was hardcoded "success"
+  // regardless of real state). Same destructive-vs-warning split already
+  // used for attention-queue priority above, not a second severity scheme.
+  const hubState = healthAlerts.some((a) => a === "whatsapp_disconnected" || a === "ai_failures")
+    ? "error"
+    : healthAlerts.length > 0
+      ? "waiting"
+      : "success";
+
   // Needs Attention's real, merged, prioritized queue — same three real
   // sources V1 merges (pending replies, open escalations, business-health
   // alerts), just reshaped into one flat AttentionItem[] instead of three
@@ -176,7 +215,7 @@ export default function DashboardV2Page() {
         id: `escalation-${e.id}`,
         priority: "high",
         title: customerLabel(e.conversation.customer),
-        reason: "Escalated — needs your judgment",
+        reason: REASON_LABEL[e.reason],
         actionLabel: "Review",
         createdAt: e.created_at,
         onAction: () => router.push("/escalations"),
@@ -210,6 +249,7 @@ export default function DashboardV2Page() {
         }}
         pendingCount={pendingCount}
         roster={roster}
+        hubState={hubState}
         healthData={analyticsDashboard}
       />
 
@@ -219,7 +259,8 @@ export default function DashboardV2Page() {
       <div className="mb-10 grid gap-6 lg:grid-cols-12">
         <div className="lg:col-span-5">
           <AiTeamPanel
-            roster={roster}
+            roster={activeRoster}
+            totalTurns={totalTurns}
             avgResponseSeconds={analyticsDashboard?.overview.avg_response_time_seconds ?? null}
             escalations={analyticsDashboard?.ai_impact.human_escalations ?? 0}
             kbPublished={analyticsDashboard?.business_health.knowledge_base.published_count ?? 0}
@@ -280,8 +321,9 @@ export default function DashboardV2Page() {
         </div>
       </div>
 
-      {/* Zone: Today's Business + Recent Customers — the other asymmetric
-          pairing (5/7), so the page's rhythm never repeats a flat 50/50. */}
+      {/* Zone: Upcoming appointments + Recent Customers — the other
+          asymmetric pairing (5/7), so the page's rhythm never repeats a
+          flat 50/50. */}
       <div className="mb-10 grid gap-6 lg:grid-cols-12">
         <div className="lg:col-span-5">
           <SchedulePanel appointments={upcomingAppointments} />

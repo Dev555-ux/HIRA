@@ -4,7 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { FounderAiMetrics } from "@/lib/types";
 
-const ROLE_LABEL: Record<string, string> = {
+// Exported (not just `roleLabel` below) so a caller needing the full real
+// roster — not just a one-off label lookup — has a single source for it
+// too, rather than re-declaring these four keys a second place (Dashboard
+// V2's AI network visualization: `Object.keys(ROLE_LABEL)`).
+export const ROLE_LABEL: Record<string, string> = {
   receptionist: "Receptionist",
   scheduler: "Scheduler",
   sales_executive: "Sales Executive",

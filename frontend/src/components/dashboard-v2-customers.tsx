@@ -16,9 +16,12 @@ function customerName(customer: Customer): string {
 }
 
 // Dashboard V2's Recent Customers — surfacing people, not row counts.
-// `customers` is `useCustomers({ limit })` (ordered newest-first by the
-// backend, GET /api/v1/customers), a real endpoint V1's dashboard never
-// called. Every field shown is real: conversation_count and
+// `customers` is `useCustomers({ limit })` (GET /api/v1/customers, a real
+// endpoint V1's dashboard never called), fetched wider than shown and
+// re-sorted by the page on real `last_message_at` (Sprint 88 dogfooding:
+// the backend's own created_at ordering surfaced a customer who signed up
+// recently but hadn't messaged in 50 days as "recent" — not who actually
+// matters today). Every field shown is real: conversation_count and
 // last_message_at come straight off Customer; the lead stage pill only
 // renders when a real Lead is actually attached. No "AI summary" or
 // relationship-health score is shown — neither exists on this data, and

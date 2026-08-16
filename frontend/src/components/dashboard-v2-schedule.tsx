@@ -19,15 +19,21 @@ function timeLabel(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-// Dashboard V2's Today's Business — a real agenda (a time rail down the
-// left, one row per real upcoming Appointment) instead of a table. Same
+// Dashboard V2's schedule — a real agenda (a time rail down the left, one
+// row per real upcoming Appointment) instead of a table. Same
 // `useAppointments({ from: now })` data V1 reads; only the presentation is
-// new.
+// new. Sprint 88 dogfooding: this was originally titled "Today's Business,"
+// but `from: now` returns everything upcoming — in the seeded dataset that
+// meant appointments 2-8 days out under a heading promising "today," which
+// is exactly the kind of thing that's confusing without being wrong.
+// Renamed rather than re-scoped to literally-today: most days won't have a
+// same-day appointment, so an honest "Upcoming" is more useful than an
+// empty "Today" most of the time.
 export function SchedulePanel({ appointments }: { appointments: Appointment[] }) {
   return (
     <div className="flex h-full flex-col rounded-2xl bg-card p-6 shadow-e2 sm:p-7">
       <div className="mb-5 flex items-center justify-between">
-        <h2 className="type-title">Today&apos;s business</h2>
+        <h2 className="type-title">Upcoming appointments</h2>
         <Button asChild size="sm" variant="ghost">
           <Link href="/appointments">View all</Link>
         </Button>

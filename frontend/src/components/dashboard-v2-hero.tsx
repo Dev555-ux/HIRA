@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { roleLabel } from "@/components/ai-metrics-section";
 import { Button } from "@/components/ui/button";
 import { AIAvatar } from "@/components/ui/ai-avatar";
+import type { ActivityState } from "@/components/ui/activity-dot";
 import { HealthScore } from "@/components/health-score";
 import type { AnalyticsDashboard } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,10 @@ export interface RosterEntry {
   count: number;
   pct: number;
   mostActive: boolean;
+  /** Sprint 88 — real 30-day turn count > 0. `roster` now always lists
+   *  every real employee role (see the page's own comment); this is what
+   *  tells the network/roster views which ones to draw bright vs. dim. */
+  active: boolean;
 }
 
 function timeOfDayGreeting(): string {
@@ -44,19 +49,23 @@ function radialPosition(index: number, total: number, radius = 36): { x: number;
   return { x: 50 + radius * Math.cos(angle), y: 50 + radius * Math.sin(angle) };
 }
 
-// The hero's live visualization — HIRA (the hub) connected to each real AI
-// employee role that has actually handled at least one turn in the last 30
-// days (`roster`, computed by the page from ai_performance.employee_
-// utilisation — no role is shown with a fabricated "idle" placeholder).
-// Spoke opacity/width scale with that role's real share of total turns, so
-// the busiest employee visibly reads as the thickest connection. Ambient,
-// not narrative: every real connection pulses continuously (reusing the
-// existing `animate-signature-pulse` keyframe as a permanent "alive" signal
-// rather than a scripted sequence), which is the honest representation of
-// 30-day aggregate data — there is no live "who's working right now" signal
-// to show truthfully, so this never pretends to be one.
-function AiNetwork({ roster }: { roster: RosterEntry[] }) {
-  if (roster.length === 0) {
+// The hero's live visualization — HIRA (the hub) connected to every real AI
+// employee role (`roster`, computed by the page as the full, fixed 4-role
+// set from ROLE_LABEL, each flagged `active` from ai_performance.employee_
+// utilisation). Spoke opacity/width scale with real share of total turns
+// for active roles; idle roles (Sprint 88 dogfooding finding — hiding them
+// made a 2-of-4-active team read as a 2-node line, and made the other two
+// real employees look like they didn't exist) render as a dim, static grey
+// spoke instead of being omitted — the role is real even when idle, only
+// its activity is zero. Ambient, not narrative: every active connection
+// pulses continuously (the existing `animate-signature-pulse` keyframe as a
+// permanent "alive" signal, not a scripted sequence) — the honest read of
+// 30-day aggregate data, since there's no real live "who's working right
+// now" signal to show.
+function AiNetwork({ roster, hubState }: { roster: RosterEntry[]; hubState: ActivityState }) {
+  const anyActive = roster.some((r) => r.active);
+
+  if (!anyActive) {
     return (
       <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-2 text-center">
         <div className="opacity-40">
@@ -70,13 +79,35 @@ function AiNetwork({ roster }: { roster: RosterEntry[] }) {
   }
 
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[360px]" role="img" aria-label={roster
-      .map((r) => `${roleLabel(r.role)}: ${r.count} turns, ${r.pct}% of activity`)
-      .join(". ")}
+    <div
+      className="relative mx-auto aspect-square w-full max-w-[360px]"
+      role="img"
+      aria-label={roster
+        .map((r) =>
+          r.active
+            ? `${roleLabel(r.role)}: ${r.count} turns, ${r.pct}% of activity`
+            : `${roleLabel(r.role)}: no activity in the last 30 days`,
+        )
+        .join(". ")}
     >
       <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-hidden="true">
         {roster.map((r, i) => {
           const pos = radialPosition(i, roster.length);
+          if (!r.active) {
+            return (
+              <line
+                key={r.role}
+                x1={50}
+                y1={50}
+                x2={pos.x}
+                y2={pos.y}
+                vectorEffect="non-scaling-stroke"
+                strokeWidth={1}
+                strokeDasharray="2 3"
+                className="stroke-border"
+              />
+            );
+          }
           const strength = Math.max(0.25, r.pct / 100);
           return (
             <g key={r.role}>
@@ -108,7 +139,7 @@ function AiNetwork({ roster }: { roster: RosterEntry[] }) {
 
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <div className="animate-ambient-pulse absolute inset-0 -m-3 rounded-full bg-brand/25" aria-hidden="true" />
-        <AIAvatar name="HIRA" size="xl" state="success" className="relative" />
+        <AIAvatar name="HIRA" size="xl" state={hubState} className="relative" />
       </div>
 
       {roster.map((r, i) => {
@@ -116,12 +147,15 @@ function AiNetwork({ roster }: { roster: RosterEntry[] }) {
         return (
           <div
             key={r.role}
-            className="absolute flex w-24 -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5 text-center"
+            className={cn(
+              "absolute flex w-24 -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5 text-center",
+              !r.active && "opacity-40",
+            )}
             style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
           >
-            <AIAvatar name={roleLabel(r.role)} size="lg" state={r.mostActive ? "success" : "idle"} />
+            <AIAvatar name={roleLabel(r.role)} size="lg" state={r.active ? (r.mostActive ? "success" : "idle") : "idle"} />
             <span className="text-[11px] font-medium text-foreground">{roleLabel(r.role)}</span>
-            <span className="text-[10px] text-muted-foreground">{r.count} turns</span>
+            <span className="text-[10px] text-muted-foreground">{r.active ? `${r.count} turns` : "No activity"}</span>
           </div>
         );
       })}
@@ -143,6 +177,7 @@ export function DashboardV2Hero({
   onRefresh,
   pendingCount = 0,
   roster,
+  hubState = "success",
   healthData,
 }: {
   name: string;
@@ -153,6 +188,9 @@ export function DashboardV2Hero({
   onRefresh: () => void;
   pendingCount?: number;
   roster: RosterEntry[];
+  /** Sprint 88 — ties the hub avatar's status dot to real business_health
+   *  alerts (computed by the page) instead of a hardcoded "success". */
+  hubState?: ActivityState;
   healthData?: AnalyticsDashboard;
 }) {
   const [greeting, setGreeting] = useState("Welcome back");
@@ -178,7 +216,6 @@ export function DashboardV2Hero({
           <h1 className="type-display-xl text-balance">
             {greeting}, {firstName(name)}
           </h1>
-          <p className="mt-2 text-base text-muted-foreground">HIRA has been running your business.</p>
           {highlights.length > 0 ? (
             <ul className="mt-5 space-y-2">
               {highlights.map((h) => (
@@ -222,7 +259,7 @@ export function DashboardV2Hero({
         </div>
 
         <div className="flex shrink-0 items-center justify-center lg:w-[380px]">
-          <AiNetwork roster={roster} />
+          <AiNetwork roster={roster} hubState={hubState} />
         </div>
       </div>
     </div>
