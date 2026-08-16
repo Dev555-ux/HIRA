@@ -29,7 +29,7 @@ function customerName(customer: Customer): string {
 // inventing one would violate the no-fake-data constraint this whole
 // rebuild operates under.
 //
-// `variant="feed"` (Sprint 90, Dashboard V3 only — default "list" keeps
+// `variant="feed"` (used by the production Dashboard — default "list" keeps
 // every existing caller byte-identical) reshapes the same rows into a
 // messaging-app contact list: a larger avatar, the timestamp promoted to
 // where a chat app puts it (top-right, next to the name), the lead stage

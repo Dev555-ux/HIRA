@@ -14,7 +14,7 @@ import { cn, formatDuration } from "@/lib/utils";
 // none is shown (same "omit rather than invent" rule V1's Recent Leads
 // already follows for AI recommendation/confidence).
 //
-// `variant="console"` (Sprint 89, Dashboard V3 only — default "panel" keeps
+// `variant="console"` (used by the production Dashboard — default "panel" keeps
 // every existing caller byte-identical) leans the same data into a control-
 // panel reading: a recessed inset surface instead of a flat card, a live
 // status dot, tabular-numeric readouts. No new data, no new component.

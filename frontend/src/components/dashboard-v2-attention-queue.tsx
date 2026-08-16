@@ -35,7 +35,7 @@ const PRIORITY_DOT: Record<AttentionPriority, string> = {
 // business-health alerts — the same three V1's Needs Attention already
 // merges.
 //
-// `variant="inbox"` (Sprint 89, Dashboard V3 only — default "panel" keeps
+// `variant="inbox"` (used by the production Dashboard — default "panel" keeps
 // every existing caller byte-identical) reshapes the same data into a
 // mail-client reading: single-line rows separated by hairlines instead of
 // padded task cards, a priority dot standing in for the badge chip, the

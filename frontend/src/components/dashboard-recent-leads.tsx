@@ -12,31 +12,18 @@ function leadName(lead: Lead): string {
 }
 
 // Same initials-avatar treatment as Today's Schedule and the Recent
-// Activity timeline (Sprint 87) — one consistent "a row of people" language
-// across every list-of-people panel on the page, instead of leads being the
-// one list rendering as bare text rows.
+// Activity timeline — one consistent "a row of people" language across
+// every list-of-people panel on the page, instead of leads being the one
+// list rendering as bare text rows.
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
-// Recent Leads (Sprint 86) — the page already fetches useLeads({ limit:
-// PREVIEW_ROWS }) for the hero's "N new leads today" count, but the rows
-// themselves went unused. This surfaces those same real rows instead of a
-// second request.
-//
-// `polished` (Sprint 90, Dashboard V3 only — default false keeps V1's
-// `/dashboard` byte-identical) tightens the row's hover/focus micro-
-// interactions and softens the empty state copy. No layout or data change.
-export function RecentLeadsCard({
-  leads,
-  className,
-  polished = false,
-}: {
-  leads: Lead[];
-  className?: string;
-  polished?: boolean;
-}) {
+// Recent Leads — the page already fetches useLeads({ limit: PREVIEW_ROWS })
+// for the hero's "N new leads today" count, but the rows themselves went
+// unused. This surfaces those same real rows instead of a second request.
+export function RecentLeadsCard({ leads, className }: { leads: Lead[]; className?: string }) {
   return (
     <Card interactive className={cn("h-full", className)}>
       <CardHeader className="flex-row items-center justify-between">
@@ -50,9 +37,7 @@ export function RecentLeadsCard({
           <div className="flex flex-col items-center gap-2 py-8 text-center">
             <UserPlus className="size-6 text-muted-foreground" aria-hidden="true" />
             <p className="text-sm text-muted-foreground">
-              {polished
-                ? "No leads yet — HIRA will log them here the moment one comes in."
-                : "No leads yet — new ones appear here as they come in."}
+              No leads yet — HIRA will log them here the moment one comes in.
             </p>
           </div>
         ) : (
@@ -63,10 +48,7 @@ export function RecentLeadsCard({
                 <li key={lead.id}>
                   <Link
                     href="/leads"
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg -mx-2 px-2 py-2 transition-colors duration-150 hover:bg-accent",
-                      polished && "focus-visible:focus-ring",
-                    )}
+                    className="flex items-center gap-3 rounded-lg -mx-2 px-2 py-2 transition-colors duration-150 hover:bg-accent focus-visible:focus-ring"
                   >
                     <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                       {initials(name)}
