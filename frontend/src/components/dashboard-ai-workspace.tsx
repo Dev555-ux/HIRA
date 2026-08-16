@@ -41,6 +41,7 @@ export function AiWorkspaceCard({
   escalations,
   kbPublished,
   learnedTodayCount,
+  className,
 }: {
   metrics: FounderAiMetrics;
   avgResponseSeconds: number | null;
@@ -51,11 +52,12 @@ export function AiWorkspaceCard({
   escalations: number;
   kbPublished: number;
   learnedTodayCount: number;
+  className?: string;
 }) {
   const topTool = metrics.most_used_tools[0]?.tool_name ?? null;
 
   return (
-    <Card interactive className="shadow-e3">
+    <Card interactive className={cn("h-full shadow-e3", className)}>
       <CardHeader>
         <CardTitle className="text-base">AI workspace</CardTitle>
       </CardHeader>

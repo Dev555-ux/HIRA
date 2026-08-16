@@ -95,6 +95,7 @@ export function StatCard({
   suffix,
   sparkline,
   tone = "neutral",
+  className,
 }: {
   label: string;
   value: React.ReactNode;
@@ -115,11 +116,12 @@ export function StatCard({
   sparkline?: AnalyticsTrendPoint[];
   /** "warning" tints the icon chip for metrics that are a caution signal, not a plain volume metric. */
   tone?: "neutral" | "warning";
+  className?: string;
 }) {
   const animated = useCountUp(countTo ?? null);
 
   return (
-    <Card interactive className="group">
+    <Card interactive className={cn("group", className)}>
       <CardContent className="p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

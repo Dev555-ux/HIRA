@@ -61,11 +61,22 @@ function ActivityAvatar({ customer, outcome }: { customer: AiActivityCustomer | 
 // category "action").
 export function ActivityTimeline({ entries }: { entries: AiActivityEntry[] }) {
   return (
-    <ul className="divide-y" data-testid="activity-feed">
+    <ul className="relative" data-testid="activity-feed">
+      {/* The connector — a single line running behind every avatar, the
+          thread tying discrete rows into one continuous timeline rather than
+          a plain divided list. Positioned off the avatar's own center (px-6
+          + half of size-9), spans row 1's center to the last row's center so
+          it never pokes out above/below the first/last dot. */}
+      {entries.length > 1 && (
+        <div className="absolute top-[1.875rem] bottom-[1.875rem] left-[2.375rem] w-px bg-border" aria-hidden="true" />
+      )}
       {entries.map((entry) => {
         const badge = OUTCOME_BADGE[entry.outcome];
         return (
-          <li key={entry.id} className="group flex items-center gap-3.5 px-6 py-3.5">
+          <li
+            key={entry.id}
+            className="group relative flex items-center gap-3.5 px-6 py-3.5 transition-colors duration-150 hover:bg-accent/40"
+          >
             <ActivityAvatar customer={entry.customer} outcome={entry.outcome} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{entry.summary}</p>

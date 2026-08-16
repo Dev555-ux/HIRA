@@ -19,7 +19,6 @@ import { AiWorkspaceCard } from "@/components/dashboard-ai-workspace";
 import { DashboardHero, type BriefHighlight } from "@/components/dashboard-hero";
 import { RecentLeadsCard } from "@/components/dashboard-recent-leads";
 import { EmptyState } from "@/components/empty-state";
-import { HealthScore } from "@/components/health-score";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { ReviewReplyCard } from "@/components/review-reply-card";
 import { StatCard } from "@/components/stat-card";
@@ -65,6 +64,14 @@ const ALERT_TONE: Record<FounderAlert, "destructive" | "warning"> = {
 
 function customerLabel(customer: { display_name: string | null; wa_phone: string | null } | null): string {
   return customer?.display_name || customer?.wa_phone || "Unknown customer";
+}
+
+// Sprint 86A — the same initials-avatar treatment as the Recent Activity
+// timeline, reused here so Today's Schedule reads as a calendar of people,
+// not a bare table row.
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
 function pluralize(count: number, singular: string, plural: string): string {
@@ -270,6 +277,7 @@ export default function DashboardPage() {
         onRefresh={refreshAll}
         pendingCount={pendingCount}
         aiImpact={analyticsDashboard?.ai_impact}
+        healthData={analyticsDashboard}
       />
 
       <div className="mb-8">
@@ -280,23 +288,21 @@ export default function DashboardPage() {
         <OnboardingChecklist business={onboarding.business} />
       )}
 
-      {analyticsDashboard && (
-        <div className="mb-8">
-          <HealthScore data={analyticsDashboard} />
-        </div>
-      )}
-
-      {/* Primary row: Needs Attention + Today's Schedule, side by side —
-          the two things a founder needs before scrolling: what to decide,
-          what's coming up. */}
-      <div className="mb-8 grid gap-6 lg:grid-cols-2">
+      {/* Primary row: Needs Attention + AI Workspace — HIRA's two "what's
+          happening" surfaces (what to decide, what HIRA itself has been
+          doing), asymmetric (7/5) rather than a flat 50/50 split since the
+          attention list is the one with genuinely variable-length content. */}
+      <div className="mb-8 grid gap-6 lg:grid-cols-12">
         {/* Sprint 84 (Dashboard Foundation): Needs Your Attention is the
             primary workspace, not a card that disappears when there's
             nothing to review — it always renders, with a calm, positive
             empty state when there's genuinely nothing pending. The
             warning-colored spine only appears when something actually
             needs a decision. */}
-        <Card interactive className={cn("shadow-e3", !attentionEmpty && "border-l-2 border-l-warning")}>
+        <Card
+          interactive
+          className={cn("shadow-e3 lg:col-span-7", !attentionEmpty && "border-l-2 border-l-warning")}
+        >
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-base">Needs your attention</CardTitle>
             <Button asChild size="sm" variant="ghost">
@@ -373,11 +379,37 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Today's schedule — promoted alongside Needs Attention (Sprint
-            86): "what's coming up" is one of the four questions the page
-            should answer before scrolling, not reference material further
-            down. */}
-        <Card interactive className="shadow-e3">
+        {/* AI Workspace — HIRA's own secondary hero (Sprint 86A), paired
+            with Needs Attention as the page's two "what's happening" panels
+            rather than with Recent Leads below. */}
+        {analyticsDashboard ? (
+          <AiWorkspaceCard
+            className="lg:col-span-5"
+            metrics={analyticsDashboard.ai_performance}
+            avgResponseSeconds={analyticsDashboard.overview.avg_response_time_seconds}
+            escalations={analyticsDashboard.ai_impact.human_escalations}
+            kbPublished={analyticsDashboard.business_health.knowledge_base.published_count}
+            learnedTodayCount={learnedToday.length}
+          />
+        ) : (
+          <Card className="lg:col-span-5">
+            <CardHeader>
+              <CardTitle className="text-base">AI workspace</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-6 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Secondary row: Today's Schedule + Recent Leads — asymmetric the
+          other way (5/7) than the row above, so the page doesn't settle
+          into a repeating 50/50 rhythm. */}
+      <div className="mb-8 grid gap-6 lg:grid-cols-12">
+        <Card interactive className="shadow-e3 lg:col-span-5">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-base">Today&apos;s schedule</CardTitle>
             <Button asChild size="sm" variant="ghost">
@@ -410,12 +442,15 @@ export default function DashboardPage() {
                 className="border-0 py-10"
               />
             ) : (
-              <ul className="space-y-3">
+              <ul className="space-y-3.5">
                 {upcomingAppointments.slice(0, 4).map((appt: Appointment) => {
                   const badge = APPOINTMENT_STATUS_BADGE[appt.status];
                   const name = customerLabel(appt.customer);
                   return (
-                    <li key={appt.id} className="flex items-start justify-between gap-2">
+                    <li key={appt.id} className="flex items-center gap-3">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                        {initials(name)}
+                      </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{name}</p>
                         <p className="text-xs text-muted-foreground">
@@ -432,31 +467,8 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-      </div>
 
-      {/* Secondary row: Recent Leads + AI Workspace. */}
-      <div className="mb-8 grid gap-6 lg:grid-cols-2">
-        <RecentLeadsCard leads={recentLeads} />
-        {analyticsDashboard ? (
-          <AiWorkspaceCard
-            metrics={analyticsDashboard.ai_performance}
-            avgResponseSeconds={analyticsDashboard.overview.avg_response_time_seconds}
-            escalations={analyticsDashboard.ai_impact.human_escalations}
-            kbPublished={analyticsDashboard.business_health.knowledge_base.published_count}
-            learnedTodayCount={learnedToday.length}
-          />
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">AI workspace</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-6 w-full" />
-              ))}
-            </CardContent>
-          </Card>
-        )}
+        <RecentLeadsCard leads={recentLeads} className="lg:col-span-7" />
       </div>
 
       {/* Recent activity (Sprint 84, Dashboard Foundation; Sprint 86: wide
@@ -513,9 +525,13 @@ export default function DashboardPage() {
           a second time here would just duplicate the same real signal. */}
       {analyticsDashboard && (
         <div className="mb-8">
-          <h2 className="mb-3 text-sm font-medium text-muted-foreground">Performance · Last 30 days</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">Business performance · Last 30 days</h2>
+          {/* Asymmetric 2/1/1/1 split — Total conversations (the one KPI with
+              a trendline worth the extra room) reads as the featured tile,
+              the other three stay compact rather than repeating its width. */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard
+              className="lg:col-span-2"
               label="Total conversations"
               icon={MessageSquare}
               period="Last 30 Days"
@@ -581,12 +597,13 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* Quick actions — plain navigation shortcuts, no data required. */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Quick actions</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+      {/* Quick actions — plain navigation shortcuts, no data required.
+          Deliberately not a Card (Sprint 86A: the page should end on open
+          space, not one more boxed surface) — a labeled row floating
+          directly on the page background, set off by a hairline top rule. */}
+      <div className="border-t pt-6">
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Quick actions</h2>
+        <div className="flex flex-wrap gap-2">
           <Button asChild size="sm" variant="outline">
             <Link href="/demo">
               <MessageSquareText />
@@ -611,8 +628,8 @@ export default function DashboardPage() {
               View calendar
             </Link>
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </>
   );
 }

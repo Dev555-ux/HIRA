@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DonutChart } from "@/components/ui/donut-chart";
-import type { AnalyticsAiImpact } from "@/lib/types";
+import { HealthScore } from "@/components/health-score";
+import type { AnalyticsAiImpact, AnalyticsDashboard } from "@/lib/types";
 
 export interface BriefHighlight {
   icon: LucideIcon;
@@ -62,6 +63,7 @@ export function DashboardHero({
   onRefresh,
   pendingCount = 0,
   aiImpact,
+  healthData,
 }: {
   name: string;
   summary: string;
@@ -81,6 +83,11 @@ export function DashboardHero({
    *  AnalyticsDashboard.ai_impact) driving the hero's coverage visual.
    *  Omitted (not passed) rather than zeroed until there's real coverage. */
   aiImpact?: AnalyticsAiImpact;
+  /** Sprint 86A — the same analytics payload feeding the standalone Health
+   *  Score strip, now folded into the hero itself so the "home screen of an
+   *  AI COO" reads as one surface instead of a hero + a separate status row
+   *  underneath it. Same HealthScore component/signals, just relocated. */
+  healthData?: AnalyticsDashboard;
 }) {
   const [greeting, setGreeting] = useState("Welcome back");
 
@@ -115,6 +122,11 @@ export function DashboardHero({
           )}
           {!needsAttention && (
             <p className="mt-3 text-base text-muted-foreground">Nothing urgent requires you.</p>
+          )}
+          {healthData && (
+            <div className="mt-5">
+              <HealthScore data={healthData} />
+            </div>
           )}
           <div className="mt-6 flex flex-wrap gap-2">
             {pendingCount > 0 && (

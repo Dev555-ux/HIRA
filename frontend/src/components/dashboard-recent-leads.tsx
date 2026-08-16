@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status-pill";
 import { STAGE_LABEL, STAGE_STATUS } from "@/lib/leads";
 import type { Lead } from "@/lib/types";
-import { formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
 function leadName(lead: Lead): string {
   return lead.customer.display_name || lead.customer.company || lead.customer.wa_phone || "Unknown lead";
@@ -15,9 +15,9 @@ function leadName(lead: Lead): string {
 // PREVIEW_ROWS }) for the hero's "N new leads today" count, but the rows
 // themselves went unused. This surfaces those same real rows instead of a
 // second request.
-export function RecentLeadsCard({ leads }: { leads: Lead[] }) {
+export function RecentLeadsCard({ leads, className }: { leads: Lead[]; className?: string }) {
   return (
-    <Card interactive>
+    <Card interactive className={cn("h-full", className)}>
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle className="text-base">Recent leads</CardTitle>
         <Button asChild size="sm" variant="ghost">
@@ -31,20 +31,27 @@ export function RecentLeadsCard({ leads }: { leads: Lead[] }) {
             <p className="text-sm text-muted-foreground">No leads yet — new ones appear here as they come in.</p>
           </div>
         ) : (
-          <ul className="space-y-3.5">
+          <ul className="space-y-1">
             {leads.map((lead) => (
               <li key={lead.id}>
                 <Link
                   href="/leads"
-                  className="flex items-center justify-between gap-3 rounded-md -mx-2 px-2 py-1 hover:bg-accent"
+                  className="flex items-center justify-between gap-3 rounded-lg -mx-2 px-2 py-2 transition-colors hover:bg-accent"
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{leadName(lead)}</span>
-                    <span className="text-xs text-muted-foreground">{formatRelativeTime(lead.created_at)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Last interaction {formatRelativeTime(lead.updated_at)}
+                    </span>
                   </span>
-                  <StatusPill state={STAGE_STATUS[lead.stage]} className="shrink-0">
-                    {STAGE_LABEL[lead.stage]}
-                  </StatusPill>
+                  <span className="flex shrink-0 flex-col items-end gap-1">
+                    <StatusPill state={STAGE_STATUS[lead.stage]}>{STAGE_LABEL[lead.stage]}</StatusPill>
+                    {lead.estimated_value !== null && (
+                      <span className="text-xs font-semibold tabular-nums text-muted-foreground">
+                        ${lead.estimated_value.toLocaleString()}
+                      </span>
+                    )}
+                  </span>
                 </Link>
               </li>
             ))}
