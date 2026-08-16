@@ -1,6 +1,7 @@
-import { CalendarClock } from "lucide-react";
+import { AlertTriangle, CalendarClock } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
 import { StatusPill } from "@/components/ui/status-pill";
 import { APPOINTMENT_STATUS, APPOINTMENT_STATUS_BADGE, formatAppointmentRange } from "@/lib/appointments";
 import type { Appointment } from "@/lib/types";
@@ -29,7 +30,19 @@ function timeLabel(iso: string): string {
 // Renamed rather than re-scoped to literally-today: most days won't have a
 // same-day appointment, so an honest "Upcoming" is more useful than an
 // empty "Today" most of the time.
-export function SchedulePanel({ appointments }: { appointments: Appointment[] }) {
+// `isError`/`onRetry` (promotion migration — default undefined so every
+// existing caller without them is unaffected) surface a real fetch failure
+// as a retryable error instead of silently rendering the same "no
+// appointments" empty state V1's dashboard was careful to distinguish.
+export function SchedulePanel({
+  appointments,
+  isError,
+  onRetry,
+}: {
+  appointments: Appointment[];
+  isError?: boolean;
+  onRetry?: () => void;
+}) {
   return (
     <div className="flex h-full flex-col rounded-2xl bg-card p-6 shadow-e2 sm:p-7">
       <div className="mb-5 flex items-center justify-between">
@@ -39,7 +52,21 @@ export function SchedulePanel({ appointments }: { appointments: Appointment[] })
         </Button>
       </div>
 
-      {appointments.length === 0 ? (
+      {isError ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="Couldn't load"
+          description="Something went wrong — please try again."
+          action={
+            onRetry && (
+              <Button size="sm" onClick={onRetry}>
+                Retry
+              </Button>
+            )
+          }
+          className="flex-1 border-0 py-10"
+        />
+      ) : appointments.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
           <CalendarClock className="size-6 text-muted-foreground" aria-hidden="true" />
           <p className="text-sm text-muted-foreground">No upcoming appointments.</p>

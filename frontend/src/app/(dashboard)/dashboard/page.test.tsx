@@ -23,6 +23,7 @@ vi.mock("@/lib/api", () => ({
     listEscalations: vi.fn(),
     getAnalyticsDashboard: vi.fn(),
     listKbEntries: vi.fn(),
+    listCustomers: vi.fn(),
     approveMessage: vi.fn(),
     rejectMessage: vi.fn(),
     updateDraft: vi.fn(),
@@ -31,10 +32,7 @@ vi.mock("@/lib/api", () => ({
 
 import { api } from "@/lib/api";
 
-// Mirrors analytics/page.test.tsx's own EMPTY_DASHBOARD fixture — the only
-// field DashboardPage actually reads is business_health (via the shared
-// BusinessHealthCard), but getAnalyticsDashboard's real return type requires
-// the whole payload shape.
+// Mirrors analytics/page.test.tsx's own EMPTY_DASHBOARD fixture.
 const EMPTY_ANALYTICS_DASHBOARD: AnalyticsDashboard = {
   range: "30d",
   overview: {
@@ -126,6 +124,10 @@ describe("DashboardPage", () => {
     });
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue(EMPTY_ANALYTICS_DASHBOARD);
     vi.mocked(api.listKbEntries).mockResolvedValue([]);
+    vi.mocked(api.listCustomers).mockResolvedValue({
+      data: [],
+      meta: { total: 0, limit: 20, offset: 0 },
+    });
     vi.mocked(api.approveMessage).mockResolvedValue({ id: "msg-1", status: "sent" });
     vi.mocked(api.rejectMessage).mockResolvedValue({ id: "msg-1", status: "rejected" });
     vi.mocked(api.updateDraft).mockResolvedValue({
@@ -135,27 +137,12 @@ describe("DashboardPage", () => {
     });
   });
 
-  it("greets the signed-in owner by name with a real-data summary sentence", async () => {
-    vi.mocked(api.listPending).mockResolvedValue([
-      {
-        id: "msg-1",
-        conversation_id: "conv-1",
-        body: "Yes, we're open!",
-        created_at: new Date().toISOString(),
-        customer: { id: "cust-1", display_name: "Jordan Lee", wa_phone: "+15551230000" },
-        conversation_preview: null,
-      },
-    ]);
-
+  it("greets the signed-in owner by name", async () => {
     renderWithProviders(<DashboardPage />);
-
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Dev");
-    expect(
-      await screen.findByText("You have 1 reply waiting for review and no appointments booked."),
-    ).toBeInTheDocument();
   });
 
-  it("shows a reassuring Morning Brief close when there's nothing pending", async () => {
+  it("shows a reassuring close when there's nothing pending", async () => {
     renderWithProviders(<DashboardPage />);
     expect(await screen.findByText("Nothing urgent requires you.")).toBeInTheDocument();
   });
@@ -172,14 +159,11 @@ describe("DashboardPage", () => {
       },
     ]);
     renderWithProviders(<DashboardPage />);
-    // Sprint 84: "Needs your attention" now renders on first paint regardless
-    // of data state, so it's no longer a reliable settle-anchor for "pending
-    // data has loaded" — wait for the reply itself instead.
     await screen.findByText("Yes, we're open!");
     expect(screen.queryByText("Nothing urgent requires you.")).not.toBeInTheDocument();
   });
 
-  it("shows the pending-approval count and customer name", async () => {
+  it("shows the pending-reply count and customer name", async () => {
     vi.mocked(api.listPending).mockResolvedValue([
       {
         id: "msg-1",
@@ -194,6 +178,8 @@ describe("DashboardPage", () => {
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("Yes, we're open!")).toBeInTheDocument();
+    expect(screen.getByText("Pending replies")).toBeInTheDocument();
+    expect(screen.getByText("1 waiting")).toBeInTheDocument();
     expect(screen.getAllByText("Jordan Lee").length).toBeGreaterThan(0);
   });
 
@@ -203,7 +189,7 @@ describe("DashboardPage", () => {
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("Couldn't load pending approvals")).toBeInTheDocument();
-    expect(screen.queryByText("Nothing pending")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pending replies")).not.toBeInTheDocument();
   });
 
   it("shows upcoming appointments with customer name, time range, and status", async () => {
@@ -221,17 +207,15 @@ describe("DashboardPage", () => {
 
     renderWithProviders(<DashboardPage />);
 
-    // "Today's schedule" is static label text present from the first
-    // render, so wait for the appointment data itself before asserting.
     await waitFor(() => expect(screen.getAllByText("Jordan Lee").length).toBeGreaterThan(0));
-    expect(screen.getByText("Today's schedule")).toBeInTheDocument();
+    expect(screen.getByText("Upcoming appointments")).toBeInTheDocument();
     expect(screen.getByText("Booked")).toBeInTheDocument();
   });
 
   it("shows a meaningful empty state when there are no upcoming appointments", async () => {
     renderWithProviders(<DashboardPage />);
 
-    expect(await screen.findByText("No upcoming appointments")).toBeInTheDocument();
+    expect(await screen.findByText("No upcoming appointments.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "New appointment" })).toHaveAttribute(
       "href",
       "/appointments",
@@ -246,11 +230,6 @@ describe("DashboardPage", () => {
     expect(await screen.findAllByText("Couldn't load")).not.toHaveLength(0);
   });
 
-  // Sprint 84 (Dashboard Foundation): AI Activity replaces the old
-  // client-synthesized "Recent activity" feed — the page now renders
-  // whatever GET /api/v1/activity returns, trusting the backend's ordering
-  // and phrasing (see backend/tests/test_dashboard_api.py for coverage of
-  // summarize_activity()'s sentence-building logic itself).
   it("renders each AI activity entry's real summary sentence and timestamp", async () => {
     vi.mocked(api.listActivity).mockResolvedValue([
       {
@@ -268,37 +247,6 @@ describe("DashboardPage", () => {
 
     const feed = await screen.findByTestId("activity-feed");
     expect(within(feed).getByText("Booked an appointment for Sam Torres")).toBeInTheDocument();
-  });
-
-  it("renders AI activity entries in the order the backend returns them", async () => {
-    vi.mocked(api.listActivity).mockResolvedValue([
-      {
-        id: "trace-2",
-        conversation_id: "conv-2",
-        customer: { id: "cust-3", display_name: "Sam Torres" },
-        category: "action",
-        outcome: "sent",
-        summary: "Booked an appointment for Sam Torres",
-        created_at: "2026-08-02T09:00:00Z",
-      },
-      {
-        id: "trace-1",
-        conversation_id: "conv-1",
-        customer: { id: "cust-1", display_name: "Jordan Lee" },
-        category: "knowledge",
-        outcome: "sent",
-        summary: "Answered a question from Jordan Lee",
-        created_at: "2026-08-01T12:00:00Z",
-      },
-    ]);
-
-    renderWithProviders(<DashboardPage />);
-
-    const feed = await screen.findByTestId("activity-feed");
-    const rows = Array.from(feed.querySelectorAll("p.font-medium")).map((el) => el.textContent);
-    expect(rows.indexOf("Booked an appointment for Sam Torres")).toBeLessThan(
-      rows.indexOf("Answered a question from Jordan Lee"),
-    );
   });
 
   it("shows a meaningful empty state when there is no AI activity yet", async () => {
@@ -322,35 +270,25 @@ describe("DashboardPage", () => {
     expect(api.listActivity).toHaveBeenCalled();
   });
 
-  it("shows real WhatsApp status via the Health Score strip, never internal AI provider/model names", async () => {
+  it("surfaces a real WhatsApp connection problem via the Health Score strip", async () => {
     vi.mocked(api.getAnalyticsDashboard).mockResolvedValue({
       ...EMPTY_ANALYTICS_DASHBOARD,
       business_health: {
         ...EMPTY_ANALYTICS_DASHBOARD.business_health,
-        whatsapp: { status: "connected", display_phone_number: "+15551230000" },
+        alerts: ["whatsapp_disconnected"],
       },
     });
     renderWithProviders(<DashboardPage />);
 
-    expect(await screen.findByText("WhatsApp Connected")).toBeInTheDocument();
+    expect(await screen.findByText("WhatsApp Not connected")).toBeInTheDocument();
     expect(
       screen.queryByText(/groq|llama|claude|embedding|ai provider|knowledge search/i),
     ).not.toBeInTheDocument();
   });
 
-  it("reflects a not-connected WhatsApp status honestly", async () => {
-    // EMPTY_ANALYTICS_DASHBOARD's business_health.whatsapp.status is already
-    // "not_connected" — the default beforeEach mock already covers this case.
-    renderWithProviders(<DashboardPage />);
-
-    expect(await screen.findByText("WhatsApp Not connected")).toBeInTheDocument();
-  });
-
   it("refreshes every dashboard data source when Refresh is clicked", async () => {
     renderWithProviders(<DashboardPage />);
-    // The Morning Brief's own settled summary sentence is a reliable
-    // settle-anchor, present whether or not anything needs attention.
-    await screen.findByText("You have no replies waiting for review and no appointments booked.");
+    await screen.findByText("Nothing urgent requires you.");
     vi.mocked(api.listPending).mockClear();
     vi.mocked(api.getOnboardingStatus).mockClear();
     vi.mocked(api.listActivity).mockClear();
@@ -359,6 +297,7 @@ describe("DashboardPage", () => {
     vi.mocked(api.listEscalations).mockClear();
     vi.mocked(api.getAnalyticsDashboard).mockClear();
     vi.mocked(api.listKbEntries).mockClear();
+    vi.mocked(api.listCustomers).mockClear();
 
     await userEvent.click(screen.getByRole("button", { name: /refresh/i }));
 
@@ -370,14 +309,14 @@ describe("DashboardPage", () => {
     expect(api.getAnalyticsDashboard).toHaveBeenCalled();
     expect(api.listKbEntries).toHaveBeenCalled();
     expect(api.listAppointments).toHaveBeenCalled();
+    expect(api.listCustomers).toHaveBeenCalled();
   });
 
-  // M10: inline review wired directly on the Dashboard (not via
-  // PendingReviewContainer/CONVERSATIONS_KEY — see DashboardReviewCard's own
-  // comment) — these confirm the same use-pending.ts mutations Inbox and
-  // /pending already rely on behave identically when triggered from here,
-  // and that this section and the KPI tile never disagree afterward.
-  describe("inline review (M10)", () => {
+  // Inline review, wired directly on the Dashboard (not via
+  // PendingReviewContainer/CONVERSATIONS_KEY — see PendingReviewCard's own
+  // comment) — confirms the same use-pending.ts mutations Inbox and
+  // /pending already rely on behave identically when triggered from here.
+  describe("inline review", () => {
     const reply = {
       id: "msg-1",
       conversation_id: "conv-1",
@@ -388,9 +327,6 @@ describe("DashboardPage", () => {
     };
 
     it("approve removes the card via the optimistic PENDING_KEY update", async () => {
-      // Once for the initial load; onSettled's invalidation refetches
-      // afterward, and the (mocked) backend now correctly reflects the
-      // approval — same as a real server response.
       vi.mocked(api.listPending).mockResolvedValueOnce([reply]).mockResolvedValue([]);
       const user = userEvent.setup();
       renderWithProviders(<DashboardPage />);
@@ -398,7 +334,6 @@ describe("DashboardPage", () => {
       await screen.findByText("Yes, we're open!");
       await user.click(screen.getByRole("button", { name: /approve & send/i }));
 
-      // Optimistic PENDING_KEY update — no waiting on the network or the poll.
       await waitFor(() => expect(screen.queryByText("Yes, we're open!")).not.toBeInTheDocument());
       expect(api.approveMessage).toHaveBeenCalledWith(expect.any(Function), "msg-1");
     });
@@ -431,7 +366,7 @@ describe("DashboardPage", () => {
         expect(api.updateDraft).toHaveBeenCalledWith(expect.any(Function), "msg-1", "revised"),
       );
       // Still awaiting review, still visible — an edit doesn't remove the card.
-      const section = (await screen.findByText("Needs your attention")).closest<HTMLElement>(".rounded-2xl")!;
+      const section = (await screen.findByText("Pending replies")).closest<HTMLElement>(".rounded-2xl")!;
       expect(within(section).getByText("Jordan Lee")).toBeInTheDocument();
     });
 
@@ -448,7 +383,7 @@ describe("DashboardPage", () => {
       expect(screen.getByRole("button", { name: /approve & send/i })).toBeEnabled();
     });
 
-    it("previews only the first PREVIEW_ROWS pending replies", async () => {
+    it("shows every open pending reply, not just a preview", async () => {
       const replies = Array.from({ length: 7 }, (_, i) => ({
         ...reply,
         id: `msg-${i}`,
@@ -460,37 +395,19 @@ describe("DashboardPage", () => {
       renderWithProviders(<DashboardPage />);
 
       await screen.findByText("Reply body 0");
-      expect(screen.getByText("Reply body 4")).toBeInTheDocument();
-      expect(screen.queryByText("Reply body 5")).not.toBeInTheDocument();
-      expect(screen.queryByText("Reply body 6")).not.toBeInTheDocument();
+      expect(screen.getByText("Reply body 6")).toBeInTheDocument();
+      expect(screen.getByText("7 waiting")).toBeInTheDocument();
     });
   });
 
-  // HIRA v2 Phase 4 — Home redesign.
-  describe("Phase 4 — Home redesign", () => {
-    it("shows a prominent Search HIRA entry point that opens the existing command palette", async () => {
-      const user = userEvent.setup();
-      const spy = vi.fn();
-      window.addEventListener("keydown", spy);
-
+  describe("Needs your attention", () => {
+    it("shows a positive empty state when there's nothing pending and no open escalations", async () => {
       renderWithProviders(<DashboardPage />);
-      await user.click(screen.getByRole("button", { name: /search hira/i }));
-
-      expect(spy).toHaveBeenCalledOnce();
-      window.removeEventListener("keydown", spy);
-    });
-
-    // Sprint 84 (Dashboard Foundation): Needs Your Attention is the primary
-    // workspace now — it always renders, showing a calm positive state
-    // instead of disappearing when there's genuinely nothing to review.
-    it("shows Needs your attention with a positive empty state when there's nothing pending and no open escalations", async () => {
-      renderWithProviders(<DashboardPage />);
-      await screen.findByText("You have no replies waiting for review and no appointments booked.");
-      expect(screen.getByText("Needs your attention")).toBeInTheDocument();
+      await screen.findByText("Nothing urgent requires you.");
       expect(screen.getByText("Nothing needs you right now")).toBeInTheDocument();
     });
 
-    it("shows Needs your attention with an open escalation, even with nothing pending", async () => {
+    it("shows an open escalation, even with nothing pending", async () => {
       vi.mocked(api.listEscalations).mockResolvedValue({
         data: [
           {
@@ -512,11 +429,8 @@ describe("DashboardPage", () => {
 
       renderWithProviders(<DashboardPage />);
 
-      // Sprint 84: "Needs your attention" renders immediately regardless of
-      // data state, so wait for the escalation itself to settle first.
       expect(await screen.findByText("Priya Shah")).toBeInTheDocument();
       expect(screen.getByText("Needs your attention")).toBeInTheDocument();
-      expect(screen.getByText("Escalated — needs your review")).toBeInTheDocument();
     });
 
     it("routes to /escalations from an escalation's Review action", async () => {
@@ -541,18 +455,20 @@ describe("DashboardPage", () => {
       const user = userEvent.setup();
       renderWithProviders(<DashboardPage />);
 
-      await user.click(await screen.findByRole("button", { name: "Review" }));
+      await screen.findByText("Priya Shah");
+      await user.click(screen.getByRole("button", { name: /priya shah/i }));
       expect(routerPush).toHaveBeenCalledWith("/escalations");
     });
 
-    it("shows a flat summary sentence with no highlights and nothing happened today", async () => {
+    it("shows a retryable error instead of a misleading empty state when escalations fail to load", async () => {
+      vi.mocked(api.listEscalations).mockRejectedValue(new Error("Network error"));
+
       renderWithProviders(<DashboardPage />);
-      expect(
-        await screen.findByText("You have no replies waiting for review and no appointments booked."),
-      ).toBeInTheDocument();
+
+      expect(await screen.findByText("Couldn't load escalations")).toBeInTheDocument();
     });
 
-    it("surfaces a today-escalated conversation as a real Morning Brief highlight", async () => {
+    it("surfaces a today-escalated conversation as a real highlight", async () => {
       vi.mocked(api.listEscalations).mockResolvedValue({
         data: [
           {
@@ -569,31 +485,13 @@ describe("DashboardPage", () => {
         meta: { total: 1, limit: 5, offset: 0 },
       });
       renderWithProviders(<DashboardPage />);
-      // A real today-scoped signal (the escalation's own created_at) promotes
-      // the Morning Brief from the flat fallback sentence to a real
-      // highlight — and since it's still open, needsAttention suppresses
-      // "Nothing urgent requires you."
-      expect(
-        await screen.findByText("Escalated 1 conversation for your review"),
-      ).toBeInTheDocument();
+
+      expect(await screen.findByText("1 conversation escalated")).toBeInTheDocument();
       expect(screen.queryByText("Nothing urgent requires you.")).not.toBeInTheDocument();
     });
+  });
 
-    it("shows the Health Score strip with real analytics data (Sprint 86 — replaces BusinessHealthCard)", async () => {
-      vi.mocked(api.getAnalyticsDashboard).mockResolvedValue({
-        ...EMPTY_ANALYTICS_DASHBOARD,
-        business_health: {
-          ...EMPTY_ANALYTICS_DASHBOARD.business_health,
-          whatsapp: { status: "connected", display_phone_number: "+15551230000" },
-        },
-      });
-
-      renderWithProviders(<DashboardPage />);
-
-      const list = await screen.findByRole("list", { name: /business health signals/i });
-      expect(within(list).getByText("WhatsApp Connected")).toBeInTheDocument();
-    });
-
+  describe("Learned today", () => {
     it("hides Learned today when no knowledge entry was created today", async () => {
       vi.mocked(api.listKbEntries).mockResolvedValue([
         {
@@ -608,11 +506,11 @@ describe("DashboardPage", () => {
       ]);
 
       renderWithProviders(<DashboardPage />);
-      await screen.findByText("You have no replies waiting for review and no appointments booked.");
+      await screen.findByText("Nothing urgent requires you.");
       expect(screen.queryByText("Learned today")).not.toBeInTheDocument();
     });
 
-    it("shows Learned today with entries created today, hidden once none remain", async () => {
+    it("shows Learned today with entries created today, each linking to Knowledge Base", async () => {
       vi.mocked(api.listKbEntries).mockResolvedValue([
         {
           id: "kb-1",
@@ -628,8 +526,11 @@ describe("DashboardPage", () => {
       renderWithProviders(<DashboardPage />);
 
       expect(await screen.findByText("Learned today")).toBeInTheDocument();
-      expect(screen.getByText("Weekend hours")).toBeInTheDocument();
       expect(screen.getByText("1 new entry")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Weekend hours" })).toHaveAttribute(
+        "href",
+        "/knowledge-base",
+      );
     });
   });
 });

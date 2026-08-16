@@ -9,9 +9,10 @@ describe("DashboardHero", () => {
     render(
       <DashboardHero
         name="Dev"
-        summary="You have 2 replies waiting for review and 1 appointment booked."
+        summary="Here's what's happening with your business."
         isRefreshing={false}
         onRefresh={vi.fn()}
+        roster={[]}
       />,
     );
 
@@ -20,9 +21,7 @@ describe("DashboardHero", () => {
     // either, rather than pinning down a specific hour-dependent string.
     const heading = await screen.findByRole("heading", { level: 1 });
     expect(heading).toHaveTextContent("Dev");
-    expect(
-      screen.getByText("You have 2 replies waiting for review and 1 appointment booked."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Here's what's happening with your business.")).toBeInTheDocument();
   });
 
   it("greets with the first name only, not the full name", async () => {
@@ -32,6 +31,7 @@ describe("DashboardHero", () => {
         summary="Summary."
         isRefreshing={false}
         onRefresh={vi.fn()}
+        roster={[]}
       />,
     );
     const heading = await screen.findByRole("heading", { level: 1 });
@@ -41,14 +41,14 @@ describe("DashboardHero", () => {
 
   it("applies the one-time entrance animation to its root, not to anything that re-renders on its own", () => {
     const { container } = render(
-      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} />,
+      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} roster={[]} />,
     );
     expect(container.querySelector(".animate-fade-in-up")).toBeInTheDocument();
   });
 
   it("renders exactly one h1", () => {
     render(
-      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} />,
+      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} roster={[]} />,
     );
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
@@ -56,7 +56,7 @@ describe("DashboardHero", () => {
   it("calls onRefresh when Refresh is clicked, and spins the icon while refreshing", () => {
     const onRefresh = vi.fn();
     const { rerender, container } = render(
-      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={onRefresh} />,
+      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={onRefresh} roster={[]} />,
     );
 
     screen.getByRole("button", { name: /refresh/i }).click();
@@ -64,7 +64,7 @@ describe("DashboardHero", () => {
     expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
 
     rerender(
-      <DashboardHero name="Dev" summary="Summary." isRefreshing={true} onRefresh={onRefresh} />,
+      <DashboardHero name="Dev" summary="Summary." isRefreshing={true} onRefresh={onRefresh} roster={[]} />,
     );
     expect(container.querySelector(".animate-spin")).toBeInTheDocument();
   });
@@ -72,7 +72,7 @@ describe("DashboardHero", () => {
   it("links Test AI to Demo Chat", async () => {
     const user = userEvent.setup();
     render(
-      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} />,
+      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} roster={[]} />,
     );
 
     const link = screen.getByRole("link", { name: /test ai/i });
@@ -82,7 +82,7 @@ describe("DashboardHero", () => {
 
   it("has no promoted review CTA when pendingCount is 0 or omitted", () => {
     render(
-      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} />,
+      <DashboardHero name="Dev" summary="Summary." isRefreshing={false} onRefresh={vi.fn()} roster={[]} />,
     );
     expect(screen.queryByRole("link", { name: /review/i })).not.toBeInTheDocument();
   });
@@ -95,6 +95,7 @@ describe("DashboardHero", () => {
         isRefreshing={false}
         onRefresh={vi.fn()}
         pendingCount={1}
+        roster={[]}
       />,
     );
     const link = screen.getByRole("link", { name: /review 1 reply/i });
@@ -110,6 +111,7 @@ describe("DashboardHero", () => {
         isRefreshing={false}
         onRefresh={vi.fn()}
         pendingCount={4}
+        roster={[]}
       />,
     );
     expect(screen.getByRole("link", { name: /review 4 replies/i })).toHaveAttribute(
@@ -126,9 +128,9 @@ describe("DashboardHero", () => {
         highlights={[{ icon: CheckCheck, label: "Answered 3 customer messages" }]}
         isRefreshing={false}
         onRefresh={vi.fn()}
+        roster={[]}
       />,
     );
-    expect(screen.getByText("While you were away…")).toBeInTheDocument();
     expect(screen.getByText("Answered 3 customer messages")).toBeInTheDocument();
     expect(screen.queryByText("Summary.")).not.toBeInTheDocument();
   });
@@ -141,10 +143,10 @@ describe("DashboardHero", () => {
         highlights={[]}
         isRefreshing={false}
         onRefresh={vi.fn()}
+        roster={[]}
       />,
     );
     expect(screen.getByText("Summary.")).toBeInTheDocument();
-    expect(screen.queryByText("While you were away…")).not.toBeInTheDocument();
   });
 
   it("shows the reassuring close only when nothing needs attention", () => {
@@ -155,6 +157,7 @@ describe("DashboardHero", () => {
         needsAttention={false}
         isRefreshing={false}
         onRefresh={vi.fn()}
+        roster={[]}
       />,
     );
     expect(screen.getByText("Nothing urgent requires you.")).toBeInTheDocument();
@@ -166,8 +169,26 @@ describe("DashboardHero", () => {
         needsAttention={true}
         isRefreshing={false}
         onRefresh={vi.fn()}
+        roster={[]}
       />,
     );
     expect(screen.queryByText("Nothing urgent requires you.")).not.toBeInTheDocument();
+  });
+
+  it("shows the AI Network for every real employee role, active or idle", () => {
+    render(
+      <DashboardHero
+        name="Dev"
+        summary="Summary."
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+        roster={[
+          { role: "scheduler", count: 5, pct: 100, mostActive: true, active: true },
+          { role: "bookkeeper", count: 0, pct: 0, mostActive: false, active: false },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Scheduler")).toBeInTheDocument();
+    expect(screen.getByText("Bookkeeper")).toBeInTheDocument();
   });
 });
