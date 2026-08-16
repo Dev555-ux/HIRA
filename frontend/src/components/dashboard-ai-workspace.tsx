@@ -6,6 +6,11 @@ import { MemoryBadge } from "@/components/ui/memory-badge";
 import type { FounderAiMetrics } from "@/lib/types";
 import { cn, formatDuration } from "@/lib/utils";
 
+// Sprint 87 — the bare icon + hard `divide-y` rule below replaced with the
+// same "icon in a soft chip" language StatCard/ActivityAvatar/Today's
+// Schedule already use elsewhere on this page, and a hover highlight
+// instead of a dividing line — one fewer border on the page, consistent
+// with the rest of the redesign.
 function Row({
   icon: Icon,
   label,
@@ -18,9 +23,16 @@ function Row({
   tone?: "neutral" | "warning";
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5">
-      <span className="flex min-w-0 items-center gap-2.5 text-sm text-muted-foreground">
-        <Icon className={cn("size-4 shrink-0", tone === "warning" && "text-warning")} aria-hidden="true" />
+    <div className="-mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-accent/40">
+      <span className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
+        <span
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-full",
+            tone === "warning" ? "bg-warning/12" : "bg-primary/10",
+          )}
+        >
+          <Icon className={cn("size-4", tone === "warning" ? "text-warning" : "text-primary")} aria-hidden="true" />
+        </span>
         <span className="truncate">{label}</span>
       </span>
       <span className={cn("shrink-0 text-sm font-semibold", tone === "warning" && "text-warning")}>{value}</span>
@@ -61,7 +73,7 @@ export function AiWorkspaceCard({
       <CardHeader>
         <CardTitle className="text-base">AI workspace</CardTitle>
       </CardHeader>
-      <CardContent className="divide-y">
+      <CardContent className="space-y-0.5">
         <Row
           icon={Bot}
           label="Most active employee"
@@ -74,9 +86,11 @@ export function AiWorkspaceCard({
           value={escalations}
           tone={escalations > 0 ? "warning" : "neutral"}
         />
-        <div className="flex items-center justify-between gap-3 py-2.5">
-          <span className="flex min-w-0 items-center gap-2.5 text-sm text-muted-foreground">
-            <BookOpen className="size-4 shrink-0" aria-hidden="true" />
+        <div className="-mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-accent/40">
+          <span className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <BookOpen className="size-4 text-primary" aria-hidden="true" />
+            </span>
             <Link href="/knowledge-base" className="truncate hover:text-foreground hover:underline">
               Knowledge base
             </Link>

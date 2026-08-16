@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { DonutChart } from "@/components/ui/donut-chart";
 import { HealthScore } from "@/components/health-score";
 import type { AnalyticsAiImpact, AnalyticsDashboard } from "@/lib/types";
@@ -99,95 +100,121 @@ export function DashboardHero({
   const showVisual = Boolean(aiImpact) && totalCoverage > 0;
 
   return (
-    <div className="mb-8 animate-fade-in-up">
-      <div className="flex flex-col gap-8 lg:flex-row lg:items-stretch lg:gap-10">
-        <div className="min-w-0 flex-1">
-          <h1 className="type-display-xl text-balance">
-            {greeting}, {firstName(name)}
-          </h1>
-          {highlights.length > 0 ? (
-            <>
-              <p className="mt-3 text-base text-muted-foreground">While you were away…</p>
-              <ul className="mt-3 space-y-1.5">
-                {highlights.map((h) => (
-                  <li key={h.label} className="flex items-center gap-2 text-base">
-                    <Check className="size-4 shrink-0 text-success" aria-hidden="true" />
-                    {h.label}
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="mt-2 text-base text-muted-foreground">{summary}</p>
-          )}
-          {!needsAttention && (
-            <p className="mt-3 text-base text-muted-foreground">Nothing urgent requires you.</p>
-          )}
-          {healthData && (
-            <div className="mt-5">
-              <HealthScore data={healthData} />
-            </div>
-          )}
-          <div className="mt-6 flex flex-wrap gap-2">
-            {pendingCount > 0 && (
-              <Button asChild size="sm">
-                <Link href="/pending">
-                  Review {pendingCount} {pendingCount === 1 ? "reply" : "replies"}
-                  <ArrowRight />
+    <div className="mb-10 animate-fade-in-up">
+      {/* Sprint 87 — the hero is now HIRA's one floating glass surface: a
+          brand-tinted gradient wash + hairline brand border (Card
+          variant="hero") with two soft ambient glows layered underneath the
+          content, never touching the data itself. Everything that used to
+          sit on the bare page background (greeting, highlights, health
+          pills, actions, the AI coverage panel) now lives inside one
+          premium surface instead of floating loose above a plain rect. */}
+      <Card variant="hero" className="relative overflow-hidden p-6 sm:p-8 lg:p-10">
+        <div
+          className="pointer-events-none absolute -left-24 -top-32 size-72 rounded-full bg-brand/20 blur-3xl"
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute -bottom-32 -right-16 size-80 rounded-full bg-brand/10 blur-3xl"
+          aria-hidden="true"
+        />
+        <div className="relative flex flex-col gap-8 lg:flex-row lg:items-stretch lg:gap-10">
+          <div className="min-w-0 flex-1">
+            <h1 className="type-display-xl text-balance">
+              {greeting}, {firstName(name)}
+            </h1>
+            {highlights.length > 0 ? (
+              <>
+                <p className="mt-3 text-base text-muted-foreground">While you were away…</p>
+                <ul className="mt-3 space-y-1.5">
+                  {highlights.map((h) => (
+                    <li key={h.label} className="flex items-center gap-2 text-base">
+                      <Check className="size-4 shrink-0 text-success" aria-hidden="true" />
+                      {h.label}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="mt-2 text-base text-muted-foreground">{summary}</p>
+            )}
+            {!needsAttention && (
+              <p className="mt-3 text-base text-muted-foreground">Nothing urgent requires you.</p>
+            )}
+            {healthData && (
+              <div className="mt-5">
+                <HealthScore data={healthData} />
+              </div>
+            )}
+            <div className="mt-6 flex flex-wrap gap-2">
+              {pendingCount > 0 && (
+                <Button asChild size="sm">
+                  <Link href="/pending">
+                    Review {pendingCount} {pendingCount === 1 ? "reply" : "replies"}
+                    <ArrowRight />
+                  </Link>
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={onRefresh}>
+                <RefreshCw className={isRefreshing ? "animate-spin" : ""} />
+                Refresh
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/demo">
+                  <MessageSquareText />
+                  Test AI
                 </Link>
               </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={onRefresh}>
-              <RefreshCw className={isRefreshing ? "animate-spin" : ""} />
-              Refresh
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/demo">
-                <MessageSquareText />
-                Test AI
-              </Link>
-            </Button>
+            </div>
           </div>
-        </div>
 
-        {showVisual && aiImpact && (
-          <div className="flex shrink-0 flex-col items-center justify-center gap-4 rounded-3xl border bg-card px-10 py-8 shadow-e3 lg:w-[300px]">
-            <p className="type-caption text-center font-semibold uppercase tracking-wide text-muted-foreground">
-              AI coverage · Last 30 days
-            </p>
-            <div className="relative flex items-center justify-center">
-              <div
-                className="absolute inset-0 rounded-full bg-success animate-ambient-pulse"
-                aria-hidden="true"
-              />
-              <DonutChart
-                title="AI coverage, last 30 days"
-                size={168}
-                showLegend={false}
-                segments={[
-                  {
-                    key: "handled",
-                    label: "Handled by AI",
-                    value: aiImpact.conversations_handled,
-                    state: "success",
-                  },
-                  {
-                    key: "escalated",
-                    label: "Escalated to a human",
-                    value: aiImpact.human_escalations,
-                    state: "waiting",
-                  },
-                ]}
-              />
+          {showVisual && aiImpact && (
+            // The inner "raised" layer — a second, quieter surface nested
+            // inside the outer glass hero (backdrop-blur over the gradient
+            // wash showing through, not another opaque card) so the panel
+            // reads as one layer deeper rather than a redundant second box.
+            <div className="flex shrink-0 flex-col items-center justify-center gap-4 rounded-2xl border border-border/50 bg-background/60 px-10 py-8 shadow-e2 backdrop-blur-sm lg:w-[300px] dark:bg-background/40">
+              <p className="type-caption text-center font-semibold uppercase tracking-wide text-muted-foreground">
+                AI coverage · Last 30 days
+              </p>
+              <div className="relative flex items-center justify-center">
+                {/* Sized to the chart's own circle (184px), not `inset-0`
+                    against this wrapper — the wrapper also contains
+                    DonutChart's "View as table" disclosure below the ring,
+                    so `inset-0` stretched the glow into a tall oval that
+                    swallowed the ring instead of haloing it. */}
+                <div
+                  className="absolute size-[184px] rounded-full bg-brand animate-ambient-pulse"
+                  aria-hidden="true"
+                />
+                <DonutChart
+                  title="AI coverage, last 30 days"
+                  size={184}
+                  showLegend={false}
+                  segments={[
+                    {
+                      key: "handled",
+                      label: "Handled by AI",
+                      value: aiImpact.conversations_handled,
+                      state: "success",
+                    },
+                    {
+                      key: "escalated",
+                      label: "Escalated to a human",
+                      value: aiImpact.human_escalations,
+                      state: "waiting",
+                    },
+                  ]}
+                />
+              </div>
+              <div className="flex items-center gap-1.5 text-sm">
+                <Sparkles className="size-3.5 text-brand" aria-hidden="true" />
+                <span className="font-semibold">≈{aiImpact.estimated_hours_saved}h</span>
+                <span className="text-muted-foreground">saved this month</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 text-sm">
-              <Sparkles className="size-3.5 text-brand" aria-hidden="true" />
-              <span className="font-semibold">≈{aiImpact.estimated_hours_saved}h</span>
-              <span className="text-muted-foreground">saved this month</span>
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

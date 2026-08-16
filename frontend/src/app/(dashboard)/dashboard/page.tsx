@@ -280,7 +280,7 @@ export default function DashboardPage() {
         healthData={analyticsDashboard}
       />
 
-      <div className="mb-8">
+      <div className="mb-10">
         <AskHiraBar />
       </div>
 
@@ -292,7 +292,7 @@ export default function DashboardPage() {
           happening" surfaces (what to decide, what HIRA itself has been
           doing), asymmetric (7/5) rather than a flat 50/50 split since the
           attention list is the one with genuinely variable-length content. */}
-      <div className="mb-8 grid gap-6 lg:grid-cols-12">
+      <div className="mb-10 grid gap-6 lg:grid-cols-12">
         {/* Sprint 84 (Dashboard Foundation): Needs Your Attention is the
             primary workspace, not a card that disappears when there's
             nothing to review — it always renders, with a calm, positive
@@ -408,7 +408,7 @@ export default function DashboardPage() {
       {/* Secondary row: Today's Schedule + Recent Leads — asymmetric the
           other way (5/7) than the row above, so the page doesn't settle
           into a repeating 50/50 rhythm. */}
-      <div className="mb-8 grid gap-6 lg:grid-cols-12">
+      <div className="mb-10 grid gap-6 lg:grid-cols-12">
         <Card interactive className="shadow-e3 lg:col-span-5">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-base">Today&apos;s schedule</CardTitle>
@@ -442,12 +442,15 @@ export default function DashboardPage() {
                 className="border-0 py-10"
               />
             ) : (
-              <ul className="space-y-3.5">
+              <ul className="space-y-1">
                 {upcomingAppointments.slice(0, 4).map((appt: Appointment) => {
                   const badge = APPOINTMENT_STATUS_BADGE[appt.status];
                   const name = customerLabel(appt.customer);
                   return (
-                    <li key={appt.id} className="flex items-center gap-3">
+                    <li
+                      key={appt.id}
+                      className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-accent"
+                    >
                       <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                         {initials(name)}
                       </div>
@@ -475,7 +478,7 @@ export default function DashboardPage() {
           timeline treatment) — real execution_traces, read back as a
           narrative log ("what HIRA has actually done"), distinct from
           "Needs your attention"'s prescriptive "what to do now." */}
-      <Card interactive className="mb-8 shadow-e3">
+      <Card interactive className="mb-10 shadow-e3">
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Recent activity</CardTitle>
           <Button asChild size="sm" variant="ghost">
@@ -524,13 +527,14 @@ export default function DashboardPage() {
           status already lives in the Health Score strip above — showing it
           a second time here would just duplicate the same real signal. */}
       {analyticsDashboard && (
-        <div className="mb-8">
+        <div className="mb-10">
           <h2 className="mb-3 text-sm font-medium text-muted-foreground">Business performance · Last 30 days</h2>
           {/* Asymmetric 2/1/1/1 split — Total conversations (the one KPI with
               a trendline worth the extra room) reads as the featured tile,
               the other three stay compact rather than repeating its width. */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard
+              size="featured"
               className="lg:col-span-2"
               label="Total conversations"
               icon={MessageSquare}
@@ -541,6 +545,7 @@ export default function DashboardPage() {
               sparkline={analyticsDashboard.trends.conversations}
             />
             <StatCard
+              size="compact"
               label="AI coverage"
               icon={CheckCheck}
               period="Last 30 Days"
@@ -549,6 +554,7 @@ export default function DashboardPage() {
               value={coveragePct !== null ? `${coveragePct}%` : "—"}
             />
             <StatCard
+              size="compact"
               label="Escalated to a human"
               icon={AlertTriangle}
               period="Last 30 Days"
@@ -557,6 +563,7 @@ export default function DashboardPage() {
               value={analyticsDashboard.ai_impact.human_escalations}
             />
             <StatCard
+              size="compact"
               label="Estimated work saved"
               icon={Sparkles}
               period="Last 30 Days"
@@ -573,7 +580,7 @@ export default function DashboardPage() {
           entirely when nothing was added today, same "don't announce
           nothing" rule as Needs your attention. */}
       {learnedToday.length > 0 && (
-        <Card className="mb-8">
+        <Card variant="minimal" className="mb-10">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-base">Learned today</CardTitle>
             <MemoryBadge>

@@ -11,6 +11,15 @@ function leadName(lead: Lead): string {
   return lead.customer.display_name || lead.customer.company || lead.customer.wa_phone || "Unknown lead";
 }
 
+// Same initials-avatar treatment as Today's Schedule and the Recent
+// Activity timeline (Sprint 87) — one consistent "a row of people" language
+// across every list-of-people panel on the page, instead of leads being the
+// one list rendering as bare text rows.
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
 // Recent Leads (Sprint 86) — the page already fetches useLeads({ limit:
 // PREVIEW_ROWS }) for the hero's "N new leads today" count, but the rows
 // themselves went unused. This surfaces those same real rows instead of a
@@ -32,29 +41,35 @@ export function RecentLeadsCard({ leads, className }: { leads: Lead[]; className
           </div>
         ) : (
           <ul className="space-y-1">
-            {leads.map((lead) => (
-              <li key={lead.id}>
-                <Link
-                  href="/leads"
-                  className="flex items-center justify-between gap-3 rounded-lg -mx-2 px-2 py-2 transition-colors hover:bg-accent"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{leadName(lead)}</span>
-                    <span className="text-xs text-muted-foreground">
-                      Last interaction {formatRelativeTime(lead.updated_at)}
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 flex-col items-end gap-1">
-                    <StatusPill state={STAGE_STATUS[lead.stage]}>{STAGE_LABEL[lead.stage]}</StatusPill>
-                    {lead.estimated_value !== null && (
-                      <span className="text-xs font-semibold tabular-nums text-muted-foreground">
-                        ${lead.estimated_value.toLocaleString()}
+            {leads.map((lead) => {
+              const name = leadName(lead);
+              return (
+                <li key={lead.id}>
+                  <Link
+                    href="/leads"
+                    className="flex items-center gap-3 rounded-lg -mx-2 px-2 py-2 transition-colors hover:bg-accent"
+                  >
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                      {initials(name)}
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        Last interaction {formatRelativeTime(lead.updated_at)}
                       </span>
-                    )}
-                  </span>
-                </Link>
-              </li>
-            ))}
+                    </span>
+                    <span className="flex shrink-0 flex-col items-end gap-1">
+                      <StatusPill state={STAGE_STATUS[lead.stage]}>{STAGE_LABEL[lead.stage]}</StatusPill>
+                      {lead.estimated_value !== null && (
+                        <span className="text-xs font-semibold tabular-nums text-muted-foreground">
+                          ${lead.estimated_value.toLocaleString()}
+                        </span>
+                      )}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </CardContent>

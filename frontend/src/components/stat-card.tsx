@@ -1,7 +1,7 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buildSmoothPath } from "@/components/ui/trend-chart";
@@ -58,9 +58,16 @@ function useCountUp(target: number | null): number {
   return value;
 }
 
-function MiniSparkline({ data }: { data: AnalyticsTrendPoint[] }) {
+// Sprint 87 — brought up to the same premium mark language as TrendChart
+// (gradient area fill, endpoint glow + marker) rather than the bare stroked
+// line this used to be, without adopting TrendChart itself: that component's
+// hover tooltip, axis labels, and "view as table" fallback are sized for a
+// dedicated chart card, and dropping its 148px-tall default variant into a
+// compact KPI tile would blow the tile's height out past its siblings.
+function MiniSparkline({ data, height = 32 }: { data: AnalyticsTrendPoint[]; height?: number }) {
   const w = 200;
-  const h = 32;
+  const h = height;
+  const gradientId = useId();
   const counts = data.map((d) => d.count);
   const max = Math.max(1, ...counts);
   const points = data.map((d, i) => ({
@@ -68,6 +75,8 @@ function MiniSparkline({ data }: { data: AnalyticsTrendPoint[] }) {
     y: h - 2 - (d.count / max) * (h - 6),
   }));
   const d = buildSmoothPath(points);
+  const areaPath = points.length > 0 ? `${d} L${w},${h} L0,${h} Z` : "";
+  const last = points[points.length - 1];
   return (
     <svg
       viewBox={`0 0 ${w} ${h}`}
@@ -77,7 +86,20 @@ function MiniSparkline({ data }: { data: AnalyticsTrendPoint[] }) {
       className="overflow-visible"
       aria-hidden="true"
     >
-      <path d={d} fill="none" stroke="var(--primary)" strokeWidth="1.75" strokeLinecap="round" opacity="0.85" />
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {points.length > 0 && <path d={areaPath} fill={`url(#${gradientId})`} />}
+      <path d={d} fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" opacity="0.9" />
+      {last && (
+        <>
+          <circle cx={last.x} cy={last.y} r={h >= 48 ? 7 : 5} className="fill-primary" opacity="0.16" />
+          <circle cx={last.x} cy={last.y} r={h >= 48 ? 3 : 2.25} className="fill-card stroke-primary" strokeWidth="1.75" />
+        </>
+      )}
     </svg>
   );
 }
@@ -96,6 +118,7 @@ export function StatCard({
   sparkline,
   tone = "neutral",
   className,
+  size,
 }: {
   label: string;
   value: React.ReactNode;
@@ -117,18 +140,35 @@ export function StatCard({
   /** "warning" tints the icon chip for metrics that are a caution signal, not a plain volume metric. */
   tone?: "neutral" | "warning";
   className?: string;
+  /** Sprint 87 — an explicit, opt-in size tier so one KPI can read as a
+   *  row's headline and others as quieter supporting detail, without
+   *  changing this component's default rendering for its other callers
+   *  (Analytics, Ops, AiMetricsSection all render plain `<StatCard>` with
+   *  no `size` and must stay pixel-identical to before this sprint).
+   *  `"default"` is exactly the pre-Sprint-87 look. `"featured"` is the one
+   *  headline tile in a row — bigger number, bigger chart, brand-tinted icon
+   *  chip. `"compact"` is a `secondary`-elevation supporting tile — smaller
+   *  number, tighter padding. */
+  size?: "default" | "featured" | "compact";
 }) {
   const animated = useCountUp(countTo ?? null);
+  const isFeatured = size === "featured";
+  const isCompact = size === "compact";
 
   return (
-    <Card interactive className={cn("group", className)}>
-      <CardContent className="p-6">
+    <Card interactive variant={isCompact ? "secondary" : "primary"} className={cn("group", className)}>
+      <CardContent className={cn("p-6", isFeatured && "sm:p-7", isCompact && "p-5")}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {loading ? (
-              <Skeleton className="h-9 w-16" />
+              <Skeleton className={isFeatured ? "h-11 w-20" : isCompact ? "h-7 w-14" : "h-9 w-16"} />
             ) : (
-              <p className="animate-fade-in text-3xl font-semibold tabular-nums tracking-tight">
+              <p
+                className={cn(
+                  "animate-fade-in font-semibold tabular-nums tracking-tight",
+                  isFeatured ? "text-4xl sm:text-5xl" : isCompact ? "text-2xl" : "text-3xl",
+                )}
+              >
                 {countTo !== undefined ? (
                   <>
                     {prefix}
@@ -140,7 +180,9 @@ export function StatCard({
                 )}
               </p>
             )}
-            <p className="mt-1.5 text-sm text-muted-foreground">{label}</p>
+            <p className={cn("text-muted-foreground", isFeatured ? "mt-2 text-sm" : isCompact ? "mt-1 text-xs" : "mt-1.5 text-sm")}>
+              {label}
+            </p>
             {(period ?? delta) && (
               <div className="mt-1.5 flex items-center gap-2 type-caption">
                 {delta && (
@@ -159,16 +201,26 @@ export function StatCard({
           </div>
           <div
             className={cn(
-              "flex size-9 shrink-0 items-center justify-center rounded-full transition-colors duration-200",
-              tone === "warning" ? "bg-warning/12 group-hover:bg-warning/18" : "bg-primary/10 group-hover:bg-primary/15",
+              "flex shrink-0 items-center justify-center rounded-full transition-colors duration-200",
+              isFeatured ? "size-11" : isCompact ? "size-8" : "size-9",
+              tone === "warning"
+                ? "bg-warning/12 group-hover:bg-warning/18"
+                : isFeatured
+                  ? "bg-brand/10 group-hover:bg-brand/15"
+                  : "bg-primary/10 group-hover:bg-primary/15",
             )}
           >
-            <Icon className={cn("size-4", tone === "warning" ? "text-warning" : "text-primary")} />
+            <Icon
+              className={cn(
+                isFeatured ? "size-5" : isCompact ? "size-3.5" : "size-4",
+                tone === "warning" ? "text-warning" : isFeatured ? "text-brand" : "text-primary",
+              )}
+            />
           </div>
         </div>
         {sparkline && sparkline.length > 1 && (
-          <div className="mt-3 h-8">
-            <MiniSparkline data={sparkline} />
+          <div className={isFeatured ? "mt-4 h-14" : "mt-3 h-8"}>
+            <MiniSparkline data={sparkline} height={isFeatured ? 56 : 32} />
           </div>
         )}
         {hint && <p className="mt-3 text-xs text-muted-foreground">{hint}</p>}
