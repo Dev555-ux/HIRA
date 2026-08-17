@@ -3,9 +3,9 @@
 **Status**: Accepted (2026-08-17)
 **Scope**: The channel-agnostic messaging pipeline — inbound message receipt through outbound delivery — across every transport HIRA supports. Vertical-agnostic, channel-agnostic; today's only live channel is WhatsApp.
 **Built in**: Sprint 64A, PRs 2–7 (`v0.64.1-whatsapp-provider` through `v0.64.5-messaging-platform`).
-**Related**: `documentation/ARCHITECTURE.md` (system-wide overview — predates this work and describes the pipeline this document supersedes for the messaging path specifically), `documentation/WHATSAPP_INTEGRATION.md`, `documentation/architecture/ADR-001-transactional-outbox.md` (the job/retry engine `MessagingService.record_inbound()` enqueues into).
+**Related**: `documentation/ARCHITECTURE.md` (system-wide overview — predates this work and describes the pipeline this document supersedes for the messaging path specifically), `documentation/WHATSAPP_INTEGRATION.md`, `documentation/architecture/ADR-001-transactional-outbox.md` (the job/retry engine `MessagingService.record_inbound()` enqueues into), `documentation/architecture/channel-development-guide.md` (the step-by-step playbook for adding a channel — this document explains *why* the architecture is shaped this way; that one is the *how-to*).
 
-This is the canonical reference for how a message moves through HIRA. Read this before touching `app/channels/`, `app/services/channel_manager.py`, `app/services/messaging_service.py`, or `app/webhooks/`. If you're adding a new channel (Messenger, Email, Website Chat, Telegram — see §8), everything you need not to break is here.
+This is the canonical reference for how a message moves through HIRA. Read this before touching `app/channels/`, `app/services/channel_manager.py`, `app/services/messaging_service.py`, or `app/webhooks/`. If you're adding a new channel (Messenger, Email, Website Chat, Telegram), read this first for the architecture, then go to `channel-development-guide.md` for the step-by-step build process — §8 below is the extension checklist in brief; that document is the full playbook.
 
 ---
 
