@@ -12,15 +12,25 @@ Conversation resolution — those are MessagingService's job once it exists.
 This module has no database import and no side effects; it is a pure
 function of its input.
 
-This intentionally mirrors (not reuses) `app/webhooks/whatsapp.py`'s
-`_persist_inbound`/`_extract_text` parsing logic. PR 3 does not touch
-`webhooks/whatsapp.py` — the production webhook route keeps using its own
-inline parsing until the PR that cuts it over to call this module through
-ChannelManager. Until that cutover, this is a deliberate, temporary
-duplication of the parsing logic (not the persistence logic, which stays
-exclusively in webhooks/whatsapp.py): both implementations are covered by
-tests asserting identical output for the same input, so the two can't drift
-without a test failing.
+`parse_inbound_payload`/`_extract_text` intentionally mirror (not reuse)
+`app/webhooks/whatsapp.py::_persist_inbound`'s parsing logic — the
+production webhook route keeps using its own inline parsing for the actual
+commit path; this is a deliberate, temporary duplication covered by tests
+asserting identical output for the same input, so the two can't drift
+without a test failing. See app/channels/whatsapp/shadow.py (PR 4), which
+exists specifically to catch drift on live traffic beyond what synthetic
+test fixtures cover.
+
+`signature_valid`, unlike the above, is not a mirror — it's the single
+real implementation, moved here from `webhooks/whatsapp.py` in PR 4 so both
+`WhatsAppProvider.verify_webhook_signature()` and the production webhook
+route import the same function instead of one depending on the other
+(importing it the other way around, from webhooks/whatsapp.py, creates a
+circular import once webhooks/whatsapp.py itself needs to import from
+app.channels.whatsapp for Shadow Mode). Behavior is unchanged — same HMAC-
+SHA256 comparison, same "sha256=" prefix handling — only its location and,
+since nothing outside this package needs it to be a "private" underscored
+name anymore, its name.
 
 Future integration point: `WhatsAppProvider.parse_webhook()` (provider.py)
 calls `parse_inbound_payload()` after decoding the raw body as JSON.
@@ -28,9 +38,21 @@ calls `parse_inbound_payload()` after decoding the raw body as JSON.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+
 from app.channels.base.message import NormalizedMessage
 
 CHANNEL_ID = "whatsapp"
+
+
+def signature_valid(raw_body: bytes, header: str | None, app_secret: str) -> bool:
+    """True only if `header` is a valid `X-Hub-Signature-256` HMAC-SHA256
+    of `raw_body` under `app_secret` — Meta's webhook signing scheme."""
+    if not header or not header.startswith("sha256="):
+        return False
+    expected = hmac.new(app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header.removeprefix("sha256="))
 
 
 def parse_inbound_payload(payload: dict) -> list[NormalizedMessage]:

@@ -28,7 +28,6 @@ Meta App's webhook config (see documentation/WHATSAPP_INTEGRATION.md).
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import json
 from datetime import datetime, timedelta, timezone
@@ -40,6 +39,8 @@ from sqlalchemy.orm import Session
 
 from app.ai.processing import generate_and_store_reply
 from app.ai.tasks import GENERATE_AI_REPLY_TASK
+from app.channels.whatsapp.parsing import signature_valid
+from app.channels.whatsapp.shadow import run_shadow_comparison
 from app.core.config import settings
 from app.db.session import get_db
 from app.jobs import enqueue_job
@@ -74,13 +75,6 @@ def verify_subscription(request: Request) -> Response:
     if mode == "subscribe" and hmac.compare_digest(token or "", settings.whatsapp_verify_token):
         return Response(content=challenge, media_type="text/plain")
     return Response(status_code=403)
-
-
-def _signature_valid(raw_body: bytes, header: str | None, app_secret: str) -> bool:
-    if not header or not header.startswith("sha256="):
-        return False
-    expected = hmac.new(app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, header.removeprefix("sha256="))
 
 
 def _first_phone_number_id(payload: dict) -> str | None:
@@ -146,10 +140,26 @@ def receive(
     except WhatsAppCredentialError:
         return Response(status_code=403)
 
-    if not _signature_valid(raw_body, request.headers.get("X-Hub-Signature-256"), app_secret):
+    if not signature_valid(raw_body, request.headers.get("X-Hub-Signature-256"), app_secret):
         return Response(status_code=403)
 
     new_inbound = _persist_inbound(db, payload)
+
+    if settings.enable_whatsapp_shadow_mode:
+        # Sprint 64A PR 4 (Shadow Mode). Scheduled as a BackgroundTask so it
+        # runs strictly after this response is sent — zero added latency to
+        # Meta's webhook ack, and nothing it does can affect the response,
+        # persistence, or AI dispatch above/below this line. See
+        # app/channels/whatsapp/shadow.py for what it compares and why.
+        background_tasks.add_task(
+            run_shadow_comparison,
+            raw_body=raw_body,
+            payload=payload,
+            old_inbound=new_inbound,
+            routing_key_old=phone_number_id,
+            business_id=business.id,
+        )
+
     if not settings.use_transactional_outbox:
         # Legacy path: schedule reply generation in-process, after the
         # webhook's DB transaction has already committed. When the outbox is

@@ -86,6 +86,17 @@ class Settings(BaseSettings):
     enable_embedded_signup: bool = False
     embedded_signup_config_id: str = ""
 
+    # Shadow Mode (Sprint 64A PR 4). OFF means the webhook route
+    # (app/webhooks/whatsapp.py) never even schedules the comparison
+    # background task — zero added work. ON means WhatsAppProvider's
+    # parser (app/channels/whatsapp/) runs against the same live payload
+    # the production parser already committed, purely to compare outputs
+    # and log any divergence; it never affects the response, persistence,
+    # or AI dispatch, which stay exactly as they are today. See
+    # app/channels/whatsapp/shadow.py's module docstring for the full
+    # comparison strategy.
+    enable_whatsapp_shadow_mode: bool = False
+
     # Embeddings. Provider is swappable via config (see app/ai/embeddings).
     # "local_bge" runs BAAI/bge-small-en-v1.5 locally (384 dims) — no API key.
     embedding_provider: str = "local_bge"
@@ -209,8 +220,8 @@ class Settings(BaseSettings):
         default is safe only because local dev is never internet-reachable
         under Meta's real signature scheme — deployed with ENVIRONMENT=
         production and any of them still unset, the HMAC signature check in
-        app/webhooks/whatsapp.py::_signature_valid becomes forgeable (anyone
-        who reads this source knows dev-app-secret) and the verify-token
+        app/channels/whatsapp/parsing.py::signature_valid becomes forgeable
+        (anyone who reads this source knows dev-app-secret) and the verify-token
         handshake becomes guessable. Fails fast at startup, the same
         actionable-error pattern _load_settings already uses for a missing
         DATABASE_URL, rather than deploying silently insecure.

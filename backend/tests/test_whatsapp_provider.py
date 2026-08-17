@@ -22,11 +22,11 @@ from app.channels.base.credentials import ChannelCredentials
 from app.channels.base.errors import WebhookVerificationFailedError
 from app.channels.base.message import OutboundMessage
 from app.channels.whatsapp.parsing import _extract_text as new_extract_text
-from app.channels.whatsapp.parsing import parse_inbound_payload
+from app.channels.whatsapp.parsing import parse_inbound_payload, signature_valid
 from app.channels.whatsapp.provider import WhatsAppProvider
 from app.core.config import settings
 from app.webhooks.whatsapp import _extract_text as old_extract_text
-from app.webhooks.whatsapp import _first_phone_number_id, _signature_valid
+from app.webhooks.whatsapp import _first_phone_number_id
 
 APP_SECRET = "test-app-secret"
 
@@ -118,7 +118,7 @@ def test_verify_webhook_signature_valid_matches_production_helper(provider):
 
     assert (
         provider.verify_webhook_signature({"X-Hub-Signature-256": header}, raw_body, creds)
-        is _signature_valid(raw_body, header, APP_SECRET)
+        is signature_valid(raw_body, header, APP_SECRET)
         is True
     )
 

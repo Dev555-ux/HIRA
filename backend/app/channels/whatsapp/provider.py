@@ -34,10 +34,9 @@ from app.channels.base.errors import WebhookVerificationFailedError
 from app.channels.base.message import NormalizedMessage, OutboundMessage
 from app.channels.base.provider import ChannelProvider
 from app.channels.base.results import ConnectionResult, DeliveryReceipt
-from app.channels.whatsapp.parsing import CHANNEL_ID, parse_inbound_payload
+from app.channels.whatsapp.parsing import CHANNEL_ID, parse_inbound_payload, signature_valid
 from app.channels.whatsapp.send import send_whatsapp_message
 from app.core.config import settings
-from app.webhooks.whatsapp import _signature_valid
 from app.whatsapp.credentials import verify_whatsapp_credentials
 from app.whatsapp.errors import WhatsAppCredentialInvalidError
 
@@ -102,16 +101,16 @@ class WhatsAppProvider(ChannelProvider):
     def verify_webhook_signature(
         self, headers: Mapping[str, str], raw_body: bytes, creds: ChannelCredentials
     ) -> bool:
-        """Delegates to `app.webhooks.whatsapp._signature_valid` directly
-        (imported, not copied) — the exact HMAC-SHA256 comparison
-        production already runs, so this is byte-for-byte equivalent by
-        construction rather than by careful copying. `creds.secret` is
-        this business's decrypted app secret, resolved by the caller
-        before this method is invoked (this method never touches a
-        credential store itself)."""
+        """Delegates to `parsing.signature_valid` directly (imported, not
+        copied) — the same HMAC-SHA256 comparison production runs via
+        `webhooks/whatsapp.py`, which imports this same function (PR 4
+        relocated it here to break a circular import — see parsing.py's
+        docstring). `creds.secret` is this business's decrypted app
+        secret, resolved by the caller before this method is invoked
+        (this method never touches a credential store itself)."""
         if creds.secret is None:
             return False
-        return _signature_valid(raw_body, headers.get("X-Hub-Signature-256"), creds.secret)
+        return signature_valid(raw_body, headers.get("X-Hub-Signature-256"), creds.secret)
 
     def verify_subscription(
         self, query_params: Mapping[str, str], creds: ChannelCredentials
