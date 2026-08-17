@@ -2,10 +2,15 @@
 
 No database anywhere in this file: `WhatsAppProvider` is DB-free by
 contract, so these tests run without the postgres fixture other suites
-need. Several tests import the pre-existing private helpers from
-app/webhooks/whatsapp.py directly and assert output parity against the
-new provider — that parity, not just "the new code works in isolation",
-is the actual guarantee PR 3 is making.
+need. `test_extract_routing_key_matches_production_helper` still asserts
+parity against `app/webhooks/whatsapp.py::_first_phone_number_id` — that
+function stays in production use post-PR-5 (business/routing resolution,
+not message parsing, per that module's PR 5 docstring). The equivalent
+parity check against `_extract_text` was retired in PR 5: production no
+longer has a second, separate implementation to compare against —
+`app/channels/whatsapp/parsing.py::_extract_text` *is* production's only
+implementation now (see tests/test_whatsapp_cutover.py for the PR 5
+persistence-parity/integration tests).
 """
 
 from __future__ import annotations
@@ -21,11 +26,9 @@ from app.channels.base.capabilities import Capability
 from app.channels.base.credentials import ChannelCredentials
 from app.channels.base.errors import WebhookVerificationFailedError
 from app.channels.base.message import OutboundMessage
-from app.channels.whatsapp.parsing import _extract_text as new_extract_text
-from app.channels.whatsapp.parsing import parse_inbound_payload, signature_valid
+from app.channels.whatsapp.parsing import _extract_text, parse_inbound_payload, signature_valid
 from app.channels.whatsapp.provider import WhatsAppProvider
 from app.core.config import settings
-from app.webhooks.whatsapp import _extract_text as old_extract_text
 from app.webhooks.whatsapp import _first_phone_number_id
 
 APP_SECRET = "test-app-secret"
@@ -173,12 +176,12 @@ def test_verify_subscription_wrong_token_returns_none(provider, monkeypatch):
     assert result is None
 
 
-# --- payload normalization, checked for parity against the production helper
+# --- payload normalization ---------------------------------------------
 
 
-def test_extract_text_matches_production_helper_for_text_messages():
+def test_extract_text_reads_text_message_body():
     msg = {"type": "text", "text": {"body": "hello"}}
-    assert new_extract_text(msg) == old_extract_text(msg) == "hello"
+    assert _extract_text(msg) == "hello"
 
 
 @pytest.mark.parametrize(
@@ -189,8 +192,8 @@ def test_extract_text_matches_production_helper_for_text_messages():
         {},
     ],
 )
-def test_extract_text_matches_production_helper_for_non_text_messages(msg):
-    assert new_extract_text(msg) == old_extract_text(msg) == ""
+def test_extract_text_returns_empty_string_for_non_text_messages(msg):
+    assert _extract_text(msg) == ""
 
 
 def test_parse_webhook_normalizes_a_text_message(provider):

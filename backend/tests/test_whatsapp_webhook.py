@@ -9,8 +9,6 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.channels.whatsapp.provider import WhatsAppProvider
-from app.channels.whatsapp.shadow import get_shadow_metrics
 from app.core.config import settings
 from app.db.session import get_db
 from app.main import app
@@ -319,96 +317,3 @@ def test_get_or_create_customer_recovers_from_concurrent_insert_race(db_session,
         )
     ).all()
     assert len(all_customers) == 1
-
-
-# --- Shadow Mode (Sprint 64A PR 4) ------------------------------------------
-#
-# These three prove the actual wiring in receive(), not just shadow.py's own
-# logic (already covered exhaustively, DB-free, in test_whatsapp_shadow.py):
-# the flag genuinely gates whether Shadow Mode is scheduled at all, and a
-# real failure inside it is caught by run_shadow_comparison's own try/except
-# — not by a monkeypatch that bypasses it — before it can ever reach
-# production's response.
-
-
-def test_shadow_mode_disabled_by_default_is_never_scheduled(db_session, monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        "app.webhooks.whatsapp.run_shadow_comparison", lambda **kwargs: calls.append(kwargs)
-    )
-    _connected_business(db_session)
-    client, dispatched = _client(db_session)
-
-    body = json.dumps(_inbound_payload("PN1", "wamid.shadow-off")).encode()
-    resp = client.post(
-        "/webhooks/whatsapp",
-        content=body,
-        headers={"X-Hub-Signature-256": _sign(body), "Content-Type": "application/json"},
-    )
-
-    assert resp.status_code == 200
-    assert calls == []  # settings.enable_whatsapp_shadow_mode defaults to False
-    inbound = db_session.scalars(select(Message).where(Message.direction == "inbound")).all()
-    assert len(inbound) == 1
-    assert len(dispatched) == 1
-    app.dependency_overrides.clear()
-
-
-def test_shadow_mode_enabled_runs_without_affecting_the_response(db_session, monkeypatch):
-    get_shadow_metrics().reset()
-    monkeypatch.setattr(settings, "enable_whatsapp_shadow_mode", True)
-    _connected_business(db_session)
-    client, dispatched = _client(db_session)
-
-    body = json.dumps(_inbound_payload("PN1", "wamid.shadow-on")).encode()
-    resp = client.post(
-        "/webhooks/whatsapp",
-        content=body,
-        headers={"X-Hub-Signature-256": _sign(body), "Content-Type": "application/json"},
-    )
-
-    assert resp.status_code == 200
-    inbound = db_session.scalars(select(Message).where(Message.direction == "inbound")).all()
-    assert len(inbound) == 1
-    assert inbound[0].body == "Hi, are you open today?"
-    assert len(dispatched) == 1
-
-    metrics = get_shadow_metrics()
-    assert (metrics.total, metrics.matches, metrics.mismatches) == (1, 1, 0)
-    app.dependency_overrides.clear()
-    get_shadow_metrics().reset()
-
-
-def test_shadow_mode_failure_does_not_affect_production_response(db_session, monkeypatch):
-    get_shadow_metrics().reset()
-    monkeypatch.setattr(settings, "enable_whatsapp_shadow_mode", True)
-
-    def _boom(self, raw_body: bytes):
-        raise RuntimeError("simulated shadow parser failure")
-
-    # Faults the new parser itself (what Shadow Mode independently calls),
-    # not the production path, which never touches WhatsAppProvider.
-    monkeypatch.setattr(WhatsAppProvider, "parse_webhook", _boom)
-    _connected_business(db_session)
-    client, dispatched = _client(db_session)
-
-    body = json.dumps(_inbound_payload("PN1", "wamid.shadow-fail")).encode()
-    resp = client.post(
-        "/webhooks/whatsapp",
-        content=body,
-        headers={"X-Hub-Signature-256": _sign(body), "Content-Type": "application/json"},
-    )
-
-    # Production behaves identically to Shadow Mode being off, even though
-    # its parser just blew up.
-    assert resp.status_code == 200
-    inbound = db_session.scalars(select(Message).where(Message.direction == "inbound")).all()
-    assert len(inbound) == 1
-    assert inbound[0].body == "Hi, are you open today?"
-    assert len(dispatched) == 1
-
-    metrics = get_shadow_metrics()
-    assert metrics.parser_errors == 1
-    assert metrics.mismatches == 0
-    app.dependency_overrides.clear()
-    get_shadow_metrics().reset()

@@ -1,16 +1,22 @@
-"""WhatsApp's ChannelProvider implementation (Sprint 64A PR 3).
+"""WhatsApp's ChannelProvider implementation.
 
-Deliberately does NOT register `WhatsAppProvider` into
-`app.channels.registry.get_default_registry()` here. Auto-registering on
-import would make this package's mere presence in an import graph change
-what the registry reports — safer for that registration to be an explicit
-line in whichever later PR actually wires a caller to it, so import-time
-side effects stay at zero for this PR, matching its "nothing in production
-uses this yet" scope.
+Registers `WhatsAppProvider` into the default channel registry on import
+(Sprint 64A PR 5) — the "explicit line in whichever later PR actually
+wires a caller to it" this package's PR 3 docstring predicted. This alone
+does not route any live traffic through the registry: `webhooks/
+whatsapp.py::_persist_inbound` calls `parsing.parse_messages()` directly
+(it needs finer, per-`change` granularity than a registry lookup gives —
+see that function's docstring), not `registry.get("whatsapp")`. This
+registration exists so `get_default_registry().get("whatsapp")` resolves
+to a real provider today, rather than the next PR that adds ChannelManager
+routing also having to remember to register one.
 """
 
 from __future__ import annotations
 
+from app.channels.registry import get_default_registry
 from app.channels.whatsapp.provider import WhatsAppProvider
+
+get_default_registry().register(WhatsAppProvider())
 
 __all__ = ["WhatsAppProvider"]

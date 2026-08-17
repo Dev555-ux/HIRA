@@ -86,15 +86,16 @@ class Settings(BaseSettings):
     enable_embedded_signup: bool = False
     embedded_signup_config_id: str = ""
 
-    # Shadow Mode (Sprint 64A PR 4). OFF means the webhook route
-    # (app/webhooks/whatsapp.py) never even schedules the comparison
-    # background task — zero added work. ON means WhatsAppProvider's
-    # parser (app/channels/whatsapp/) runs against the same live payload
-    # the production parser already committed, purely to compare outputs
-    # and log any divergence; it never affects the response, persistence,
-    # or AI dispatch, which stay exactly as they are today. See
-    # app/channels/whatsapp/shadow.py's module docstring for the full
-    # comparison strategy.
+    # Shadow Mode (Sprint 64A PR 4). Dormant as of PR 5: the webhook route
+    # (app/webhooks/whatsapp.py) no longer schedules the comparison
+    # background task at all — production and Shadow Mode shared one
+    # parser as of the PR 5 cutover, so comparing them would just be
+    # comparing WhatsAppProvider against itself. This setting, and
+    # app/channels/whatsapp/shadow.py's comparator/metrics/tests, are
+    # deliberately kept (not deleted) for a future migration to repoint —
+    # e.g. shadow-validating a second channel provider, or a future
+    # rewrite of this one — against something that's actually still a
+    # meaningful comparison.
     enable_whatsapp_shadow_mode: bool = False
 
     # Embeddings. Provider is swappable via config (see app/ai/embeddings).

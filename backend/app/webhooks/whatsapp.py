@@ -24,6 +24,19 @@ value on purpose — it's a one-time "prove you own this endpoint" handshake
 Meta performs once per App, not a per-message trust boundary, so every
 business is instructed to enter the same HIRA-provided value into their own
 Meta App's webhook config (see documentation/WHATSAPP_INTEGRATION.md).
+
+Sprint 64A PR 5 (inbound cutover): `_persist_inbound` no longer parses Meta
+message objects inline — it calls `app.channels.whatsapp.parsing.
+parse_messages()`, the same function `WhatsAppProvider.parse_webhook()` and
+Shadow Mode (PR 4) already used, so there is exactly one implementation of
+"Meta message dict -> normalized fields" in the codebase. Business
+resolution, customer/conversation lookup, deduplication, persistence, and
+job enqueueing are all unchanged — only where the message content itself
+gets extracted moved. Shadow Mode's runtime scheduling is removed from
+`receive()` as of this PR (nothing left to shadow-compare against, now
+that production and Shadow Mode share one parser) — `app/channels/
+whatsapp/shadow.py` itself, its tests, and its config flag are untouched
+and available for a future migration to repoint.
 """
 
 from __future__ import annotations
@@ -39,8 +52,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.processing import generate_and_store_reply
 from app.ai.tasks import GENERATE_AI_REPLY_TASK
-from app.channels.whatsapp.parsing import signature_valid
-from app.channels.whatsapp.shadow import run_shadow_comparison
+from app.channels.whatsapp.parsing import parse_messages, signature_valid
 from app.core.config import settings
 from app.db.session import get_db
 from app.jobs import enqueue_job
@@ -145,21 +157,6 @@ def receive(
 
     new_inbound = _persist_inbound(db, payload)
 
-    if settings.enable_whatsapp_shadow_mode:
-        # Sprint 64A PR 4 (Shadow Mode). Scheduled as a BackgroundTask so it
-        # runs strictly after this response is sent — zero added latency to
-        # Meta's webhook ack, and nothing it does can affect the response,
-        # persistence, or AI dispatch above/below this line. See
-        # app/channels/whatsapp/shadow.py for what it compares and why.
-        background_tasks.add_task(
-            run_shadow_comparison,
-            raw_body=raw_body,
-            payload=payload,
-            old_inbound=new_inbound,
-            routing_key_old=phone_number_id,
-            business_id=business.id,
-        )
-
     if not settings.use_transactional_outbox:
         # Legacy path: schedule reply generation in-process, after the
         # webhook's DB transaction has already committed. When the outbox is
@@ -181,7 +178,14 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
     point of a transactional outbox: no inbound message can be recorded without
     its reply-generation job, and vice versa). When disabled, nothing is
     enqueued and reply generation is scheduled by the caller after commit, via
-    the legacy BackgroundTasks path."""
+    the legacy BackgroundTasks path.
+
+    Business resolution stays per-`change` and inline here (routing/
+    persistence concern, not message parsing — `NormalizedMessage` has no
+    `phone_number_id`/business field, only the *customer's* phone number).
+    Only the "Meta message dict -> normalized fields" step delegates to
+    `parse_messages()` (Sprint 64A PR 5) — see that function's docstring.
+    """
     new_inbound: list[tuple] = []
     now = datetime.now(timezone.utc)
     for entry in payload.get("entry", []):
@@ -197,29 +201,41 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
             if business is None:
                 continue  # unknown number — ignore gracefully
 
-            names = {
-                c.get("wa_id"): c.get("profile", {}).get("name") for c in value.get("contacts", [])
-            }
-            for msg in value.get("messages", []):
-                wa_message_id = msg.get("id")
+            normalized_messages = parse_messages(
+                value.get("messages", []), value.get("contacts", [])
+            )
+            for normalized in normalized_messages:
+                # Read straight from the original Meta message object
+                # (carried unchanged on `.raw`) for these two fields rather
+                # than NormalizedMessage's own `external_message_id`/
+                # `external_sender_id` — those default missing values to
+                # `""`, while this dedupe/lookup logic (unchanged from
+                # before PR 5) relies on `msg.get(...)` defaulting to
+                # `None`. Meta always sends both on a real message, so this
+                # never differs in practice; reading from `.raw` keeps it
+                # byte-for-byte identical to pre-PR-5 behavior even in the
+                # unreachable case where it's missing.
+                wa_message_id = normalized.raw.get("id")
                 already = db.scalars(
                     select(Message).where(Message.wa_message_id == wa_message_id)
                 ).first()
                 if already is not None:
                     continue  # dedupe
 
-                wa_phone = msg.get("from")
-                customer = _get_or_create_customer(db, business.id, wa_phone, names.get(wa_phone))
+                wa_phone = normalized.raw.get("from")
+                customer = _get_or_create_customer(
+                    db, business.id, wa_phone, normalized.sender_display_name
+                )
                 conversation = _get_or_create_conversation(db, business.id, customer.id, now)
 
-                body = _extract_text(msg)
+                body = normalized.text
                 message = Message(
                     conversation_id=conversation.id,
                     business_id=business.id,
                     direction="inbound",
                     wa_message_id=wa_message_id,
                     body=body,
-                    type=msg.get("type", "text"),
+                    type=normalized.raw.get("type", "text"),
                     status="received",
                 )
                 db.add(message)
@@ -249,12 +265,6 @@ def _persist_inbound(db: Session, payload: dict) -> list[tuple]:
                 new_inbound.append((conversation.id, message.id, wa_message_id, body))
             db.commit()
     return new_inbound
-
-
-def _extract_text(msg: dict) -> str:
-    if msg.get("type") == "text":
-        return msg.get("text", {}).get("body", "")
-    return ""
 
 
 def _get_or_create_customer(
