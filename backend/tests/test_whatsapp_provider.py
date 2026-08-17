@@ -2,15 +2,14 @@
 
 No database anywhere in this file: `WhatsAppProvider` is DB-free by
 contract, so these tests run without the postgres fixture other suites
-need. `test_extract_routing_key_matches_production_helper` still asserts
-parity against `app/webhooks/whatsapp.py::_first_phone_number_id` — that
-function stays in production use post-PR-5 (business/routing resolution,
-not message parsing, per that module's PR 5 docstring). The equivalent
-parity check against `_extract_text` was retired in PR 5: production no
-longer has a second, separate implementation to compare against —
-`app/channels/whatsapp/parsing.py::_extract_text` *is* production's only
-implementation now (see tests/test_whatsapp_cutover.py for the PR 5
-persistence-parity/integration tests).
+need. Neither `extract_routing_key` nor `_extract_text` are checked for
+parity against a second, separate implementation here anymore — both
+retired in Sprint 64A (PR 5 for message parsing, PR 7 for routing-key
+extraction, when `app/webhooks/whatsapp.py::_first_phone_number_id` was
+removed in favor of calling this provider directly): production has
+exactly one implementation of each, and this file tests it directly
+(see tests/test_whatsapp_cutover.py for the webhook-level integration
+tests).
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ from app.channels.base.message import OutboundMessage
 from app.channels.whatsapp.parsing import _extract_text, parse_inbound_payload, signature_valid
 from app.channels.whatsapp.provider import WhatsAppProvider
 from app.core.config import settings
-from app.webhooks.whatsapp import _first_phone_number_id
 
 APP_SECRET = "test-app-secret"
 
@@ -90,14 +88,14 @@ def test_capabilities_only_text(provider):
         assert caps.supports(capability) is False, f"{capability} should not be advertised yet"
 
 
-# --- routing key, checked for parity against the production helper --------
+# --- routing key -------------------------------------------------------
 
 
-def test_extract_routing_key_matches_production_helper(provider):
+def test_extract_routing_key_returns_the_phone_number_id(provider):
     payload = _inbound_payload(phone_number_id="PN42")
     raw_body = json.dumps(payload).encode()
 
-    assert provider.extract_routing_key(raw_body) == _first_phone_number_id(payload) == "PN42"
+    assert provider.extract_routing_key(raw_body) == "PN42"
 
 
 def test_extract_routing_key_malformed_json_raises(provider):
@@ -106,7 +104,6 @@ def test_extract_routing_key_malformed_json_raises(provider):
 
 
 def test_extract_routing_key_missing_phone_number_id_raises(provider):
-    assert _first_phone_number_id({"entry": []}) is None  # production helper's own contract
     with pytest.raises(WebhookVerificationFailedError):
         provider.extract_routing_key(b"{}")
 

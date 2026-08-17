@@ -1,249 +1,51 @@
-"""Assisted-Mode actions on a pending AI-drafted reply.
+"""Assisted-Mode draft management for a pending AI-drafted reply.
 
 Assisted Mode stores AI-generated replies as outbound `pending_approval`
-messages. This module holds every action a human can take on one before it
-reaches (or instead of reaching) the customer: approve & send, edit, reject,
-regenerate, or escalate to a human.
+messages. This module holds every non-sending action a human can take on
+one: edit, reject, regenerate, or escalate to a human. Approving and
+sending it moved to `app.services.messaging_service.MessagingService.
+approve_and_send()` in Sprint 64A PR 7 — see that method's docstring; it
+is a relocation of this module's old `approve_and_send()`, not a rewrite.
 
-Every function is tenant-scoped by `business_id` via `get_scoped`/`_get_pending_reply`
-and raises `ValueError` if the message doesn't exist, belongs to another
-business, or is no longer an editable pending reply (already sent, rejected,
-escalated, etc.) — the API layer turns that into a 404, same as the original
-approve endpoint, so a wrong-tenant message and a non-existent one look
-identical to the caller.
+Every function is tenant-scoped by `business_id` via `get_scoped`/
+`get_pending_reply` and raises `ValueError` if the message doesn't exist,
+belongs to another business, or is no longer an editable pending reply
+(already sent, rejected, escalated, etc.) — the API layer turns that into
+a 404, same as the original approve endpoint, so a wrong-tenant message
+and a non-existent one look identical to the caller.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.embeddings import EmbeddingProvider
 from app.ai.llm import LLMProvider
-from app.ai.llm.base import ToolCall
 from app.ai.orchestrator import generate_reply
 from app.ai.prompts import SYSTEM_PROMPT_VERSION
 from app.ai.roles import RECEPTIONIST, role_for_tool
-from app.ai.tools import execute_tool_call, response_to_message_fields
-from app.calendar.providers.base import CalendarError
+from app.ai.tools import response_to_message_fields
 from app.core.config import settings
 from app.db.tenant import get_scoped
-from app.models import Business, Conversation, Customer, Escalation, Message
-from app.services.messaging import WhatsAppNotConnectedError, send_via_channel_manager
-from app.whatsapp.credentials import get_access_token, get_stored_credential
-
-
-class WhatsAppWindowExpiredError(RuntimeError):
-    """The customer's 24-hour WhatsApp service window has closed — a
-    free-form text send would violate Meta's platform rules (a template
-    message would be required instead, not yet supported). Raised before
-    any tool call or send is attempted, same as WhatsAppNotConnectedError
-    above it, so a booking can't execute with no way left to notify the
-    customer it happened."""
-
+from app.models import Conversation, Escalation, Message
 
 logger = logging.getLogger(__name__)
 
 
-def _get_pending_reply(db: Session, business_id: uuid.UUID, message_id: uuid.UUID) -> Message:
-    """Fetch a message, but only if it's this business's editable pending reply."""
+def get_pending_reply(db: Session, business_id: uuid.UUID, message_id: uuid.UUID) -> Message:
+    """Fetch a message, but only if it's this business's editable pending
+    reply. Public (no longer `_get_pending_reply`) as of Sprint 64A PR 7:
+    `MessagingService.approve_and_send()` needs it too — same convention
+    as `signature_valid`'s PR 4 relocation, a name only needs to be
+    private until a second module genuinely needs it."""
     message = get_scoped(db, Message, business_id, message_id)
     if message is None or message.direction != "outbound" or message.status != "pending_approval":
         raise ValueError("Message is not a pending reply for this business")
-    return message
-
-
-def approve_and_send(
-    db: Session,
-    business_id: uuid.UUID,
-    message_id: uuid.UUID,
-    *,
-    sender: Callable[..., str] = send_via_channel_manager,
-) -> Message:
-    """Approve a pending reply: if it's a proposed calendar action
-    (message.type == "tool_call" — DEC-032), execute it now, then send the
-    (possibly human-edited) confirmation body to the customer and mark sent.
-
-    Raises ValueError if the message isn't an approvable pending reply for this
-    business. Raises WhatsAppNotConnectedError up front (before any tool call
-    or send is attempted) if the business has no WhatsApp number/credentials
-    configured — approving a tool_call message would otherwise execute a real
-    side effect (e.g. book a calendar slot) with no way to actually notify the
-    customer. Raises WhatsAppWindowExpiredError (Sprint 69, after marking the
-    message failed) if the customer's 24-hour service window has closed —
-    checked after claiming but before any tool call, so a booking can't
-    execute with no way left to tell the customer it happened. Raises
-    CalendarError (after marking the message failed) if a proposed tool call
-    fails to execute (e.g. the slot was taken meanwhile). Raises whatever the
-    send raised (after marking the message failed and committing) if the
-    send fails — almost always WhatsAppSendError (every failure mode
-    app/services/messaging.py::send_via_channel_manager can anticipate,
-    including a normalized ChannelManager/provider failure, is raised as
-    one — Sprint 64A PR 6), but this function never assumes that's the
-    only possibility: once
-    the message is claimed (below), every exit path — including an
-    unexpected exception type from `sender` — leaves it in a terminal state
-    (failed) before propagating, never stuck at "sending" (Critical audit
-    fix #2; see app/jobs/handlers.py::recover_stale_sending_messages for the
-    scheduled backstop covering anything that got stuck before this fix).
-
-    Concurrency: two requests approving the same message race between this
-    load and the eventual commit. Before any side effect (tool execution or
-    WhatsApp send), the message is claimed with a conditional UPDATE
-    (pending_approval -> sending) and committed immediately. Postgres's
-    row-level lock on that UPDATE serializes concurrent claims: only one
-    commits pending_approval -> sending, the other's identical UPDATE then
-    matches zero rows and raises ValueError here, before touching the
-    calendar or WhatsApp.
-
-    Atomicity (Section A4): the tool call executes with commit=False, so its
-    effect (e.g. the Appointment row) is only flushed, not committed. The
-    single commit below is what durably persists that effect together with
-    this Message's final status/ai_meta/wa_message_id — either both land or
-    neither does. If that commit fails, `result.on_commit_failure` (set by
-    execute_tool_call when it ran with commit=False) deletes the now-orphaned
-    external calendar event before the original exception is re-raised.
-    """
-    message = _get_pending_reply(db, business_id, message_id)
-    conversation = db.get(Conversation, message.conversation_id)
-    business = db.get(Business, business_id)
-    customer = db.get(Customer, conversation.customer_id)
-
-    if not business.whatsapp_phone_number_id:
-        raise WhatsAppNotConnectedError("This business has not connected WhatsApp yet")
-    credential = get_stored_credential(db, business_id)
-    if credential is None:
-        raise WhatsAppNotConnectedError("This business has not connected WhatsApp yet")
-
-    claimed = db.execute(
-        update(Message)
-        .where(Message.id == message_id, Message.status == "pending_approval")
-        .values(status="sending")
-    ).rowcount
-    db.commit()
-    if claimed == 0:
-        raise ValueError("Message is not a pending reply for this business")
-
-    if (
-        conversation.window_expires_at is not None
-        and datetime.now(timezone.utc).replace(tzinfo=None) > conversation.window_expires_at
-    ):
-        message.status = "failed"
-        message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "whatsapp_window_expired"}
-        db.commit()
-        logger.warning(
-            "WhatsApp 24h service window expired for message %s (business %s); not sent",
-            message_id,
-            business_id,
-        )
-        raise WhatsAppWindowExpiredError(
-            "The customer's 24-hour WhatsApp service window has closed. "
-            "A template message would be required to reach them now, which isn't supported yet."
-        )
-
-    on_commit_failure = None
-    if message.type == "tool_call":
-        tool_call = ToolCall(
-            id="approved",
-            name=message.ai_meta["tool_name"],
-            arguments=message.ai_meta["tool_arguments"],
-        )
-        # Critical audit fix: a human explicitly clicking Approve on this
-        # exact pending tool call *is* the confirmation governance requires
-        # (DEC-032/DEC-033 already gate every Assisted-Mode tool call behind
-        # this review, governed or not) — human_approved=True satisfies
-        # app/ai/tools.py::execute_tool_call's confirmation gate regardless
-        # of any conversation-level pending_action state, which may have
-        # since moved on if the customer sent more messages while this item
-        # sat in the queue.
-        result = execute_tool_call(
-            db,
-            business_id,
-            tool_call,
-            customer_id=customer.id,
-            conversation_id=conversation.id,
-            commit=False,
-            human_approved=True,
-        )
-        if not result.success:
-            message.status = "failed"
-            db.commit()
-            logger.warning(
-                "Approved tool call %s failed for message %s: %s",
-                tool_call.name,
-                message_id,
-                result.message,
-            )
-            raise CalendarError(result.message)
-        message.ai_meta = {**message.ai_meta, "tool_result": result.message}
-        on_commit_failure = result.on_commit_failure
-
-    try:
-        wa_message_id = sender(
-            business.whatsapp_phone_number_id,
-            customer.wa_phone,
-            message.body,
-            access_token=get_access_token(credential),
-        )
-    except Exception:
-        # Critical audit fix #2: previously `except WhatsAppSendError` only.
-        # app/services/messaging.py::send_via_channel_manager normalizes
-        # every failure mode it can anticipate — including a ChannelManager/
-        # provider-level failure (Sprint 64A PR 6) — into WhatsAppSendError,
-        # but this message was already durably committed to status="sending"
-        # by the claim step above — the one guarantee this function must
-        # never break is that every path out of here leaves the message in a
-        # terminal state, not stuck at "sending" forever with no approve/
-        # reject/retry path back to it. Catching broadly (not just
-        # WhatsAppSendError) is what makes that a guarantee rather than a
-        # best effort: a `sender` this codebase doesn't control (tests
-        # inject their own; a future integration might) can always raise
-        # something that normalization never sees.
-        #
-        # Reuses the exact compensation this function already applies to its
-        # own final commit below (Section A4/Part C) rather than a second
-        # implementation: if persisting "failed" itself fails, the tool call
-        # already executed for real (booked/rescheduled/cancelled on the
-        # external calendar) with nothing local pointing to it, so
-        # on_commit_failure — set above only when a tool call ran with
-        # commit=False — cleans that up before the original exception
-        # propagates. When this commit succeeds (the common case), the
-        # tool's effect (e.g. the Appointment row) lands together with the
-        # failed message in the same transaction, exactly as intended by
-        # commit=False in the first place — nothing is orphaned.
-        message.status = "failed"
-        message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "whatsapp_send_failed"}
-        try:
-            db.commit()
-        except Exception:
-            if on_commit_failure is not None:
-                on_commit_failure()
-            logger.exception(
-                "Failed to persist failed status for reply %s (business %s) after a send "
-                "error; compensating for any already-executed tool call",
-                message_id,
-                business_id,
-            )
-            raise
-        logger.exception(
-            "Failed to send reply %s (business %s); marked failed", message_id, business_id
-        )
-        raise
-
-    message.status = "sent"
-    message.wa_message_id = wa_message_id
-    try:
-        db.commit()
-    except Exception:
-        if on_commit_failure is not None:
-            on_commit_failure()
-        raise
-    logger.info("Sent reply %s for business %s", message_id, business_id)
     return message
 
 
@@ -259,7 +61,7 @@ def update_draft(
     Raises ValueError if the message isn't an editable pending reply for this
     business (including if it has already been approved/sent).
     """
-    message = _get_pending_reply(db, business_id, message_id)
+    message = get_pending_reply(db, business_id, message_id)
     message.body = body
     db.commit()
     logger.info("Edited draft %s for business %s", message_id, business_id)
@@ -271,7 +73,7 @@ def reject_reply(db: Session, business_id: uuid.UUID, message_id: uuid.UUID) -> 
 
     Raises ValueError if the message isn't a pending reply for this business.
     """
-    message = _get_pending_reply(db, business_id, message_id)
+    message = get_pending_reply(db, business_id, message_id)
     message.status = "rejected"
     db.commit()
     logger.info("Rejected reply %s for business %s", message_id, business_id)
@@ -315,7 +117,7 @@ def regenerate_draft(
     respond to (the draft's own inbound trigger message would have to have been
     deleted, which nothing in the app does today).
     """
-    message = _get_pending_reply(db, business_id, message_id)
+    message = get_pending_reply(db, business_id, message_id)
     conversation = db.get(Conversation, message.conversation_id)
 
     user_message = _last_inbound_before(db, conversation.id, message.created_at)
@@ -367,7 +169,7 @@ def escalate_reply(
     status), and opens an Escalation row — conversation history is untouched.
     Raises ValueError if the message isn't a pending reply for this business.
     """
-    message = _get_pending_reply(db, business_id, message_id)
+    message = get_pending_reply(db, business_id, message_id)
     conversation = db.get(Conversation, message.conversation_id)
 
     message.status = "escalated"

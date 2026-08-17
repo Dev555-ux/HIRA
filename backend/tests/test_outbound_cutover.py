@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.models import Business, Conversation, Customer, Message
-from app.services.replies import approve_and_send
+from app.services.messaging_service import MessagingService
 from app.whatsapp.credentials import store_credentials
 
 
@@ -64,7 +64,9 @@ def test_approve_and_send_default_sender_routes_through_channel_manager_end_to_e
 
     business, message = _pending_reply(db_session)
 
-    result = approve_and_send(db_session, business.id, message.id)  # no sender override
+    result = MessagingService(db_session).approve_and_send(
+        business.id, message.id
+    )  # no sender override
 
     assert result.status == "sent"
     assert result.wa_message_id == "wamid.approved-1"
@@ -86,7 +88,7 @@ def test_approve_and_send_default_sender_surfaces_send_failure_end_to_end(db_ses
     business, message = _pending_reply(db_session)
 
     with pytest.raises(Exception):  # approve_and_send re-raises whatever sender raised
-        approve_and_send(db_session, business.id, message.id)
+        MessagingService(db_session).approve_and_send(business.id, message.id)
 
     persisted = db_session.scalars(select(Message).where(Message.id == message.id)).one()
     assert persisted.status == "failed"

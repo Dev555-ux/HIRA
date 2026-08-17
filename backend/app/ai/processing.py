@@ -26,6 +26,13 @@ Two entry points, one shared implementation (Critical audit fix #3):
   could re-run the whole turn from scratch).
 
   Idempotent by `trigger_message_id`: see this function's own docstring.
+
+Sprint 64A PR 7: this module no longer sends anything itself. Autonomous
+Mode's immediate send (formerly the local `_auto_send` function) moved to
+`app.services.messaging_service.MessagingService.send_reply()` — see that
+method's docstring; it is a relocation of `_auto_send`'s body, not a
+rewrite. This module still decides *what* to say (the LLM call, tool-call
+proposal, Message creation) — that AI decision-making is unchanged.
 """
 
 from __future__ import annotations
@@ -34,23 +41,20 @@ import logging
 import time
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.intent import ConversationCategory
-from app.ai.llm.base import LLMResponse, ToolCall
+from app.ai.llm.base import LLMResponse
 from app.ai.orchestrator import generate_reply
 from app.ai.plan import ExecutionPlan
 from app.ai.prompts import SYSTEM_PROMPT_VERSION
 from app.ai.roles import RECEPTIONIST, role_for_tool
-from app.ai.tools import confirmation_message_for, execute_tool_call, response_to_message_fields
+from app.ai.tools import response_to_message_fields
 from app.db.session import SessionLocal
-from app.models import Business, Conversation, Customer, Escalation, ExecutionTrace, Message
-from app.services.execution_traces import get_pending_action, record_execution_trace
-from app.services.messaging import WhatsAppSendError, send_via_channel_manager
-from app.whatsapp.credentials import get_access_token, get_stored_credential
+from app.models import Business, Conversation, Escalation, ExecutionTrace, Message
+from app.services.execution_traces import record_execution_trace
 
 logger = logging.getLogger(__name__)
 
@@ -64,24 +68,13 @@ NON_TEXT_FALLBACK_TEXT = (
     "Thanks for your message! I can currently only read text — could you type that out for me?"
 )
 
-# Sprint 77: Autonomous Mode previously left the customer with total silence
-# when a proposed action (e.g. a calendar booking) failed to execute — see
-# _auto_send's tool-call-failure branch. This replaces that silence with an
-# honest, non-technical acknowledgment — never the tool's own internal
-# failure reason (e.g. "This business has not connected a Google Calendar"),
-# which is an operational detail for the founder, not the customer.
-AUTONOMOUS_TOOL_FAILURE_TEXT = (
-    "I wasn't able to complete that automatically, so I've flagged it for the team — "
-    "they'll follow up with you shortly."
-)
-
 
 def generate_and_store_reply(
     conversation_id: uuid.UUID,
     trigger_message_id: uuid.UUID | None,
     user_text: str,
     *,
-    sender: Callable[..., str] = send_via_channel_manager,
+    sender: Callable[..., str] | None = None,
 ) -> None:
     """Self-contained entry point: opens its own session, owns commit/
     rollback/close end to end. Used by the legacy BackgroundTasks path
@@ -146,7 +139,7 @@ def generate_reply_into_session(
     trigger_message_id: uuid.UUID | None,
     user_text: str,
     *,
-    sender: Callable[..., str] = send_via_channel_manager,
+    sender: Callable[..., str] | None = None,
 ) -> list[Callable[[], None]]:
     """Do one customer turn's work through `db` — never commits, rolls back,
     or closes it; the caller owns that transaction boundary (Critical audit
@@ -272,7 +265,15 @@ def generate_reply_into_session(
         # approval. Assisted Mode (the default) leaves the reply/
         # proposed action as pending_approval for the dashboard.
         if business is not None and business.mode == "autonomous":
-            on_commit_failure = _auto_send(db, business, conversation, message, sender)
+            # Local import: app.services.messaging_service imports
+            # app.ai.tasks (module level, for GENERATE_AI_REPLY_TASK),
+            # which imports this module — a module-level import here
+            # would cycle.
+            from app.services.messaging_service import MessagingService
+
+            on_commit_failure = MessagingService(db).send_reply(
+                business, conversation, message, sender=sender
+            )
             if on_commit_failure is not None:
                 on_commit_failures.append(on_commit_failure)
             if message.ai_meta.get("failure_reason"):
@@ -386,136 +387,3 @@ def _escalate_automation_failure(db, conversation: Conversation) -> None:
             status="open",
         )
     )
-
-
-def _auto_send(
-    db,
-    business: Business,
-    conversation: Conversation,
-    message: Message,
-    sender: Callable[..., str],
-) -> Callable[[], None] | None:
-    """Send/execute the reply immediately (Autonomous Mode) and mark sent/failed.
-
-    For a proposed calendar action (message.type == "tool_call"), the tool
-    executes first — no approval gate in this mode, mirroring how a text
-    reply already sends immediately here (DEC-027, extended by DEC-032).
-
-    Runs the tool with commit=False (Section A4) and returns the resulting
-    `on_commit_failure` (or None) so the caller's single outer commit can
-    compensate if it fails — see generate_and_store_reply.
-
-    Sprint 69: checked up front, before any tool call — no WhatsApp
-    connection (phone number or stored credential) or an expired 24-hour
-    service window both mean there's no way to notify the customer, so
-    nothing here should proceed far enough to need reverting. Mirrors
-    app/services/replies.py::approve_and_send's identical up-front checks.
-
-    Sprint 77: every failure branch sets message.ai_meta["failure_reason"] —
-    the caller uses its *presence*, not message.status, as the "did the
-    underlying action fail" signal. That distinction matters now: a failed
-    tool call still ends with message.status == "sent" once its honest
-    fallback text goes out (see the tool_call branch below), so status alone
-    can no longer answer "did this turn's request actually succeed."
-    message.status keeps meaning exactly what it always has — the delivery
-    outcome of whatever body this row ends with.
-    """
-    customer = db.get(Customer, conversation.customer_id)
-    credential = get_stored_credential(db, business.id)
-
-    if not business.whatsapp_phone_number_id or credential is None:
-        message.status = "failed"
-        message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "whatsapp_not_connected"}
-        logger.warning(
-            "Autonomous send skipped for conversation %s: WhatsApp not connected", conversation.id
-        )
-        return None
-
-    if (
-        conversation.window_expires_at is not None
-        and datetime.now(timezone.utc).replace(tzinfo=None) > conversation.window_expires_at
-    ):
-        message.status = "failed"
-        message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "whatsapp_window_expired"}
-        logger.warning(
-            "Autonomous send skipped for conversation %s: WhatsApp 24h service window expired",
-            conversation.id,
-        )
-        return None
-
-    if message.type == "tool_call":
-        tool_call = ToolCall(
-            id="autonomous",
-            name=message.ai_meta["tool_name"],
-            arguments=message.ai_meta["tool_arguments"],
-        )
-        # Critical audit fix: no human reviews an Autonomous Mode send, so
-        # the only legitimate way a governed tool (e.g. cancel_appointment)
-        # may execute here is if *this* conversation already went through
-        # governance's confirm-with-the-customer flow in a prior turn.
-        # get_pending_action() re-reads the same state
-        # app/ai/orchestrator.py::generate_reply() already consulted to
-        # build this turn's plan — safe to read again here since nothing
-        # writes a new trace for this turn until after this call returns
-        # (see record_execution_trace below).
-        result = execute_tool_call(
-            db,
-            business.id,
-            tool_call,
-            customer_id=customer.id,
-            conversation_id=conversation.id,
-            commit=False,
-            pending_action=get_pending_action(db, conversation.id),
-        )
-        if result.success:
-            message.ai_meta = {**message.ai_meta, "tool_result": result.message}
-            # Section A1 fix: message.body up to this point is still
-            # preview_tool_call()'s internal, dashboard-editable text (set at
-            # creation in response_to_message_fields). Autonomous Mode has no
-            # human to edit it before send, so it must never go out as-is.
-            message.body = confirmation_message_for(tool_call, result)
-            on_commit_failure = result.on_commit_failure
-        else:
-            # Sprint 77: previously returned here with no send attempted at
-            # all — the customer got silence while a proposed action (e.g. a
-            # calendar booking) silently failed. The WhatsApp channel itself
-            # is fine here (unlike the two branches above), so there's no
-            # reason not to tell the customer *something* happened — just
-            # never the internal reason why: result.message can read like
-            # "This business has not connected a Google Calendar", an
-            # operational detail for the founder, not something a customer
-            # should see. The real reason is preserved in ai_meta below for
-            # the founder (and drives the escalation the caller creates).
-            logger.warning(
-                "Autonomous tool call %s failed for conversation %s: %s",
-                tool_call.name,
-                conversation.id,
-                result.message,
-            )
-            message.ai_meta = {**message.ai_meta, "failure_reason": result.message}
-            message.body = AUTONOMOUS_TOOL_FAILURE_TEXT
-            on_commit_failure = None
-    else:
-        on_commit_failure = None
-
-    try:
-        wa_message_id = sender(
-            business.whatsapp_phone_number_id,
-            customer.wa_phone,
-            message.body,
-            access_token=get_access_token(credential),
-        )
-        message.status = "sent"
-        message.wa_message_id = wa_message_id
-        logger.info("Autonomously sent reply for conversation %s", conversation.id)
-    except WhatsAppSendError:
-        # Sprint 77: whatever this row's body was (a real confirmation, or
-        # the honest fallback text above) never reached the customer either
-        # way — escalate like any other failure. Preserves an existing
-        # tool-failure reason if one's already set, rather than overwriting
-        # it with the send failure and losing why the turn actually failed.
-        message.status = "failed"
-        message.ai_meta = {"failure_reason": "whatsapp_send_failed", **(message.ai_meta or {})}
-        logger.exception("Autonomous send failed for conversation %s", conversation.id)
-
-    return on_commit_failure

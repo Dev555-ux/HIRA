@@ -1,21 +1,26 @@
-"""Sprint 64A PR 5 — inbound cutover integration tests.
+"""Sprint 64A PR 5/PR 7 — inbound cutover integration tests.
 
-Production's `_persist_inbound` (app/webhooks/whatsapp.py) now delegates
-message-content extraction to `app.channels.whatsapp.parsing.parse_messages`
-instead of its own inline copy — these tests exercise that through the real
-webhook route end to end, against a real Postgres, reusing the same
-fixtures as tests/test_whatsapp_webhook.py. Everything already covered
-there (signature verification, dedup, status-callback skipping, the
+As of PR 5, production's inbound message-content extraction delegated to
+`app.channels.whatsapp.parsing.parse_messages` instead of an inline copy.
+As of PR 7, the webhook route (`app/webhooks/whatsapp.py::receive()`) no
+longer calls parsing or persistence directly at all — it resolves
+`WhatsAppProvider` via `ChannelManager`, calls `provider.parse_webhook()`,
+and hands the resulting `NormalizedMessage`s to
+`MessagingService.record_inbound()`, which owns dedup/persistence/
+enqueue. These tests exercise that end to end through the real webhook
+route, against a real Postgres, reusing the same fixtures as
+tests/test_whatsapp_webhook.py. Everything already covered there
+(signature verification, dedup, status-callback skipping, the
 concurrent-insert race) is unchanged and re-verified simply by that file
-continuing to pass unmodified — this file adds only what's genuinely new
-for the cutover: proof of the actual wiring, plus the two integration
-cases (unsupported message type, malformed payload) that weren't
-explicitly covered before.
+continuing to pass unmodified — this file adds only what's genuinely new:
+proof of the actual wiring, plus the two integration cases (unsupported
+message type, malformed payload) that weren't explicitly covered before.
 
 tests/webhooks/test_whatsapp_outbox.py's AI-enqueue-payload assertions
 (conversation_id/message_id/user_text) are the "AI enqueue parity" check
-for this PR — reused unmodified rather than duplicated here, since they
-already exercise the exact same `_persist_inbound` this PR changed.
+— reused unmodified rather than duplicated here, since they already
+exercise the exact same `MessagingService.record_inbound()` this file's
+wiring test targets.
 """
 
 import hashlib
@@ -27,11 +32,12 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-import app.channels.whatsapp.parsing as parsing_module
+from app.channels.whatsapp.provider import WhatsAppProvider
 from app.core.config import settings
 from app.db.session import get_db
 from app.main import app
 from app.models import Business, Customer, Message
+from app.services.messaging_service import MessagingService
 from app.webhooks.whatsapp import get_reply_dispatcher
 from app.whatsapp.credentials import store_credentials
 
@@ -90,18 +96,30 @@ def _payload(message: dict, phone_number_id="PN1", from_phone="+15551230000"):
     }
 
 
-def test_persist_inbound_routes_through_the_shared_parser(db_session, monkeypatch):
-    """Proves the wiring, not just a behavioral coincidence: `_persist_inbound`
-    genuinely calls `parse_messages` for its message-content extraction."""
-    calls: list[tuple[list[dict], list[dict]]] = []
-    real_parse_messages = parsing_module.parse_messages
+def test_webhook_routes_through_provider_and_messaging_service(db_session, monkeypatch):
+    """Proves the wiring, not just a behavioral coincidence (Sprint 64A
+    PR 7): the webhook route genuinely calls WhatsAppProvider.parse_webhook()
+    (resolved via ChannelManager -> the registry, not imported directly)
+    and hands its output to MessagingService.record_inbound() — not some
+    inline shortcut that happens to produce the same result."""
+    parse_calls: list[bytes] = []
+    real_parse_webhook = WhatsAppProvider.parse_webhook
 
-    def spy(messages, contacts):
-        calls.append((messages, contacts))
-        return real_parse_messages(messages, contacts)
+    def spy_parse_webhook(self, raw_body: bytes):
+        parse_calls.append(raw_body)
+        return real_parse_webhook(self, raw_body)
 
-    monkeypatch.setattr("app.webhooks.whatsapp.parse_messages", spy)
-    _connected_business(db_session)
+    record_calls: list[tuple] = []
+    real_record_inbound = MessagingService.record_inbound
+
+    def spy_record_inbound(self, business_id, messages):
+        record_calls.append((business_id, list(messages)))
+        return real_record_inbound(self, business_id, messages)
+
+    monkeypatch.setattr(WhatsAppProvider, "parse_webhook", spy_parse_webhook)
+    monkeypatch.setattr(MessagingService, "record_inbound", spy_record_inbound)
+
+    business = _connected_business(db_session)
     client, dispatched = _client(db_session)
 
     message = {
@@ -118,10 +136,15 @@ def test_persist_inbound_routes_through_the_shared_parser(db_session, monkeypatc
     )
 
     assert resp.status_code == 200
-    assert len(calls) == 1
-    called_messages, called_contacts = calls[0]
-    assert called_messages == [message]
-    assert called_contacts == [{"wa_id": "+15551230000", "profile": {"name": "Ada Lovelace"}}]
+    assert len(parse_calls) == 1
+    assert parse_calls[0] == body
+
+    assert len(record_calls) == 1
+    called_business_id, called_messages = record_calls[0]
+    assert called_business_id == business.id
+    assert len(called_messages) == 1
+    assert called_messages[0].external_message_id == "wamid.cutover-1"
+    assert called_messages[0].text == "Are you open today?"
 
     inbound = db_session.scalars(select(Message).where(Message.direction == "inbound")).one()
     assert inbound.body == "Are you open today?"

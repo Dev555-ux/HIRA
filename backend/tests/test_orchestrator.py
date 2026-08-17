@@ -24,6 +24,7 @@ from app.calendar.providers.mock import MockCalendarProvider
 from app.calendar.service import AppointmentService
 from app.core.config import settings
 from app.models import Appointment, Business, Conversation, Escalation, Message
+from app.services.messaging_service import AUTONOMOUS_TOOL_FAILURE_TEXT
 from app.whatsapp.credentials import store_credentials
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_knowledge_base import FakeEmbeddingProvider
@@ -1152,7 +1153,7 @@ def test_autonomous_mode_stops_after_a_failed_action_and_never_attempts_the_next
     # and that (not status) is what stopped the lead action from running.
     assert outbound[0].status == "sent"
     assert outbound[0].ai_meta["failure_reason"]
-    assert sends == [processing.AUTONOMOUS_TOOL_FAILURE_TEXT]
+    assert sends == [AUTONOMOUS_TOOL_FAILURE_TEXT]
     assert db_session.scalars(select(Lead)).first() is None  # the CRM write never ran
 
 
@@ -1400,7 +1401,7 @@ def test_autonomous_mode_refuses_to_cancel_on_a_plain_status_query(db_session, m
     assert "confirm" in outbound[0].ai_meta["failure_reason"].lower()
     # The customer is told something honest happened, never a false
     # confirmation that their appointment was cancelled.
-    assert sent["body"] == processing.AUTONOMOUS_TOOL_FAILURE_TEXT
+    assert sent["body"] == AUTONOMOUS_TOOL_FAILURE_TEXT
     assert "cancel" not in sent["body"].lower()
 
     db_session.refresh(conversation)
@@ -1590,8 +1591,8 @@ def test_autonomous_mode_sends_an_honest_fallback_and_escalates_when_a_tool_call
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).all()
     assert len(outbound) == 1
     assert outbound[0].status == "sent"
-    assert outbound[0].body == processing.AUTONOMOUS_TOOL_FAILURE_TEXT
-    assert sent["body"] == processing.AUTONOMOUS_TOOL_FAILURE_TEXT
+    assert outbound[0].body == AUTONOMOUS_TOOL_FAILURE_TEXT
+    assert sent["body"] == AUTONOMOUS_TOOL_FAILURE_TEXT
     # The customer-safe text never leaks the internal reason...
     assert "Google Calendar" not in sent["body"]
     assert "Calendar" not in sent["body"]

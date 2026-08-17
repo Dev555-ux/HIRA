@@ -22,7 +22,6 @@ from app.channels.base.provider import ChannelProvider
 from app.channels.base.results import ConnectionResult, DeliveryReceipt
 from app.channels.registry import ChannelRegistry
 from app.services.channel_manager import ChannelManager
-from app.services.messaging_service import MessagingService
 
 
 class FakeProvider(ChannelProvider):
@@ -149,14 +148,5 @@ def test_channel_manager_handle_inbound_not_implemented_yet():
         manager.handle_inbound("fake", b"{}", {})
 
 
-# --- MessagingService (skeleton only) --------------------------------------
-
-
-def test_messaging_service_methods_not_implemented_yet():
-    service = MessagingService(db=None)  # type: ignore[arg-type]
-    with pytest.raises(NotImplementedError):
-        service.record_inbound(business_id=None, messages=[])  # type: ignore[arg-type]
-    with pytest.raises(NotImplementedError):
-        service.send_reply(conversation_id=None, text="hi")  # type: ignore[arg-type]
-    with pytest.raises(NotImplementedError):
-        service.approve_and_send(message_id=None)  # type: ignore[arg-type]
+# MessagingService is fully implemented as of Sprint 64A PR 7 — see
+# tests/test_messaging_service.py (DB-backed) for its coverage.

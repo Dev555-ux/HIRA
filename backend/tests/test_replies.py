@@ -21,8 +21,8 @@ from app.calendar.service import AppointmentService
 from app.core.config import settings
 from app.models import Appointment, Business, Conversation, Customer, Escalation, Message
 from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError
+from app.services.messaging_service import MessagingService
 from app.services.replies import (
-    approve_and_send,
     escalate_reply,
     recover_stale_sending_messages,
     regenerate_draft,
@@ -76,7 +76,7 @@ def test_approve_and_send_marks_sent(db_session):
         captured.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.out123"
 
-    result = approve_and_send(db_session, biz.id, msg.id, sender=fake_sender)
+    result = MessagingService(db_session).approve_and_send(biz.id, msg.id, sender=fake_sender)
 
     assert result.status == "sent"
     assert result.wa_message_id == "wamid.out123"
@@ -94,7 +94,7 @@ def test_approve_and_send_marks_failed_on_send_error(db_session):
         raise WhatsAppSendError("boom")
 
     with pytest.raises(WhatsAppSendError):
-        approve_and_send(db_session, biz.id, msg.id, sender=failing_sender)
+        MessagingService(db_session).approve_and_send(biz.id, msg.id, sender=failing_sender)
 
     db_session.refresh(msg)
     assert msg.status == "failed"
@@ -106,7 +106,7 @@ def test_approve_and_send_rejects_non_pending_message(db_session):
     db_session.flush()
 
     with pytest.raises(ValueError):
-        approve_and_send(db_session, biz.id, msg.id, sender=lambda *a, **k: "x")
+        MessagingService(db_session).approve_and_send(biz.id, msg.id, sender=lambda *a, **k: "x")
 
 
 def test_approve_and_send_is_tenant_scoped(db_session):
@@ -114,7 +114,9 @@ def test_approve_and_send_is_tenant_scoped(db_session):
     other_business_id = uuid.uuid4()
 
     with pytest.raises(ValueError):
-        approve_and_send(db_session, other_business_id, msg.id, sender=lambda *a, **k: "x")
+        MessagingService(db_session).approve_and_send(
+            other_business_id, msg.id, sender=lambda *a, **k: "x"
+        )
 
 
 def test_approve_and_send_rejects_when_whatsapp_not_connected(db_session):
@@ -126,7 +128,9 @@ def test_approve_and_send_rejects_when_whatsapp_not_connected(db_session):
         return "wamid.should-not-happen"
 
     with pytest.raises(WhatsAppNotConnectedError):
-        approve_and_send(db_session, biz.id, msg.id, sender=sender_that_should_never_run)
+        MessagingService(db_session).approve_and_send(
+            biz.id, msg.id, sender=sender_that_should_never_run
+        )
 
     db_session.refresh(msg)
     assert msg.status == "pending_approval"  # untouched — no partial side effect
@@ -447,7 +451,7 @@ def test_approve_tool_call_executes_then_sends(db_session, monkeypatch):
         captured.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.out1"
 
-    result = approve_and_send(db_session, biz.id, msg.id, sender=fake_sender)
+    result = MessagingService(db_session).approve_and_send(biz.id, msg.id, sender=fake_sender)
 
     assert result.status == "sent"
     assert result.ai_meta["tool_result"] == "Appointment booked."
@@ -475,7 +479,7 @@ def test_approve_tool_call_marks_failed_when_execution_fails(db_session, monkeyp
 
         return ToolExecutionResult(False, "slot no longer available")
 
-    monkeypatch.setattr("app.services.replies.execute_tool_call", _fails)
+    monkeypatch.setattr("app.services.messaging_service.execute_tool_call", _fails)
     sender_called = {"called": False}
 
     def fake_sender(*args, **_kwargs):
@@ -483,7 +487,7 @@ def test_approve_tool_call_marks_failed_when_execution_fails(db_session, monkeyp
         return "wamid.out1"
 
     with pytest.raises(CalendarError):
-        approve_and_send(db_session, biz.id, msg.id, sender=fake_sender)
+        MessagingService(db_session).approve_and_send(biz.id, msg.id, sender=fake_sender)
 
     db_session.refresh(msg)
     assert msg.status == "failed"
@@ -500,7 +504,7 @@ def test_approve_lead_tool_call_executes_then_sends(db_session):
         captured.update(phone_number_id=phone_number_id, to=to, body=body)
         return "wamid.out1"
 
-    result = approve_and_send(db_session, biz.id, msg.id, sender=fake_sender)
+    result = MessagingService(db_session).approve_and_send(biz.id, msg.id, sender=fake_sender)
 
     assert result.status == "sent"
     assert result.ai_meta["tool_result"] == "Lead logged."
@@ -538,7 +542,9 @@ def test_concurrent_approve_only_one_wins_and_sends_once(db_session):
         session = test_sessionmaker()
         start_barrier.wait(timeout=5)
         try:
-            result = approve_and_send(session, business_id, message_id, sender=fake_sender)
+            result = MessagingService(session).approve_and_send(
+                business_id, message_id, sender=fake_sender
+            )
             results[name] = result.status
         except ValueError as exc:
             errors[name] = exc
@@ -587,7 +593,7 @@ def test_concurrent_approve_tool_call_executes_tool_exactly_once(db_session, mon
             call_count["n"] += 1
         return ToolExecutionResult(True, "Appointment booked.", uuid.uuid4())
 
-    monkeypatch.setattr("app.services.replies.execute_tool_call", fake_execute_tool_call)
+    monkeypatch.setattr("app.services.messaging_service.execute_tool_call", fake_execute_tool_call)
 
     test_sessionmaker = sessionmaker(bind=create_engine(TEST_DATABASE_URL))
     send_calls: list[str] = []
@@ -606,7 +612,9 @@ def test_concurrent_approve_tool_call_executes_tool_exactly_once(db_session, mon
         session = test_sessionmaker()
         start_barrier.wait(timeout=5)
         try:
-            result = approve_and_send(session, business_id, message_id, sender=fake_sender)
+            result = MessagingService(session).approve_and_send(
+                business_id, message_id, sender=fake_sender
+            )
             results[name] = result.status
         except ValueError as exc:
             errors[name] = exc
@@ -672,7 +680,7 @@ def test_assisted_mode_final_commit_failure_leaves_no_orphaned_appointment(db_se
         return f"wamid.out{sent['count']}"
 
     with pytest.raises(SQLAlchemyError):
-        approve_and_send(db_session, business_id, message_id, sender=fake_sender)
+        MessagingService(db_session).approve_and_send(business_id, message_id, sender=fake_sender)
 
     monkeypatch.setattr(db_session, "commit", original_commit)
     # The mocked commit raised without going through real SQLAlchemy commit
@@ -703,7 +711,7 @@ def test_assisted_mode_final_commit_failure_leaves_no_orphaned_appointment(db_se
     # to pending_approval) executes the tool exactly once more.
     stuck.status = "pending_approval"
     db_session.commit()
-    approve_and_send(db_session, business_id, message_id, sender=fake_sender)
+    MessagingService(db_session).approve_and_send(business_id, message_id, sender=fake_sender)
 
     appointments = db_session.scalars(select(Appointment)).all()
     assert len(appointments) == 1
@@ -772,7 +780,7 @@ def test_approve_and_send_marks_failed_on_a_non_whatsapp_send_error(db_session):
         raise KeyError("some_unexpected_bug_in_a_custom_sender")
 
     with pytest.raises(KeyError):
-        approve_and_send(db_session, business_id, message_id, sender=broken_sender)
+        MessagingService(db_session).approve_and_send(business_id, message_id, sender=broken_sender)
 
     db_session.expire_all()
     recovered = db_session.get(Message, message_id)
@@ -800,7 +808,7 @@ def test_approve_and_send_marks_failed_without_orphaning_a_real_booking(db_sessi
         raise TimeoutError("a transport-level failure that isn't WhatsAppSendError")
 
     with pytest.raises(TimeoutError):
-        approve_and_send(db_session, business_id, message_id, sender=broken_sender)
+        MessagingService(db_session).approve_and_send(business_id, message_id, sender=broken_sender)
 
     db_session.expire_all()
     recovered = db_session.get(Message, message_id)
@@ -846,7 +854,7 @@ def test_approve_and_send_compensates_when_the_failure_commit_itself_fails(db_se
         raise ConnectionResetError("dropped mid-request")
 
     with pytest.raises(SQLAlchemyError):
-        approve_and_send(db_session, business_id, message_id, sender=broken_sender)
+        MessagingService(db_session).approve_and_send(business_id, message_id, sender=broken_sender)
 
     monkeypatch.setattr(db_session, "commit", original_commit)
     db_session.rollback()

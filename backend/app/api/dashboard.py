@@ -24,15 +24,10 @@ from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import tenant_query
 from app.models import Conversation, Customer, Message
-from app.services.messaging import (
-    WhatsAppNotConnectedError,
-    WhatsAppSendError,
-    send_via_channel_manager,
-)
+from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError
 from app.services.execution_traces import list_activity_for_dashboard
+from app.services.messaging_service import MessagingService, WhatsAppWindowExpiredError
 from app.services.replies import (
-    WhatsAppWindowExpiredError,
-    approve_and_send,
     escalate_reply,
     regenerate_draft,
     reject_reply,
@@ -66,15 +61,15 @@ class UpdateDraftRequest(BaseModel):
 
 
 def get_reply_sender():
-    """The WhatsApp sender used when approving a reply. Overridable in tests.
-
-    Routes through ChannelManager -> the channel registry -> WhatsAppProvider
-    (Sprint 64A PR 6) rather than calling the Graph API directly; still
-    raises WhatsAppSendError on any failure (see
-    app.services.messaging.send_via_channel_manager), so the
-    WhatsAppSendError -> 502 mapping in approve_message below is unchanged.
+    """The WhatsApp sender override used when approving a reply. Overridable
+    in tests via `app.dependency_overrides[get_reply_sender]`. `None` in
+    production means `MessagingService.approve_and_send()` uses its own
+    default (`ChannelManager` -> the channel registry -> WhatsAppProvider,
+    Sprint 64A PR 6/7) rather than calling the Graph API directly; it still
+    raises WhatsAppSendError on any failure, so the WhatsAppSendError -> 502
+    mapping in approve_message below is unchanged.
     """
-    return send_via_channel_manager
+    return None
 
 
 def _customers_by_conversation(
@@ -177,7 +172,9 @@ def approve_message(
     sender=Depends(get_reply_sender),
 ) -> dict:
     try:
-        message = approve_and_send(db, principal.business_id, message_id, sender=sender)
+        message = MessagingService(db).approve_and_send(
+            principal.business_id, message_id, sender=sender
+        )
     except ValueError as exc:
         # Not this business's pending message (or doesn't exist). Don't reveal which.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found") from exc
