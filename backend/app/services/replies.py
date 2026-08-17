@@ -34,7 +34,7 @@ from app.calendar.providers.base import CalendarError
 from app.core.config import settings
 from app.db.tenant import get_scoped
 from app.models import Business, Conversation, Customer, Escalation, Message
-from app.services.messaging import WhatsAppNotConnectedError, send_text
+from app.services.messaging import WhatsAppNotConnectedError, send_via_channel_manager
 from app.whatsapp.credentials import get_access_token, get_stored_credential
 
 
@@ -63,7 +63,7 @@ def approve_and_send(
     business_id: uuid.UUID,
     message_id: uuid.UUID,
     *,
-    sender: Callable[..., str] = send_text,
+    sender: Callable[..., str] = send_via_channel_manager,
 ) -> Message:
     """Approve a pending reply: if it's a proposed calendar action
     (message.type == "tool_call" — DEC-032), execute it now, then send the
@@ -82,8 +82,10 @@ def approve_and_send(
     fails to execute (e.g. the slot was taken meanwhile). Raises whatever the
     send raised (after marking the message failed and committing) if the
     send fails — almost always WhatsAppSendError (every failure mode
-    app/services/messaging.py::send_text can anticipate is normalized to
-    it), but this function never assumes that's the only possibility: once
+    app/services/messaging.py::send_via_channel_manager can anticipate,
+    including a normalized ChannelManager/provider failure, is raised as
+    one — Sprint 64A PR 6), but this function never assumes that's the
+    only possibility: once
     the message is claimed (below), every exit path — including an
     unexpected exception type from `sender` — leaves it in a terminal state
     (failed) before propagating, never stuck at "sending" (Critical audit
@@ -190,17 +192,18 @@ def approve_and_send(
         )
     except Exception:
         # Critical audit fix #2: previously `except WhatsAppSendError` only.
-        # app/services/messaging.py::send_text now normalizes every failure
-        # mode it can anticipate into WhatsAppSendError, but this message was
-        # already durably committed to status="sending" by the claim step
-        # above — the one guarantee this function must never break is that
-        # every path out of here leaves the message in a terminal state, not
-        # stuck at "sending" forever with no approve/reject/retry path back
-        # to it. Catching broadly (not just WhatsAppSendError) is what makes
-        # that a guarantee rather than a best effort: a `sender` this codebase
-        # doesn't control (tests inject their own; a future integration
-        # might) can always raise something send_text's own normalization
-        # never sees.
+        # app/services/messaging.py::send_via_channel_manager normalizes
+        # every failure mode it can anticipate — including a ChannelManager/
+        # provider-level failure (Sprint 64A PR 6) — into WhatsAppSendError,
+        # but this message was already durably committed to status="sending"
+        # by the claim step above — the one guarantee this function must
+        # never break is that every path out of here leaves the message in a
+        # terminal state, not stuck at "sending" forever with no approve/
+        # reject/retry path back to it. Catching broadly (not just
+        # WhatsAppSendError) is what makes that a guarantee rather than a
+        # best effort: a `sender` this codebase doesn't control (tests
+        # inject their own; a future integration might) can always raise
+        # something that normalization never sees.
         #
         # Reuses the exact compensation this function already applies to its
         # own final commit below (Section A4/Part C) rather than a second

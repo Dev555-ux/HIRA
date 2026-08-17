@@ -24,7 +24,11 @@ from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.db.tenant import tenant_query
 from app.models import Conversation, Customer, Message
-from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError, send_text
+from app.services.messaging import (
+    WhatsAppNotConnectedError,
+    WhatsAppSendError,
+    send_via_channel_manager,
+)
 from app.services.execution_traces import list_activity_for_dashboard
 from app.services.replies import (
     WhatsAppWindowExpiredError,
@@ -37,8 +41,9 @@ from app.services.replies import (
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
-# WhatsApp Cloud API's text message body limit — the same boundary `send_text`
-# will eventually hit, so an edited draft is validated against it up front.
+# WhatsApp Cloud API's text message body limit — the same boundary the
+# eventual send (via ChannelManager -> WhatsAppProvider) will hit, so an
+# edited draft is validated against it up front.
 MAX_DRAFT_LENGTH = 4096
 
 # Sprint 36: cap on /pending so a business with a huge backlog can't force an
@@ -61,8 +66,15 @@ class UpdateDraftRequest(BaseModel):
 
 
 def get_reply_sender():
-    """The WhatsApp sender used when approving a reply. Overridable in tests."""
-    return send_text
+    """The WhatsApp sender used when approving a reply. Overridable in tests.
+
+    Routes through ChannelManager -> the channel registry -> WhatsAppProvider
+    (Sprint 64A PR 6) rather than calling the Graph API directly; still
+    raises WhatsAppSendError on any failure (see
+    app.services.messaging.send_via_channel_manager), so the
+    WhatsAppSendError -> 502 mapping in approve_message below is unchanged.
+    """
+    return send_via_channel_manager
 
 
 def _customers_by_conversation(

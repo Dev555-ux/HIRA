@@ -143,15 +143,6 @@ def test_channel_manager_rejects_unsupported_capability():
         manager.validate_capability("fake", Capability.VIDEO)
 
 
-def test_channel_manager_send_not_implemented_yet():
-    manager = ChannelManager(registry=ChannelRegistry())
-    with pytest.raises(NotImplementedError):
-        manager.send(
-            OutboundMessage(channel="fake", external_conversation_id="c1", text="hi"),
-            ChannelCredentials(channel="fake", access_token="token"),
-        )
-
-
 def test_channel_manager_handle_inbound_not_implemented_yet():
     manager = ChannelManager(registry=ChannelRegistry())
     with pytest.raises(NotImplementedError):

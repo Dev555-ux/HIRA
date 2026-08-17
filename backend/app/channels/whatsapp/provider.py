@@ -149,9 +149,10 @@ class WhatsAppProvider(ChannelProvider):
         return parse_inbound_payload(payload)
 
     def send(self, message: OutboundMessage, creds: ChannelCredentials) -> DeliveryReceipt:
-        """Delegates to `send.send_whatsapp_message`, which itself calls
-        `app.services.messaging.send_text` unchanged — see send.py's
-        docstring for why this keeps `send_text`'s existing retry loop
-        rather than the single-attempt contract `ChannelProvider.send()`
-        otherwise describes."""
+        """Delegates to `send.send_whatsapp_message` — exactly one Graph
+        API attempt (Sprint 64A PR 6), matching this method's own
+        interface contract. `app.services.channel_manager.ChannelManager`
+        is what retries, by calling this method (transitively, via the
+        registry) more than once using `DeliveryReceipt.retryable` to
+        decide whether to."""
         return send_whatsapp_message(message, creds)

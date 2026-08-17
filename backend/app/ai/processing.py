@@ -49,7 +49,7 @@ from app.ai.tools import confirmation_message_for, execute_tool_call, response_t
 from app.db.session import SessionLocal
 from app.models import Business, Conversation, Customer, Escalation, ExecutionTrace, Message
 from app.services.execution_traces import get_pending_action, record_execution_trace
-from app.services.messaging import WhatsAppSendError, send_text
+from app.services.messaging import WhatsAppSendError, send_via_channel_manager
 from app.whatsapp.credentials import get_access_token, get_stored_credential
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ def generate_and_store_reply(
     trigger_message_id: uuid.UUID | None,
     user_text: str,
     *,
-    sender: Callable[..., str] = send_text,
+    sender: Callable[..., str] = send_via_channel_manager,
 ) -> None:
     """Self-contained entry point: opens its own session, owns commit/
     rollback/close end to end. Used by the legacy BackgroundTasks path
@@ -146,7 +146,7 @@ def generate_reply_into_session(
     trigger_message_id: uuid.UUID | None,
     user_text: str,
     *,
-    sender: Callable[..., str] = send_text,
+    sender: Callable[..., str] = send_via_channel_manager,
 ) -> list[Callable[[], None]]:
     """Do one customer turn's work through `db` — never commits, rolls back,
     or closes it; the caller owns that transaction boundary (Critical audit
