@@ -173,16 +173,32 @@ def verify_and_consume_state(db: Session, state: str) -> InstagramOAuthAttempt:
     return attempt
 
 
+def _meta_error_summary(resp: httpx.Response) -> str:
+    """Sprint 65 PR 7 (production hardening): structured status/error-code
+    only — never the raw response body/message. Every `InstagramAuthError`
+    raised from this module ends up in a `logger.warning()` call
+    (app/api/instagram.py::_map_error/oauth_callback), and this PR's own
+    logging requirement is explicit: Graph API response bodies must never
+    reach application logs. Matches the convention
+    `app/instagram/credentials.py::check_connection_health` and
+    `app/channels/instagram/send.py::_failed_receipt` already use —
+    `_fetch_access_token`/`discover_connectable_pages` below were the two
+    places in this codebase that hadn't caught up to it yet."""
+    try:
+        error = resp.json().get("error", {})
+    except ValueError:
+        error = {}
+    return f"status={resp.status_code} code={error.get('code')} subcode={error.get('error_subcode')}"
+
+
 def _fetch_access_token(client: httpx.Client, params: dict) -> str:
     url = f"https://graph.facebook.com/{settings.instagram_graph_version}/oauth/access_token"
     try:
         resp = client.get(url, params=params)
     except httpx.TransportError as exc:
-        raise InstagramAuthError(f"Could not reach Meta's API: {exc}") from exc
+        raise InstagramAuthError(f"Could not reach Meta's API: {type(exc).__name__}") from exc
     if resp.status_code >= 400:
-        raise InstagramAuthError(
-            f"Meta rejected the token exchange: {resp.status_code} {resp.text}"
-        )
+        raise InstagramAuthError(f"Meta rejected the token exchange: {_meta_error_summary(resp)}")
     token = resp.json().get("access_token")
     if not token:
         raise InstagramAuthError("Meta's token exchange response did not include an access token")
@@ -250,10 +266,12 @@ def discover_connectable_pages(
                 },
             )
         except httpx.TransportError as exc:
-            raise InstagramAuthError(f"Could not reach Meta's API: {exc}") from exc
+            raise InstagramAuthError(
+                f"Could not reach Meta's API: {type(exc).__name__}"
+            ) from exc
         if resp.status_code >= 400:
             raise InstagramAuthError(
-                f"Meta rejected the Page discovery request: {resp.status_code} {resp.text}"
+                f"Meta rejected the Page discovery request: {_meta_error_summary(resp)}"
             )
 
         choices = []

@@ -135,6 +135,20 @@ class ChannelManager:
                 return receipt
             last_receipt = receipt
             if attempt < self._max_attempts:
+                # Sprint 65 PR 7 (production hardening): this loop had no
+                # log line at all for a retried send — every channel's
+                # retries were invisible in production logs until either
+                # final success or final failure. Structured, no payload
+                # content (channel + attempt count only — see receipt.error
+                # for the classified failure reason, never a raw response
+                # body per every provider's own send() contract).
+                logger.info(
+                    "Retrying %s send (attempt %d/%d): %s",
+                    message.channel,
+                    attempt + 1,
+                    self._max_attempts,
+                    receipt.error,
+                )
                 time.sleep(RETRY_BACKOFF_SECONDS * attempt)
         assert last_receipt is not None  # loop always runs >= 1 iteration
         return last_receipt

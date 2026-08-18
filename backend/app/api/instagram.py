@@ -52,6 +52,7 @@ def _map_error(exc: InstagramError) -> HTTPException:
             detail="Instagram connection isn't available on this deployment yet.",
         )
     if isinstance(exc, InstagramDuplicateConnectionError):
+        logger.warning("Instagram connect blocked, account already connected elsewhere: %s", exc)
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     if isinstance(exc, InstagramAuthError):
         logger.warning("Instagram Meta API call failed: %s", exc)
@@ -94,6 +95,10 @@ def start_oauth_connect(
         authorization_url = oauth.build_authorization_url(db, principal.business_id)
     except InstagramError as exc:
         raise _map_error(exc) from exc
+    # business_id only — never the state param (it's a signed credential-
+    # adjacent token) or the authorization_url (carries that same state as
+    # a query param).
+    logger.info("Instagram OAuth connect initiated for business %s", principal.business_id)
     return {"data": {"authorization_url": authorization_url}}
 
 
@@ -151,6 +156,17 @@ def oauth_callback(
                 "Instagram connect blocked, account already connected elsewhere: %s", exc
             )
             return _redirect_to_frontend("error", message=str(exc))
+        # "connected" covers both a first connect and a reconnect — store_
+        # credentials() is the same idempotent create-or-replace path for
+        # both (see its own docstring); no separate reconnect codepath
+        # exists to log differently. page_id/IG account id only, never the
+        # page access token.
+        logger.info(
+            "Instagram connected for business %s (page_id=%s, ig_account_id=%s)",
+            attempt.business_id,
+            choice.page_id,
+            choice.instagram_business_account_id,
+        )
         return _redirect_to_frontend("connected")
 
     # Multiple eligible Pages — do not automatically select one (Sprint 65
@@ -211,6 +227,12 @@ def finalize_connection(
         raise _map_error(exc) from exc
 
     oauth.consume_pending_attempt(db, attempt)
+    logger.info(
+        "Instagram connected for business %s (page_id=%s, ig_account_id=%s)",
+        principal.business_id,
+        choice.page_id,
+        choice.instagram_business_account_id,
+    )
     return {"data": {"connected": True, "instagram_username": credential.instagram_username}}
 
 
@@ -253,4 +275,9 @@ def disconnect_instagram(
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> None:
-    instagram_credentials.disconnect(db, principal.business_id)
+    was_connected = instagram_credentials.disconnect(db, principal.business_id)
+    logger.info(
+        "Instagram disconnect for business %s (was_connected=%s)",
+        principal.business_id,
+        was_connected,
+    )

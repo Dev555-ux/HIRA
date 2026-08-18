@@ -23,6 +23,8 @@ parsed or looked up from a payload before its signature is trusted.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from sqlalchemy.orm import Session
 
@@ -34,6 +36,8 @@ from app.instagram.credentials import get_credential_by_ig_account_id
 from app.services.channel_manager import ChannelManager
 from app.services.messaging_service import MessagingService
 from app.webhooks.whatsapp import get_reply_dispatcher
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -50,7 +54,17 @@ def verify_subscription(request: Request) -> Response:
     creds = ChannelCredentials(channel="instagram", access_token="")
     challenge = provider.verify_subscription(request.query_params, creds)
     if challenge is None:
+        # No customer content, no secret in this query string worth
+        # withholding (hub.verify_token is compared, never echoed) — safe
+        # to log the mode/presence of a token, useful for diagnosing a
+        # misconfigured Meta App webhook setup.
+        logger.warning(
+            "Instagram webhook verification failed: hub.mode=%s token_present=%s",
+            request.query_params.get("hub.mode"),
+            "hub.verify_token" in request.query_params,
+        )
         return Response(status_code=403)
+    logger.info("Instagram webhook verification succeeded")
     return Response(content=challenge, media_type="text/plain")
 
 
@@ -78,26 +92,49 @@ def receive(
         channel="instagram", access_token="", secret=settings.instagram_app_secret or None
     )
     if not provider.verify_webhook_signature(request.headers, raw_body, signing_creds):
+        # Deliberately doesn't distinguish "signature didn't match" from
+        # "INSTAGRAM_APP_SECRET isn't configured" in the response (both are
+        # 403 to the caller — Meta shouldn't learn which), but does in the
+        # log line, since an ops person debugging "why is Instagram down"
+        # needs to tell a real forged request apart from a missing env var.
+        # Never logs the signature header or raw_body itself.
+        logger.warning(
+            "Instagram webhook signature verification failed (app_secret_configured=%s)",
+            bool(settings.instagram_app_secret),
+        )
         return Response(status_code=403)
 
     try:
         account_id = provider.extract_routing_key(raw_body)
     except WebhookVerificationFailedError:
+        logger.warning("Instagram webhook body malformed or missing a routing id")
         return Response(status_code=403)
 
     credential = get_credential_by_ig_account_id(db, account_id)
     if credential is None:
         # No business has connected this Instagram account — nothing to
         # route to. Not an error condition worth a 5xx; Meta should not
-        # retry a delivery no business is waiting for.
+        # retry a delivery no business is waiting for. account_id is
+        # Meta's own IG Business Account id, not customer content — safe
+        # to log for diagnosing "which account tried to deliver here."
+        logger.warning("Instagram webhook for unconnected IG account %s", account_id)
         return Response(status_code=403)
 
     try:
         messages = provider.parse_webhook(raw_body)
     except WebhookVerificationFailedError:
+        logger.warning(
+            "Instagram webhook payload failed to parse for business %s", credential.business_id
+        )
         return Response(status_code=403)
 
     new_inbound = MessagingService(db).record_inbound(credential.business_id, messages)
+    logger.info(
+        "Instagram webhook delivered %d message(s), %d new, for business %s",
+        len(messages),
+        len(new_inbound),
+        credential.business_id,
+    )
 
     if not settings.use_transactional_outbox:
         # Legacy path — see app/webhooks/whatsapp.py::receive()'s identical

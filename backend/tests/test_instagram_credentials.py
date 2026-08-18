@@ -80,6 +80,39 @@ def test_store_rejects_ig_account_already_connected_to_another_business(db_sessi
     assert get_stored_credential(db_session, biz_b.id) is None
 
 
+def test_store_credentials_reconnect_race_converges_instead_of_a_false_duplicate_error(
+    db_session, monkeypatch
+):
+    """Sprint 65 PR 7 (production hardening): two concurrent connect/
+    reconnect requests for the *same* business (a double-clicked button,
+    two open tabs) both hit the business_id unique constraint's IntegrityError
+    path — not just the ig_account_id one this module was originally
+    hardened for. Before this fix, the loser got a misleading "this account
+    is already connected to a different business" error about its own
+    business. Simulates the race: a concurrent request commits a row for
+    this business, then this call's own stale `get_stored_credential()`
+    read (patched to miss it once) forces the INSERT path anyway."""
+    biz = _seed_business(db_session)
+    _store(db_session, biz.id, ig_account_id="ig-winner", token="token-from-winner")
+
+    import app.instagram.credentials as instagram_credentials_module
+
+    real_get_stored_credential = instagram_credentials_module.get_stored_credential
+    calls = {"n": 0}
+
+    def stale_read(db, business_id):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else real_get_stored_credential(db, business_id)
+
+    monkeypatch.setattr(instagram_credentials_module, "get_stored_credential", stale_read)
+
+    result = _store(db_session, biz.id, ig_account_id="ig-loser", token="token-from-loser")
+
+    assert result.business_id == biz.id
+    assert result.instagram_business_account_id == "ig-loser"  # last write wins
+    assert get_page_access_token(get_stored_credential(db_session, biz.id)) == "token-from-loser"
+
+
 def test_disconnect_removes_credential(db_session):
     biz = _seed_business(db_session)
     _store(db_session, biz.id)

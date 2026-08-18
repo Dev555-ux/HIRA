@@ -10,7 +10,9 @@ If `messaging-platform.md` is the map, this is the turn-by-turn directions.
 
 ## Before you start
 
-Read `app/channels/whatsapp/` end to end first. It's the only implementation that exists, and every step below points back to the specific file in it that does the equivalent thing. You are not designing a new shape — you're filling in an existing one.
+Read `app/channels/whatsapp/` end to end first — every step below points back to the specific file in it that does the equivalent thing. You are not designing a new shape — you're filling in an existing one.
+
+`app/channels/instagram/` (Sprint 65 PR 1–6) is a second, complete implementation of this same shape, worth reading alongside WhatsApp's once you've read that one — not because it's a better reference, but because seeing where the two genuinely diverge (Instagram's media-only-or-text-only outbound payload constraint, its shared-App-not-per-business credential model — see `documentation/INSTAGRAM_INTEGRATION.md` §1) versus where they're identical (the HMAC signature scheme, the retry/capability plumbing) is the fastest way to tell "channel-specific, expect to reimplement" apart from "this looks copy-pasteable, check whether it actually should be shared instead."
 
 Decide your channel's id now (a short lowercase string — `"messenger"`, `"email"`, `"webchat"`, `"telegram"`). It shows up as `channel_id` on your provider class, as the `channel` field on every DTO you construct, and in every file/directory name below. Pick it once, don't rename it later — it becomes load-bearing the moment `ChannelRegistry.register()` is called.
 

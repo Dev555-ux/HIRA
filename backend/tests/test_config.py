@@ -102,14 +102,15 @@ def _real_whatsapp_secrets() -> dict:
 
 
 def _real_production_extras() -> dict:
-    """Sprint 69.5: the fields _reject_insecure_production_secrets also
-    requires in production, beyond the WhatsApp secrets above — combine with
-    _real_whatsapp_secrets() for a config that starts cleanly."""
+    """Sprint 69.5/Sprint 65 PR 7: the fields _reject_insecure_production_secrets
+    also requires in production, beyond the WhatsApp secrets above — combine
+    with _real_whatsapp_secrets() for a config that starts cleanly."""
     return {
         "llm_provider": "claude",
         "clerk_jwks_url": "https://real-clerk-instance.clerk.accounts.dev/.well-known/jwks.json",
         "clerk_issuer": "https://real-clerk-instance.clerk.accounts.dev",
         "calendar_encryption_key": "a-real-fernet-key",
+        "instagram_verify_token": "a-real-instagram-verify-token",
     }
 
 
@@ -222,9 +223,35 @@ def test_production_names_every_missing_required_field(monkeypatch):
             environment="production",
             **_real_whatsapp_secrets(),
             llm_provider="claude",
+            instagram_verify_token="a-real-instagram-verify-token",
             clerk_jwks_url="",
             clerk_issuer="",
             calendar_encryption_key="",
+        )
+
+
+# --- Sprint 65 PR 7: production hardening — guessable Instagram verify token ----
+
+
+def test_instagram_dev_verify_token_is_fine_outside_production():
+    settings = _settings(database_url="postgresql+psycopg://u:p@host/db")
+    assert settings.instagram_verify_token == "dev-verify-token"
+
+
+def test_production_with_dev_instagram_verify_token_is_rejected(monkeypatch):
+    """The Instagram webhook route has been live in production since Sprint
+    65 PR 3 (main.py registers instagram_webhook_router unconditionally) —
+    this closes the gap PR 1's own comment flagged (add this guard "in the
+    same PR that actually stands up app/webhooks/instagram.py") but that
+    was never followed up on until this hardening pass."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="INSTAGRAM_VERIFY_TOKEN"):
+        _load_settings(
+            _env_file=None,
+            database_url="postgresql+psycopg://u:p@host/db",
+            environment="production",
+            **_real_whatsapp_secrets(),
+            **{**_real_production_extras(), "instagram_verify_token": "dev-verify-token"},
         )
 
 

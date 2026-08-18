@@ -183,6 +183,29 @@ def test_post_rejects_when_app_secret_not_configured(db_session, monkeypatch):
     assert resp.status_code == 403
 
 
+def test_post_rejects_invalid_signature_logs_without_leaking_body(db_session, caplog):
+    """Sprint 65 PR 7: a signature failure must produce a structured log
+    line, and it must never include the raw request body or signature
+    header (which could echo customer message content)."""
+    _connected_business(db_session)
+    client, _ = _client(db_session)
+    body = json.dumps(_inbound_payload("IG_ACCT_1", "mid.1", text="a secret customer message")).encode()
+    bad_sig = _sign(body, "wrong-secret")
+
+    with caplog.at_level("WARNING", logger="app.webhooks.instagram"):
+        resp = client.post(
+            "/webhooks/instagram",
+            content=body,
+            headers={"X-Hub-Signature-256": bad_sig, "Content-Type": "application/json"},
+        )
+
+    assert resp.status_code == 403
+    messages = [r.message for r in caplog.records]
+    assert any("signature" in m.lower() for m in messages)
+    assert not any("a secret customer message" in m for m in messages)
+    assert not any(bad_sig in m for m in messages)
+
+
 def test_post_accepts_a_correctly_signed_payload(db_session):
     _connected_business(db_session)
     client, dispatched = _client(db_session)
@@ -211,6 +234,22 @@ def test_post_rejects_unknown_ig_account_id(db_session):
     )
     assert resp.status_code == 403
     assert db_session.scalars(select(Message)).all() == []
+
+
+def test_post_rejects_unknown_ig_account_id_logs_the_account(db_session, caplog):
+    client, _ = _client(db_session)
+    body = json.dumps(_inbound_payload("no-such-account", "mid.1")).encode()
+
+    with caplog.at_level("WARNING", logger="app.webhooks.instagram"):
+        resp = client.post(
+            "/webhooks/instagram",
+            content=body,
+            headers={"X-Hub-Signature-256": _sign(body), "Content-Type": "application/json"},
+        )
+
+    assert resp.status_code == 403
+    messages = [r.message for r in caplog.records]
+    assert any("no-such-account" in m for m in messages)
 
 
 def test_post_routes_to_the_correct_business_when_several_are_connected(db_session):

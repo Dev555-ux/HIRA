@@ -38,8 +38,10 @@ from app.core.rate_limit import init_rate_limiting
 from app.core.request_logging import RequestLoggingMiddleware
 from app.core.time import to_iso_utc
 from app.channels import register_all as register_all_channels
+from app.channels.base.errors import ProviderNotFoundError
 from app.db.session import get_db
 from app.models import Message
+from app.services.channel_manager import ChannelManager
 from app.webhooks.instagram import router as instagram_webhook_router
 from app.webhooks.whatsapp import router as whatsapp_router
 
@@ -271,4 +273,49 @@ def health_whatsapp(db: Session = Depends(get_db)) -> JSONResponse:
         )
     return JSONResponse(
         status_code=200, content={"status": "ok", "last_inbound_at": to_iso_utc(latest)}
+    )
+
+
+@app.get("/health/instagram")
+def health_instagram() -> JSONResponse:
+    """Configuration/wiring liveness for the Instagram channel (Sprint 65
+    PR 7) — a different question from `/health/whatsapp` above: that one
+    asks "have we actually heard from Meta recently" (a traffic signal);
+    this one asks "is the channel wired up correctly at all," with no
+    traffic-volume equivalent to check yet. Every check here is either an
+    in-process registry lookup or a `settings.*` boolean — no database
+    query, no network call to Meta — so this stays fast enough to poll
+    frequently and can never itself be the reason Instagram looks down.
+
+    A missing OAuth/webhook configuration is NOT a failure by itself: a
+    deployment may legitimately run WhatsApp-only with Instagram never
+    configured. Only `registry_contains_instagram`/`provider_loads` being
+    false is a real problem (a code/registration bug, not a config
+    choice) — that's what flips this endpoint's status to 503.
+    """
+    try:
+        provider = ChannelManager().resolve("instagram")
+        registered = True
+    except ProviderNotFoundError:
+        provider = None
+        registered = False
+
+    checks = {
+        "registry_contains_instagram": registered,
+        "provider_loads": registered and provider.channel_id == "instagram",
+        # CALENDAR_ENCRYPTION_KEY, despite the name, also encrypts every
+        # business's stored Instagram Page access token (app/instagram/
+        # credentials.py) — see that module's docstring.
+        "credential_encryption_available": bool(settings.calendar_encryption_key),
+        "oauth_configured": bool(
+            settings.instagram_app_id
+            and settings.instagram_app_secret
+            and settings.instagram_oauth_redirect_uri
+        ),
+        "webhook_signing_configured": bool(settings.instagram_app_secret),
+    }
+    healthy = checks["registry_contains_instagram"] and checks["provider_loads"]
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={"status": "ok" if healthy else "error", "checks": checks},
     )

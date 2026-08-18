@@ -131,6 +131,41 @@ def test_oauth_callback_single_choice_stores_credentials_and_redirects(db_sessio
     assert stored.instagram_business_account_id == "ig-1"
 
 
+def test_oauth_callback_success_logs_without_leaking_the_page_token(db_session, monkeypatch, caplog):
+    """Sprint 65 PR 7: a successful connect/reconnect must produce a
+    structured log line naming the business — and the page access token
+    must never appear in it (or anywhere else in the log stream this
+    request produces)."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    url = oauth.build_authorization_url(db_session, biz.id)
+    state = _get_state(url)
+
+    monkeypatch.setattr(oauth, "exchange_code_for_user_token", lambda code: "user-token")
+    monkeypatch.setattr(
+        oauth,
+        "discover_connectable_pages",
+        lambda token: [
+            InstagramConnectionChoice(
+                "page-1", "Page One", "super-secret-page-token", "ig-1", "biz_one"
+            )
+        ],
+    )
+
+    client = TestClient(app)
+    with caplog.at_level("INFO", logger="app.api.instagram"):
+        resp = client.get(
+            f"/api/v1/instagram/oauth/callback?code=abc&state={state}", follow_redirects=False
+        )
+
+    assert resp.status_code in (302, 307)
+    messages = [r.message for r in caplog.records]
+    assert any("connected" in m.lower() and str(biz.id) in m for m in messages)
+    assert not any("super-secret-page-token" in m for m in messages)
+
+
 def test_oauth_callback_multiple_choices_redirects_to_choose(db_session, monkeypatch):
     biz, _ = _seed_business(db_session, "A", "user_a")
     db_session.commit()
@@ -451,6 +486,33 @@ def test_disconnect_removes_credential(db_session):
     resp = client.delete("/api/v1/instagram/disconnect", headers=_auth())
     assert resp.status_code == 204
     assert instagram_credentials.get_stored_credential(db_session, biz.id) is None
+
+
+def test_disconnect_logs_structured_event_without_secrets(db_session, caplog):
+    """Sprint 65 PR 7: disconnect had no logging at all before this pass —
+    an ops person had no way to see a disconnect happened short of noticing
+    the credential row disappear. Asserts the log line exists and never
+    carries a token/secret (there is none to leak here, but this is the
+    shape every Instagram log line in this PR must have)."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    instagram_credentials.store_credentials(
+        db_session,
+        biz.id,
+        page_id="page-1",
+        page_access_token="super-secret-page-token",
+        instagram_business_account_id="ig-1",
+        instagram_username="biz_one",
+    )
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    with caplog.at_level("INFO", logger="app.api.instagram"):
+        resp = client.delete("/api/v1/instagram/disconnect", headers=_auth())
+
+    assert resp.status_code == 204
+    messages = [r.message for r in caplog.records]
+    assert any("disconnect" in m.lower() and str(biz.id) in m for m in messages)
+    assert not any("super-secret-page-token" in m for m in messages)
 
 
 def test_disconnect_requires_authentication(db_session):

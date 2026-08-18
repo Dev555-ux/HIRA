@@ -1,22 +1,24 @@
-"""Instagram credential requirements — documentation and scaffolding only.
+"""Instagram credential requirements — documentation for
+`InstagramProvider.validate_credentials()`'s still-unimplemented contract
+method (see below).
 
-Purpose: name exactly what `InstagramProvider.validate_credentials()` will
-need to call the Instagram Messaging API for real (Sprint 65, a later PR),
-without implementing OAuth or making a live call in this PR — see this
-module's own function below, which exists as the implementation target
-and nothing more.
+Purpose: name what `ChannelProvider.validate_credentials()` would need to
+call the Instagram Messaging API for real, for the one caller that
+contract exists for — `InstagramProvider.validate_credentials()`
+(`app/channels/instagram/provider.py`). Not needed for anything that
+actually runs today: the real connect flow's own live Graph API check
+lives in `app/instagram/oauth.py`/`app/instagram/credentials.py`
+(Sprint 65 PR 2), which request their own, actually-used permission set
+(`app/instagram/oauth.py::SCOPES`) — this module's job is narrower and
+still genuinely open, not a duplicate of that flow.
 
-Required credentials (Meta's Instagram Messaging API, as of this writing —
-verify against Meta's current developer docs before implementing PR5;
-Meta's Graph API versioning and permission model change over time and
-nothing here has been tested against a live account):
+Credential shape this function would validate:
 
 - **Access token**: a long-lived Page Access Token for the Facebook Page
   connected to the target Instagram professional (business or creator)
   account. Unlike WhatsApp's per-number System User token, Instagram
   messaging is authenticated through the *Page*, not the Instagram account
-  directly — obtained via Facebook Login for Business OAuth, not built
-  here (`ChannelCredentials.access_token`).
+  directly (`ChannelCredentials.access_token`).
 
 - **External account id**: the Instagram-scoped Business Account ID
   (`instagram_business_account_id`, called `IGSID` in Meta's docs — not
@@ -24,46 +26,30 @@ nothing here has been tested against a live account):
   which connected Instagram account a message belongs to
   (`ChannelCredentials.external_account_id`).
 
-- **Signing secret**: the same Meta App Secret used to verify WhatsApp
-  webhooks (`X-Hub-Signature-256`, identical HMAC-SHA256 scheme across
-  every Meta webhook product) — a business's Meta App likely already has
-  one if it has WhatsApp connected, but Instagram messaging requires its
-  own subscription/permission grant on top of an existing App
-  (`ChannelCredentials.secret`).
-
 Expected token type: a long-lived (60-day, Meta-refreshable) Page Access
-Token, not a short-lived user token — obtaining and refreshing one is
-OAuth work, explicitly out of scope for this PR.
-
-Required Meta permissions/scopes to request during that future OAuth flow
-(names as documented by Meta for the Instagram Messaging API at the time
-of writing — re-verify before implementing):
+Token, not a short-lived user token.
 """
 
 from __future__ import annotations
 
-REQUIRED_META_PERMISSIONS = (
-    "instagram_basic",
-    "instagram_manage_messages",
-    "pages_show_list",
-    "pages_messaging",
-)
-
 
 def validate_instagram_credentials(access_token: str, external_account_id: str) -> str | None:
-    """Implementation target for a later Sprint 65 PR — mirrors
-    `app.whatsapp.credentials.verify_whatsapp_credentials()`'s shape (a
-    live Graph API call proving the token has access to the given
-    account, returning a human-readable display name/username on
-    success). Deliberately raises rather than making a network call or
-    returning a fake `ConnectionResult` — this PR does not call Meta, and
-    a placeholder success/failure here would be indistinguishable from a
-    real, tested check. `InstagramProvider.validate_credentials()` is
-    what actually needs to exist on the `ChannelProvider` contract; this
-    function is its future implementation, not a shortcut around it.
+    """Still-unimplemented `ChannelProvider.validate_credentials()` target —
+    mirrors `app.whatsapp.credentials.verify_whatsapp_credentials()`'s shape
+    (a live Graph API call proving the token has access to the given
+    account, returning a human-readable display name/username on success).
+    Deliberately raises rather than making a network call or returning a
+    fake `ConnectionResult` — no caller reaches this today (see
+    `InstagramProvider.validate_credentials()`'s own docstring for why: the
+    connect flow's real live check lives in `app/instagram/oauth.py`
+    instead, and `validate_credentials()` is otherwise only called during
+    connect/onboarding per the `ChannelProvider` contract, never the
+    per-message hot path), so a placeholder success/failure here would be
+    indistinguishable from a real, tested check with nothing exercising it.
     """
     raise NotImplementedError(
-        "Instagram credential validation is not implemented — Sprint 65 PR 1 is "
-        "foundation only (no OAuth, no Meta calls). See this module's docstring "
-        "for the required credential shape this function must eventually validate."
+        "Instagram credential validation via ChannelProvider.validate_credentials() is "
+        "not implemented — the real connect-time check lives in app/instagram/oauth.py "
+        "instead (see this module's docstring). See this module's docstring for the "
+        "credential shape this function would eventually validate, if something ever calls it."
     )

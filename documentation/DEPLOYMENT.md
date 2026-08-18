@@ -79,6 +79,7 @@ command and config file:
 - `backend/scripts/run_worker.py` — the worker entrypoint; imports `app.ai.tasks` so the `generate_ai_reply` handler is registered before the loop starts.
 - `GET /health` — plain liveness check Railway's own healthcheck uses.
 - `GET /health/whatsapp` (new, Sprint 69) — reports whether inbound WhatsApp traffic has gone quiet longer than `WEBHOOK_STALE_THRESHOLD_MINUTES` (default 60); meant for an external uptime monitor, not Railway's own healthcheck (see step 6).
+- `GET /health/instagram` (new, Sprint 65 PR 7) — a different kind of check: configuration/wiring, not traffic volume (no Instagram equivalent of "last inbound message" exists yet). Confirms the provider is registered, credential encryption is available, and OAuth/webhook config is present — never calls Meta, stays fast. A deployment running WhatsApp-only with Instagram deliberately unconfigured still reports `200`/`"ok"`; only a real registration bug returns `503`.
 - Sentry integration (`app/core/monitoring.py`) — a no-op until `SENTRY_DSN` is set; no code change needed to activate it, just the env var (step 4).
 - `app/core/config.py`'s `_reject_insecure_production_secrets` — the backend will **refuse to boot** with `ENVIRONMENT=production` if: the WhatsApp secrets are still their dev defaults, `LLM_PROVIDER` is still `mock`, `ALLOW_MOCK_AUTH=true`, or `CLERK_JWKS_URL`/`CLERK_ISSUER`/`CALENDAR_ENCRYPTION_KEY` are unset (Sprint 69.5 production hardening — see the Sprint 69 Operations Readiness Audit, which found each of these could otherwise boot successfully and then fail silently or confusingly at runtime instead of at startup). This is intentional (SEC-1 / Sprint 69.5) — if the deploy fails at startup with a `ValueError` naming specific variables, that's this guard doing its job; fix the named variable(s) in Railway's Variables tab.
 
@@ -325,6 +326,10 @@ Worker must be given the same values** for every backend variable they share.
 | `WHATSAPP_ACCESS_TOKEN` | API, Worker | **Yes** | `dev-access-token` | **Yes** | Meta System User token; used to send replies. |
 | `WHATSAPP_API_BASE` | API, Worker | No | `https://graph.facebook.com` | No | Rarely changed. |
 | `WHATSAPP_GRAPH_VERSION` | API, Worker | No | `v21.0` | No | Meta Graph API version. |
+| `INSTAGRAM_VERIFY_TOKEN` | API | **Yes** | `dev-verify-token` | **Yes** | Guessable-default guard added Sprint 65 PR 7 (production hardening) — same shape as `WHATSAPP_VERIFY_TOKEN`. Any string you choose; enter the same in Meta's webhook config. |
+| `INSTAGRAM_APP_ID` / `INSTAGRAM_APP_SECRET` | API, Worker | Only if Instagram is being connected | `""` | **Yes** | One shared HIRA-owned Meta App (not per-business, unlike WhatsApp). `APP_SECRET` also verifies inbound webhook signatures — fails closed (rejects all webhooks) if unset, not forgeable. See `documentation/INSTAGRAM_INTEGRATION.md`. |
+| `INSTAGRAM_OAUTH_REDIRECT_URI` | API | Only if Instagram is being connected | `""` | No | Must exactly match a redirect URI configured on the Meta App. |
+| `INSTAGRAM_GRAPH_VERSION` | API, Worker | No | `v21.0` | No | Meta Graph API version for Instagram calls. |
 | `LLM_PROVIDER` | API, Worker | **Yes** | `mock` | No | `groq` or `claude` — backend refuses to boot in prod with `mock`. |
 | `GROQ_API_KEY` / `ANTHROPIC_API_KEY` | API, Worker | If provider matches | `""` | **Yes** | Key for the chosen provider. |
 | `GROQ_MODEL` / `LLM_MODEL` | API, Worker | No | `llama-3.3-70b-versatile` / `claude-sonnet-4-6` | No | Model id per provider. |

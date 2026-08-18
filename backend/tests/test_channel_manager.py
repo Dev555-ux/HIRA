@@ -143,6 +143,28 @@ def test_retries_a_retryable_failure_then_succeeds(monkeypatch):
     assert sleeps == [0.2, 0.4]
 
 
+def test_retry_logs_a_structured_line_per_attempt_without_raw_error_bodies(monkeypatch, caplog):
+    """Sprint 65 PR 7: this loop had no log line at all for a retried
+    send — channel-agnostic, so it covers Instagram's retries the same way
+    it always covered WhatsApp's. `receipt.error` is a provider's already-
+    classified failure reason (never a raw Graph API body — see every
+    provider's own send() contract), so it's safe to include."""
+    monkeypatch.setattr("app.services.channel_manager.time.sleep", lambda s: None)
+
+    provider = ScriptedProvider()
+    provider.script = [
+        DeliveryReceipt(status="failed", retryable=True, error="Meta returned 503"),
+        DeliveryReceipt(status="sent", external_message_id="msg-2"),
+    ]
+    manager = _manager(provider)
+
+    with caplog.at_level("INFO", logger="app.services.channel_manager"):
+        manager.send(MESSAGE, CREDS)
+
+    messages = [r.message for r in caplog.records]
+    assert any("retry" in m.lower() and "fake" in m for m in messages)
+
+
 # --- retry exhaustion -------------------------------------------------------
 
 

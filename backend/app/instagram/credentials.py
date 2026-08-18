@@ -70,6 +70,31 @@ def store_credentials(
         db.flush()
     except IntegrityError as exc:
         db.rollback()
+        # Sprint 65 PR 7 (production hardening): two unique constraints can
+        # cause this — `uq_instagram_credentials_ig_account_id` (a
+        # *different* business already claimed this IG account, the case
+        # this was originally written for) or `business_id`'s own unique
+        # constraint (a genuine reconnect race: two concurrent connect/
+        # reconnect requests for the *same* business, e.g. a double-clicked
+        # button or two open tabs — the loser's `existing is None` read
+        # above was stale by the time it tried to INSERT). Blindly raising
+        # InstagramDuplicateConnectionError for both cases used to tell a
+        # business reconnecting its own account that it belongs to someone
+        # else — wrong and confusing. Re-querying tells them apart: if a
+        # row for *this* business_id exists now, the race was with itself —
+        # retry as the update the loser actually meant to make, so both
+        # concurrent requests converge on the same final state instead of
+        # one failing with a misleading error.
+        existing = get_stored_credential(db, business_id)
+        if existing is not None:
+            existing.page_id = page_id
+            existing.page_access_token_encrypted = encrypted_token
+            existing.instagram_business_account_id = instagram_business_account_id
+            existing.instagram_username = instagram_username
+            existing.connection_status = CONNECTED
+            db.commit()
+            db.refresh(existing)
+            return existing
         raise InstagramDuplicateConnectionError(
             "This Instagram account is already connected to a different business."
         ) from exc

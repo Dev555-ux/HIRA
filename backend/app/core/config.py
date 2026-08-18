@@ -16,12 +16,20 @@ _INSECURE_PRODUCTION_DEFAULTS = {
     "whatsapp_verify_token": "dev-verify-token",
     "whatsapp_app_secret": "dev-app-secret",
     "whatsapp_access_token": "dev-access-token",
-    # instagram_verify_token deliberately NOT here yet: this guard blocks
-    # production startup for every deployment the moment a field is added,
-    # and Sprint 65 PR 1 ships no reachable Instagram webhook route — every
-    # currently-live deployment would fail to boot over an unset env var
-    # for a feature nothing can hit yet. Add it here in the same PR that
-    # actually stands up app/webhooks/instagram.py, not before.
+    # Sprint 65 PR 7 (production hardening): PR 1's comment here said to add
+    # this the moment app/webhooks/instagram.py went live — PR 3 shipped
+    # that route (and main.py has registered instagram_webhook_router ever
+    # since) but this guard was never updated, leaving every production
+    # deployment able to boot with the guessable "dev-verify-token" still
+    # accepted by Instagram's GET subscription handshake. Note this is
+    # lower severity than the WhatsApp equivalent: POST payloads are still
+    # protected by instagram_app_secret's HMAC check (verify_webhook_
+    # signature fails closed when unset — see app/channels/instagram/
+    # provider.py), so a guessable verify token only lets someone complete
+    # Meta's one-time handshake, never forge an inbound message. Still a
+    # real gap worth closing, and worth matching WhatsApp's own treatment
+    # of the identically-shaped setting.
+    "instagram_verify_token": "dev-verify-token",
     # Sprint 69.5: "mock" returns a canned reply to every real customer with
     # no error, no crash, and nothing in Sentry — the most severe silent
     # misconfiguration this guard can catch.
