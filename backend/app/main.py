@@ -36,6 +36,7 @@ from app.core.monitoring import capture_exception, capture_message, init_sentry
 from app.core.rate_limit import init_rate_limiting
 from app.core.request_logging import RequestLoggingMiddleware
 from app.core.time import to_iso_utc
+from app.channels import register_all as register_all_channels
 from app.db.session import get_db
 from app.models import Message
 from app.webhooks.whatsapp import router as whatsapp_router
@@ -105,6 +106,7 @@ def _warn_if_clerk_looks_like_a_dev_instance() -> None:
 _configure_app_logging()
 init_sentry()
 _warn_if_clerk_looks_like_a_dev_instance()
+register_all_channels()  # populates the default channel registry — see app/channels/__init__.py
 
 app = FastAPI(title="HIRA Backend", version="0.1.0")
 
