@@ -229,9 +229,7 @@ def edit_draft(
             detail=f"Draft body cannot exceed {MAX_DRAFT_LENGTH} characters",
         )
 
-    media = (
-        [m.model_dump() for m in payload.media] if payload.media is not None else None
-    )
+    media = [m.model_dump() for m in payload.media] if payload.media is not None else None
     try:
         message = update_draft(db, principal.business_id, message_id, body=body, media=media)
     except ValueError as exc:

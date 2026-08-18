@@ -189,7 +189,9 @@ def test_post_rejects_invalid_signature_logs_without_leaking_body(db_session, ca
     header (which could echo customer message content)."""
     _connected_business(db_session)
     client, _ = _client(db_session)
-    body = json.dumps(_inbound_payload("IG_ACCT_1", "mid.1", text="a secret customer message")).encode()
+    body = json.dumps(
+        _inbound_payload("IG_ACCT_1", "mid.1", text="a secret customer message")
+    ).encode()
     bad_sig = _sign(body, "wrong-secret")
 
     with caplog.at_level("WARNING", logger="app.webhooks.instagram"):
@@ -323,7 +325,12 @@ def test_post_persists_inbound_media(db_session):
     assert inbound.type == "image"
     assert inbound.body == ""
     assert inbound.media == [
-        {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+        {
+            "kind": "image",
+            "url": "https://cdn.example/photo.jpg",
+            "mime_type": None,
+            "caption": None,
+        }
     ]
 
 

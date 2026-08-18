@@ -600,7 +600,12 @@ def test_list_messages_includes_media_metadata(db_session):
         biz.id,
         body="",
         media=[
-            {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+            {
+                "kind": "image",
+                "url": "https://cdn.example/photo.jpg",
+                "mime_type": None,
+                "caption": None,
+            }
         ],
     )
     _message(db_session, conv.id, biz.id, body="plain text", created_at=NOW + timedelta(minutes=1))
@@ -611,7 +616,12 @@ def test_list_messages_includes_media_metadata(db_session):
 
     data = resp.json()["data"]
     assert data[0]["media"] == [
-        {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+        {
+            "kind": "image",
+            "url": "https://cdn.example/photo.jpg",
+            "mime_type": None,
+            "caption": None,
+        }
     ]
     assert data[1]["media"] == []
     app.dependency_overrides.clear()

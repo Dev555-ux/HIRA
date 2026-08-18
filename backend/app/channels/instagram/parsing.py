@@ -198,9 +198,11 @@ def _extract_media(message: dict) -> tuple[MediaRef, ...]:
         if not isinstance(attachment, dict):
             continue
         kind = _ATTACHMENT_KIND.get(attachment.get("type"))
-        url = attachment.get("payload", {}).get("url") if isinstance(
-            attachment.get("payload"), dict
-        ) else None
+        url = (
+            attachment.get("payload", {}).get("url")
+            if isinstance(attachment.get("payload"), dict)
+            else None
+        )
         if kind is None or not url:
             logger.debug("Skipping unsupported Instagram attachment: %s", attachment.get("type"))
             continue

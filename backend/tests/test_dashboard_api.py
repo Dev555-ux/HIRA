@@ -343,18 +343,30 @@ def test_edit_draft_attaches_media(db_session):
 
     assert resp.status_code == 200
     assert resp.json()["data"]["media"] == [
-        {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+        {
+            "kind": "image",
+            "url": "https://cdn.example/photo.jpg",
+            "mime_type": None,
+            "caption": None,
+        }
     ]
     db_session.refresh(msg)
     assert msg.media == [
-        {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+        {
+            "kind": "image",
+            "url": "https://cdn.example/photo.jpg",
+            "mime_type": None,
+            "caption": None,
+        }
     ]
     app.dependency_overrides.clear()
 
 
 def test_edit_draft_omitted_media_leaves_existing_media_untouched(db_session):
     _, _, msg = _seed_business(db_session, "A", "user_a")
-    msg.media = [{"kind": "image", "url": "https://cdn.example/x.jpg", "mime_type": None, "caption": None}]
+    msg.media = [
+        {"kind": "image", "url": "https://cdn.example/x.jpg", "mime_type": None, "caption": None}
+    ]
     db_session.commit()
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
 
@@ -372,12 +384,16 @@ def test_edit_draft_omitted_media_leaves_existing_media_untouched(db_session):
 
 def test_edit_draft_empty_media_list_clears_it(db_session):
     _, _, msg = _seed_business(db_session, "A", "user_a")
-    msg.media = [{"kind": "image", "url": "https://cdn.example/x.jpg", "mime_type": None, "caption": None}]
+    msg.media = [
+        {"kind": "image", "url": "https://cdn.example/x.jpg", "mime_type": None, "caption": None}
+    ]
     db_session.commit()
     client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
 
     resp = client.patch(
-        f"/api/v1/messages/{msg.id}/draft", json={"body": "no more photo", "media": []}, headers=_auth()
+        f"/api/v1/messages/{msg.id}/draft",
+        json={"body": "no more photo", "media": []},
+        headers=_auth(),
     )
 
     assert resp.status_code == 200

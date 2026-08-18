@@ -218,8 +218,10 @@ class MessagingService:
             # WhatsApp's own `.raw` message dict happens to carry Meta's
             # native "type" field; Instagram's does not, which is exactly
             # why Instagram media messages need this derivation instead).
-            message_type = normalized.media[0].kind.value if normalized.media else normalized.raw.get(
-                "type", "text"
+            message_type = (
+                normalized.media[0].kind.value
+                if normalized.media
+                else normalized.raw.get("type", "text")
             )
             message = Message(
                 conversation_id=conversation.id,

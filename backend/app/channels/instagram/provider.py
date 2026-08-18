@@ -61,7 +61,13 @@ class InstagramProvider(ChannelProvider):
         return CapabilitySet(
             channel=self.channel_id,
             supported=frozenset(
-                {Capability.TEXT, Capability.IMAGE, Capability.VIDEO, Capability.AUDIO, Capability.DOCUMENT}
+                {
+                    Capability.TEXT,
+                    Capability.IMAGE,
+                    Capability.VIDEO,
+                    Capability.AUDIO,
+                    Capability.DOCUMENT,
+                }
             ),
         )
 

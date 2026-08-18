@@ -105,7 +105,13 @@ def test_capabilities_are_text_and_media(provider):
     not a platform limitation, a statement that nothing else is built and
     tested yet."""
     caps = provider.capabilities()
-    supported = {Capability.TEXT, Capability.IMAGE, Capability.VIDEO, Capability.AUDIO, Capability.DOCUMENT}
+    supported = {
+        Capability.TEXT,
+        Capability.IMAGE,
+        Capability.VIDEO,
+        Capability.AUDIO,
+        Capability.DOCUMENT,
+    }
     assert caps.channel == "instagram"
     for capability in supported:
         assert caps.supports(capability) is True, f"{capability} should be advertised"
@@ -421,7 +427,10 @@ def test_parse_webhook_ignores_an_attachment_missing_a_url(provider):
                 "messaging": [
                     {
                         "sender": {"id": "IGSID_1"},
-                        "message": {"mid": "mid.1", "attachments": [{"type": "image", "payload": {}}]},
+                        "message": {
+                            "mid": "mid.1",
+                            "attachments": [{"type": "image", "payload": {}}],
+                        },
                     }
                 ],
             }

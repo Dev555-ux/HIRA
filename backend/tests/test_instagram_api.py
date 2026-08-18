@@ -131,7 +131,9 @@ def test_oauth_callback_single_choice_stores_credentials_and_redirects(db_sessio
     assert stored.instagram_business_account_id == "ig-1"
 
 
-def test_oauth_callback_success_logs_without_leaking_the_page_token(db_session, monkeypatch, caplog):
+def test_oauth_callback_success_logs_without_leaking_the_page_token(
+    db_session, monkeypatch, caplog
+):
     """Sprint 65 PR 7: a successful connect/reconnect must produce a
     structured log line naming the business — and the page access token
     must never appear in it (or anywhere else in the log stream this

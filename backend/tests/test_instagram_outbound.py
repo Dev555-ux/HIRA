@@ -280,7 +280,9 @@ _IMAGE_MEDIA = [
 ]
 
 
-def test_approve_and_send_routes_manual_media_reply_through_channel_manager(db_session, monkeypatch):
+def test_approve_and_send_routes_manual_media_reply_through_channel_manager(
+    db_session, monkeypatch
+):
     """Proves a human-approved draft carrying media (e.g. attached via
     PATCH /messages/{id}/draft) flows Message.media -> MessagingService ->
     ChannelManager -> InstagramProvider.send() -> Meta's attachment

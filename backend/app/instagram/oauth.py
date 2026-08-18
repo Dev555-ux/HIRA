@@ -188,7 +188,9 @@ def _meta_error_summary(resp: httpx.Response) -> str:
         error = resp.json().get("error", {})
     except ValueError:
         error = {}
-    return f"status={resp.status_code} code={error.get('code')} subcode={error.get('error_subcode')}"
+    return (
+        f"status={resp.status_code} code={error.get('code')} subcode={error.get('error_subcode')}"
+    )
 
 
 def _fetch_access_token(client: httpx.Client, params: dict) -> str:
@@ -266,9 +268,7 @@ def discover_connectable_pages(
                 },
             )
         except httpx.TransportError as exc:
-            raise InstagramAuthError(
-                f"Could not reach Meta's API: {type(exc).__name__}"
-            ) from exc
+            raise InstagramAuthError(f"Could not reach Meta's API: {type(exc).__name__}") from exc
         if resp.status_code >= 400:
             raise InstagramAuthError(
                 f"Meta rejected the Page discovery request: {_meta_error_summary(resp)}"
