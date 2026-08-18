@@ -324,6 +324,84 @@ def test_edit_draft_is_tenant_scoped(db_session):
     app.dependency_overrides.clear()
 
 
+def test_edit_draft_attaches_media(db_session):
+    """Sprint 65 PR 6: PATCH /messages/{id}/draft can attach media to a
+    pending draft before approval — the backend-only path decided for
+    this PR (no compose/upload UI yet, see PR notes)."""
+    _, _, msg = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(
+        f"/api/v1/messages/{msg.id}/draft",
+        json={
+            "body": "Here's a photo of the space.",
+            "media": [{"kind": "image", "url": "https://cdn.example/photo.jpg"}],
+        },
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["media"] == [
+        {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+    ]
+    db_session.refresh(msg)
+    assert msg.media == [
+        {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+    ]
+    app.dependency_overrides.clear()
+
+
+def test_edit_draft_omitted_media_leaves_existing_media_untouched(db_session):
+    _, _, msg = _seed_business(db_session, "A", "user_a")
+    msg.media = [{"kind": "image", "url": "https://cdn.example/x.jpg", "mime_type": None, "caption": None}]
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(
+        f"/api/v1/messages/{msg.id}/draft", json={"body": "just editing text"}, headers=_auth()
+    )
+
+    assert resp.status_code == 200
+    db_session.refresh(msg)
+    assert msg.media == [
+        {"kind": "image", "url": "https://cdn.example/x.jpg", "mime_type": None, "caption": None}
+    ]
+    app.dependency_overrides.clear()
+
+
+def test_edit_draft_empty_media_list_clears_it(db_session):
+    _, _, msg = _seed_business(db_session, "A", "user_a")
+    msg.media = [{"kind": "image", "url": "https://cdn.example/x.jpg", "mime_type": None, "caption": None}]
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(
+        f"/api/v1/messages/{msg.id}/draft", json={"body": "no more photo", "media": []}, headers=_auth()
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["media"] == []
+    db_session.refresh(msg)
+    assert msg.media is None
+    app.dependency_overrides.clear()
+
+
+def test_edit_draft_rejects_unknown_media_kind(db_session):
+    _, _, msg = _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    resp = client.patch(
+        f"/api/v1/messages/{msg.id}/draft",
+        json={"body": "x", "media": [{"kind": "gif", "url": "https://cdn.example/x.gif"}]},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    app.dependency_overrides.clear()
+
+
 def test_edit_draft_requires_authentication(db_session):
     _, _, msg = _seed_business(db_session, "A", "user_a")
     db_session.commit()

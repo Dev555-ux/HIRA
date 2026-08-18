@@ -306,6 +306,7 @@ export default function DemoChatPage() {
                 direction: "inbound",
                 body: pending.text,
                 type: "text",
+                media: [],
                 status: "sent",
                 created_at: new Date().toISOString(),
               }}

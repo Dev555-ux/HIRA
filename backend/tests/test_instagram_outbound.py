@@ -32,7 +32,9 @@ def _encryption_key(monkeypatch):
     monkeypatch.setattr(settings, "calendar_encryption_key", Fernet.generate_key().decode())
 
 
-def _business_with_conversation(db, *, message_status: str, message_type: str = "text"):
+def _business_with_conversation(
+    db, *, message_status: str, message_type: str = "text", media: list[dict] | None = None
+):
     business = Business(name="Studio A")
     db.add(business)
     db.flush()
@@ -58,6 +60,7 @@ def _business_with_conversation(db, *, message_status: str, message_type: str = 
         direction="outbound",
         body="We're open until 6pm today.",
         type=message_type,
+        media=media,
         status=message_status,
     )
     db.add(message)
@@ -268,3 +271,82 @@ def test_non_retryable_failure_is_not_retried_by_channel_manager(db_session, mon
         MessagingService(db_session).approve_and_send(business.id, message.id)
 
     assert len(attempts) == 1  # non-retryable — exactly one attempt, no retry loop
+
+
+# --- media (Sprint 65 PR 6) ----------------------------------------------
+
+_IMAGE_MEDIA = [
+    {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+]
+
+
+def test_approve_and_send_routes_manual_media_reply_through_channel_manager(db_session, monkeypatch):
+    """Proves a human-approved draft carrying media (e.g. attached via
+    PATCH /messages/{id}/draft) flows Message.media -> MessagingService ->
+    ChannelManager -> InstagramProvider.send() -> Meta's attachment
+    endpoint, with the message's text dropped (Meta's own constraint)."""
+    captured_requests: list[dict] = []
+
+    def fake_post(self, url, *, headers=None, json=None, **kwargs):
+        captured_requests.append(json)
+        return httpx.Response(200, json={"recipient_id": IGSID, "message_id": "mid.media-approved"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+
+    business, _conversation, _customer, message = _business_with_conversation(
+        db_session, message_status="pending_approval", message_type="image", media=_IMAGE_MEDIA
+    )
+
+    result = MessagingService(db_session).approve_and_send(business.id, message.id)
+
+    assert result.status == "sent"
+    assert len(captured_requests) == 1
+    assert captured_requests[0]["message"] == {
+        "attachment": {"type": "image", "payload": {"url": "https://cdn.example/photo.jpg"}}
+    }
+
+
+def test_send_reply_routes_autonomous_media_reply_through_channel_manager(db_session, monkeypatch):
+    """Same pipeline proof for Autonomous Mode (send_reply) — the
+    transport layer carries a Message's media identically regardless of
+    which mode produced it; this PR does not give the AI a new tool to
+    choose media, only proves the pipe carries it when a Message row has
+    some (see PR notes)."""
+    captured_requests: list[dict] = []
+
+    def fake_post(self, url, *, headers=None, json=None, **kwargs):
+        captured_requests.append(json)
+        return httpx.Response(200, json={"recipient_id": IGSID, "message_id": "mid.media-auto"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+
+    business, conversation, _customer, message = _business_with_conversation(
+        db_session, message_status="sending", message_type="image", media=_IMAGE_MEDIA
+    )
+
+    MessagingService(db_session).send_reply(business, conversation, message)
+
+    assert message.status == "sent"
+    assert len(captured_requests) == 1
+    assert captured_requests[0]["message"]["attachment"]["type"] == "image"
+
+
+def test_approve_and_send_text_only_message_unaffected_by_media_plumbing(db_session, monkeypatch):
+    """Regression guard: a plain-text draft (media=None) still sends
+    exactly the old {"text": ...} payload — the media plumbing must be
+    fully additive."""
+    captured_requests: list[dict] = []
+
+    def fake_post(self, url, *, headers=None, json=None, **kwargs):
+        captured_requests.append(json)
+        return httpx.Response(200, json={"recipient_id": IGSID, "message_id": "mid.text-1"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+
+    business, _conversation, _customer, message = _business_with_conversation(
+        db_session, message_status="pending_approval"
+    )
+
+    MessagingService(db_session).approve_and_send(business.id, message.id)
+
+    assert captured_requests[0]["message"] == {"text": "We're open until 6pm today."}

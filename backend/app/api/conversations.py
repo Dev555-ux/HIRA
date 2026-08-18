@@ -101,6 +101,7 @@ def _serialize_message(message: Message) -> dict:
         "direction": message.direction,
         "body": message.body,
         "type": message.type,
+        "media": message.media or [],
         "status": message.status,
         "created_at": to_iso_utc(message.created_at),
         # AI review metadata (reply_id / confidence / grounding /

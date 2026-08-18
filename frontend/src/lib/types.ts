@@ -175,11 +175,24 @@ export interface ReviewMetadata {
   generation_status: "complete" | "failed" | "working" | "idle";
 }
 
+// Sprint 65 PR 6: the same {kind, url, mime_type, caption} shape the
+// backend's Message.media column stores (app.channels.base.message.MediaRef,
+// serialized) — always an array, never undefined/null (see
+// app/api/conversations.py::_serialize_message), so a renderer never has to
+// null-check before mapping over it.
+export interface MediaAttachment {
+  kind: "image" | "video" | "audio" | "document";
+  url: string;
+  mime_type: string | null;
+  caption: string | null;
+}
+
 export interface Message {
   id: string;
   direction: "inbound" | "outbound";
   body: string;
   type: string;
+  media: MediaAttachment[];
   status: "received" | "pending_approval" | "sending" | "sent" | "failed" | "rejected" | "escalated";
   created_at: string;
   review?: ReviewMetadata | null;

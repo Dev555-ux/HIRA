@@ -152,12 +152,11 @@ class TestJobOutboxMigration:
     def test_migration_leaves_a_single_head(self):
         # Pinned to the current chain tip, not literally c8f2e91a4b3d (this
         # PR's own migration) — bumped whenever a later migration is
-        # appended (most recently 8e54f0810532, Sprint 65 PR 4: add
-        # channel to conversations), same maintenance this assertion has
-        # always implied.
+        # appended (most recently 633a0b1814ca, Sprint 65 PR 6: add media
+        # to messages), same maintenance this assertion has always implied.
         cfg = Config(str(BACKEND_DIR / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["8e54f0810532"]
+        assert script.get_heads() == ["633a0b1814ca"]
 
     def test_upgrade_then_downgrade_round_trips(self):
         module = _load_migration_module()

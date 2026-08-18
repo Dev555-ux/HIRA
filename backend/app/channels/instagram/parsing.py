@@ -38,24 +38,34 @@ from it — providers are self-contained packages (see
 documentation/architecture/channel-development-guide.md); Instagram
 support must not depend on WhatsApp's package existing.
 
-Known unsupported payload shapes (Sprint 65 PR 1 scope): Instagram
-messaging events this module recognizes as "a message exists" but does
-not extract meaningful content from yet — each normalizes to an empty
-`text`, the same "unsupported -> empty, not fatal" convention
+Known unsupported payload shapes (Sprint 65 PR 1 scope; PR 6 adds
+`attachments`, see below): Instagram messaging events this module
+recognizes as "a message exists" but does not extract meaningful content
+from — each normalizes to an empty `text`/`media`, the same
+"unsupported -> empty, not fatal" convention
 `app.channels.whatsapp.parsing._extract_text()` established, not a gap
 introduced here:
 
-- `attachments` (image/video/audio/share) — no attachment/media mapping
-  built yet; `NormalizedMessage.media` stays `()` regardless of what a
-  real payload contains.
 - `is_deleted` — a message-deletion notification, not new content.
 - `reactions` — a reaction added to a previous message.
 - `read` — a read-receipt event, not a message.
-- `story_mention` / a reply to a Story — arrives as an attachment with no
-  `text` field; recognized as "a message" but not specially handled.
+- `story_mention` / a reply to a Story — arrives as an `attachments`
+  entry whose `type` is `"story_mention"`, not one of the four kinds
+  `_extract_media()` below maps (image/video/audio/file) — recognized as
+  "a message" but its attachment is dropped, same as any other unknown
+  attachment type (see `_extract_media()`).
 
 None of these raise — only genuinely malformed input (not valid JSON, or
 missing the fields routing depends on) does.
+
+Media (Sprint 65 PR 6): `attachments` (image/video/audio/file — Meta's
+Instagram Messaging webhook reuses the Messenger Platform's
+`message.attachments[].{type,payload.url}` shape) now maps onto
+`NormalizedMessage.media`. An attachment whose `type` isn't one of those
+four (a share, a story_mention, or anything Meta adds later) is dropped
+silently — never raises, matching this module's existing
+"unsupported -> empty" convention rather than the "empty text" special
+case above.
 """
 
 from __future__ import annotations
@@ -64,11 +74,21 @@ import hashlib
 import hmac
 import logging
 
-from app.channels.base.message import NormalizedMessage
+from app.channels.base.message import MediaKind, MediaRef, NormalizedMessage
 
 CHANNEL_ID = "instagram"
 
 logger = logging.getLogger(__name__)
+
+# Meta's inbound attachment `type` string -> our channel-neutral MediaKind.
+# Anything else (e.g. "share", "story_mention", "template", "fallback") is
+# not one of the four kinds this platform models — dropped, not mapped.
+_ATTACHMENT_KIND = {
+    "image": MediaKind.IMAGE,
+    "video": MediaKind.VIDEO,
+    "audio": MediaKind.AUDIO,
+    "file": MediaKind.DOCUMENT,
+}
 
 
 def signature_valid(raw_body: bytes, header: str | None, app_secret: str) -> bool:
@@ -135,6 +155,7 @@ def parse_messaging_events(messaging_events: list[dict]) -> list[NormalizedMessa
                 external_sender_id=sender_id,
                 sender_display_name=None,
                 text=_extract_text(message),
+                media=_extract_media(message),
                 raw=event,
             )
         )
@@ -158,3 +179,30 @@ def _extract_text(message: dict) -> str:
     does not handle yet."""
     text = message.get("text")
     return text if isinstance(text, str) else ""
+
+
+def _extract_media(message: dict) -> tuple[MediaRef, ...]:
+    """Maps `message.attachments` (a list of `{"type": ..., "payload":
+    {"url": ...}}` dicts) onto `MediaRef`s. An entry with an unrecognized
+    `type` (see `_ATTACHMENT_KIND`) or missing `payload.url` is skipped,
+    not raised on — Meta introducing a new attachment type, or a
+    malformed single entry, must never take down inbound parsing for the
+    whole message. `caption`/`mime_type` are never present on an inbound
+    Instagram attachment (Meta's webhook payload carries neither), so
+    both stay `None`."""
+    media: list[MediaRef] = []
+    attachments = message.get("attachments")
+    if not isinstance(attachments, list):
+        return ()
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            continue
+        kind = _ATTACHMENT_KIND.get(attachment.get("type"))
+        url = attachment.get("payload", {}).get("url") if isinstance(
+            attachment.get("payload"), dict
+        ) else None
+        if kind is None or not url:
+            logger.debug("Skipping unsupported Instagram attachment: %s", attachment.get("type"))
+            continue
+        media.append(MediaRef(kind=kind, url=url))
+    return tuple(media)

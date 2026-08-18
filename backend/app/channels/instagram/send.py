@@ -27,6 +27,44 @@ Instagram credential's `page_id` (`InstagramCredential.page_id`,
 app/models.py) — never `instagram_business_account_id`, a different Meta
 identifier.
 
+Media (Sprint 65 PR 6 — verified against Meta's current Messenger
+Platform / Instagram Messaging docs, "Send Messages" and "Attachment
+Upload API" pages): a media message replaces `message.text` with
+`message.attachment` — Meta does not allow text and an attachment in the
+same request, so when `message.media` is non-empty this module builds a
+pure attachment payload and drops `message.text` entirely (matches the
+platform, not a HIRA-invented restriction):
+
+    {
+        "recipient": {"id": "<IGSID>"},
+        "message": {
+            "attachment": {"type": "image"|"video"|"audio"|"file", "payload": {"url": "<url>"}}
+        },
+        "messaging_type": "RESPONSE"
+    }
+
+`OutboundMessage.media` is a tuple (matching `NormalizedMessage.media`'s
+shape for symmetry), but Meta's single-`attachment` object accepts
+exactly one URL per request — nothing in this codebase constructs more
+than one outbound `MediaRef` per message today, so only `media[0]` is
+ever sent; a caller that somehow attaches more gets a logged warning, not
+a crash or a silently dropped send. Meta's own multi-image `attachments`
+array (up to 10 images, no caption support) is real but unused — there is
+no caller in this codebase that needs to send more than one image per
+message; add it if one ever does.
+`Capability.IMAGE/VIDEO/AUDIO/DOCUMENT` -> `"image"/"video"/"audio"/"file"`
+is a closed, total mapping over `MediaKind` (`_ATTACHMENT_TYPE` below) —
+every value `InstagramProvider.capabilities()` advertises is backed by a
+real mapping here, and the reverse (a `MediaKind` this function can't
+map) is handled as a graceful `DeliveryReceipt(status="failed")`, not an
+exception, as a defensive backstop in case that invariant is ever broken.
+Confirmed file-format/size limits (Meta docs, informational only — not
+enforced here, since HIRA never transcodes or re-hosts outbound media,
+only passes through a caller-supplied URL): images png/jpeg up to 8MB;
+video mp4/ogg/avi/mov/webm and audio aac/m4a/wav/mp4 up to 25MB; files
+PDF only, up to 25MB. GIFs are sent as `type: "image"` — Meta has no
+separate GIF attachment type.
+
 Retry classification (Sprint 65 PR 5 research — see that PR's own notes
 for exact sourcing): Meta error codes 190 (expired/invalid token), 10
 (permission error), 100 (malformed request), and the messaging-window-
@@ -35,7 +73,8 @@ rate limiting) and any 5xx/network failure are retryable. Everything else
 unmapped defaults to non-retryable — retrying an unrecognized failure
 blindly risks duplicating a message a customer may have already received,
 the same "unexpected -> stop" philosophy WhatsApp's own provider uses
-(messaging-platform.md §5).
+(messaging-platform.md §5). Unchanged for media sends — Graph API error
+codes are a platform-wide vocabulary, not endpoint- or payload-specific.
 
 Does NOT retry (ChannelManager's job, §5), does NOT log or return Meta's
 raw response body/error message (structured codes only — access tokens
@@ -49,7 +88,7 @@ import logging
 import httpx
 
 from app.channels.base.credentials import ChannelCredentials
-from app.channels.base.message import OutboundMessage
+from app.channels.base.message import MediaKind, OutboundMessage
 from app.channels.base.results import DeliveryReceipt
 from app.core.config import settings
 
@@ -61,6 +100,15 @@ _NON_RETRYABLE_CODES = frozenset({190, 10, 100})
 # for Instagram specifically — Graph API's general rate-limit convention.
 # See this module's docstring.
 _RETRYABLE_CODES = frozenset({4, 32, 2})
+
+# MediaKind -> Meta's `message.attachment.type` string (Sprint 65 PR 6,
+# verified against current Meta docs — see module docstring).
+_ATTACHMENT_TYPE = {
+    MediaKind.IMAGE: "image",
+    MediaKind.VIDEO: "video",
+    MediaKind.AUDIO: "audio",
+    MediaKind.DOCUMENT: "file",
+}
 
 
 def send_instagram_message(
@@ -79,6 +127,30 @@ def send_instagram_message(
             "to send an Instagram message",
         )
 
+    if message.media:
+        if len(message.media) > 1:
+            logger.warning(
+                "Instagram send received %d media items; sending only the first "
+                "(Meta's attachment message accepts exactly one) — see send.py's "
+                "module docstring",
+                len(message.media),
+            )
+        media_ref = message.media[0]
+        attachment_type = _ATTACHMENT_TYPE.get(media_ref.kind)
+        if attachment_type is None:
+            # Defensive only — every MediaKind value is mapped above, so this
+            # should be unreachable via the real capability-gated send path.
+            # Graceful failure, not an exception, per this PR's "never invent
+            # behavior for an unsupported media type" requirement.
+            return DeliveryReceipt(
+                status="failed",
+                retryable=False,
+                error=f"Instagram does not support media kind '{media_ref.kind.value}'",
+            )
+        message_body = {"attachment": {"type": attachment_type, "payload": {"url": media_ref.url}}}
+    else:
+        message_body = {"text": message.text}
+
     url = (
         f"https://graph.facebook.com/{settings.instagram_graph_version}/"
         f"{creds.external_account_id}/messages"
@@ -86,7 +158,7 @@ def send_instagram_message(
     headers = {"Authorization": f"Bearer {creds.access_token}"}
     payload = {
         "recipient": {"id": message.external_conversation_id},
-        "message": {"text": message.text},
+        "message": message_body,
         "messaging_type": "RESPONSE",
     }
 

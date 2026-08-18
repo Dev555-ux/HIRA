@@ -54,6 +54,7 @@ def _message(
     body="hi",
     msg_status="received",
     created_at=None,
+    media=None,
 ):
     msg = Message(
         conversation_id=conversation_id,
@@ -61,6 +62,7 @@ def _message(
         direction=direction,
         body=body,
         status=msg_status,
+        media=media,
         created_at=created_at or NOW,
     )
     db.add(msg)
@@ -581,6 +583,37 @@ def test_list_messages_includes_status_for_ai_reply_state(db_session):
     data = resp.json()["data"]
     assert data[0]["status"] == "pending_approval"
     assert data[0]["direction"] == "outbound"
+    app.dependency_overrides.clear()
+
+
+def test_list_messages_includes_media_metadata(db_session):
+    """Sprint 65 PR 6: media persisted on a Message row round-trips
+    through the conversation thread API for inbox rendering — text-only
+    messages get an empty list, never null (a rendering client shouldn't
+    have to null-check)."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    conv = _conversation(db_session, biz.id, cust.id)
+    _message(
+        db_session,
+        conv.id,
+        biz.id,
+        body="",
+        media=[
+            {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+        ],
+    )
+    _message(db_session, conv.id, biz.id, body="plain text", created_at=NOW + timedelta(minutes=1))
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get(f"/api/v1/conversations/{conv.id}/messages", headers=_auth())
+
+    data = resp.json()["data"]
+    assert data[0]["media"] == [
+        {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+    ]
+    assert data[1]["media"] == []
     app.dependency_overrides.clear()
 
 

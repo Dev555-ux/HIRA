@@ -55,14 +55,28 @@ def update_draft(
     message_id: uuid.UUID,
     *,
     body: str,
+    media: list[dict] | None = None,
 ) -> Message:
-    """Edit a pending AI draft's text before approval.
+    """Edit a pending AI draft's text (and, Sprint 65 PR 6, its media)
+    before approval.
+
+    `media` is the same `{kind, url, mime_type, caption}` shape
+    `MessagingService`/`Message.media` already use — see
+    `app.channels.base.message.MediaRef`. `None` means "leave whatever
+    media is already on the draft unchanged" (the API layer only passes a
+    value when the request body actually included one); pass `[]`
+    explicitly to clear it. There is no capability check here — an
+    unsupported media kind fails gracefully at send time via
+    `DeliveryReceipt`, the same place every other send failure surfaces
+    (messaging-platform.md §5), not at draft-edit time.
 
     Raises ValueError if the message isn't an editable pending reply for this
     business (including if it has already been approved/sent).
     """
     message = get_pending_reply(db, business_id, message_id)
     message.body = body
+    if media is not None:
+        message.media = media or None
     db.commit()
     logger.info("Edited draft %s for business %s", message_id, business_id)
     return message

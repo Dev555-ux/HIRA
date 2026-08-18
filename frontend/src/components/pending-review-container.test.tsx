@@ -35,6 +35,7 @@ const pendingMessage: Message = {
   direction: "outbound",
   body: "Yes — we're open Saturday, 9am–2pm.",
   type: "text",
+  media: [],
   status: "pending_approval",
   created_at: "2026-07-31T10:00:00Z",
 };

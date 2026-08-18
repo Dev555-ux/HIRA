@@ -52,6 +52,7 @@ function message(overrides: Partial<Message> = {}): Message {
     direction: "inbound",
     body: "Are you open today?",
     type: "text",
+    media: [],
     status: "received",
     created_at: new Date().toISOString(),
     ...overrides,
@@ -270,6 +271,64 @@ describe("InboxPage", () => {
     // Instagram badge appears in both the list row and the detail header,
     // plus the channel filter chip sharing the same label.
     expect(screen.getAllByText("Instagram")).toHaveLength(3);
+  });
+
+  it("renders an image attachment and a document attachment, channel-agnostically", async () => {
+    // Sprint 65 PR 6: media rendering is driven by attachment.kind, never by
+    // which channel sent it — same MessageBubble as every other message.
+    const igConversation = conversation({
+      channel: "instagram",
+      customer: { id: "cust-3", display_name: "Cam Diaz", wa_phone: "IGSID_9" },
+    });
+    vi.mocked(api.listConversations).mockResolvedValue({
+      data: [igConversation],
+      meta: { total: 1, limit: 20, offset: 0 },
+    });
+    vi.mocked(api.getConversation).mockResolvedValue(igConversation);
+    vi.mocked(api.listMessages).mockResolvedValue({
+      data: [
+        message({
+          id: "m1",
+          direction: "inbound",
+          body: "",
+          type: "image",
+          media: [
+            {
+              kind: "image",
+              url: "https://cdn.example/photo.jpg",
+              mime_type: null,
+              caption: null,
+            },
+          ],
+        }),
+        message({
+          id: "m2",
+          direction: "outbound",
+          body: "Here's the menu",
+          type: "document",
+          status: "sent",
+          media: [
+            {
+              kind: "document",
+              url: "https://cdn.example/menu.pdf",
+              mime_type: "application/pdf",
+              caption: "Menu.pdf",
+            },
+          ],
+        }),
+      ],
+      meta: { total: 2, limit: 50, offset: 0 },
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<InboxPage />);
+    await user.click(await screen.findByText("Cam Diaz"));
+
+    const image = await screen.findByRole("img", { name: "Attachment" });
+    expect(image).toHaveAttribute("src", "https://cdn.example/photo.jpg");
+    const link = screen.getByRole("link", { name: /menu\.pdf/i });
+    expect(link).toHaveAttribute("href", "https://cdn.example/menu.pdf");
+    expect(screen.getByText("Here's the menu")).toBeInTheDocument();
   });
 
   it("shows a badge for escalated, rejected, and sending outbound messages, not a bare bubble", async () => {

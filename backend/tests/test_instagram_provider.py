@@ -1,5 +1,7 @@
 """Sprint 65 PR 1 — InstagramProvider foundation checks; Sprint 65 PR 5
-adds outbound send() checks against a mocked Graph API.
+adds outbound send() checks against a mocked Graph API; Sprint 65 PR 6
+adds media (inbound attachment parsing, outbound attachment sending,
+capability reporting).
 
 No database anywhere in this file — matching
 `tests/test_whatsapp_provider.py`'s DB-free contract (send() tests use a
@@ -24,7 +26,7 @@ import pytest
 from app.channels.base.capabilities import Capability
 from app.channels.base.credentials import ChannelCredentials
 from app.channels.base.errors import WebhookVerificationFailedError
-from app.channels.base.message import OutboundMessage
+from app.channels.base.message import MediaKind, MediaRef, OutboundMessage
 from app.channels.instagram import InstagramProvider
 from app.channels.instagram.parsing import parse_inbound_payload, signature_valid
 from app.channels.registry import ChannelRegistry
@@ -94,17 +96,21 @@ def test_default_registry_exposes_both_channels_once_both_are_imported():
 # --- capability reporting ---------------------------------------------------
 
 
-def test_capabilities_are_text_only(provider):
-    """TEXT only, as of Sprint 65 PR 5 — a direct read of what send()/
-    parsing.py actually implement end to end, same reasoning as
-    WhatsAppProvider's own capability set (see capabilities()'s docstring).
-    Every other capability stays False — not a platform limitation, a
-    statement that nothing else is built and tested yet."""
+def test_capabilities_are_text_and_media(provider):
+    """TEXT + IMAGE/VIDEO/AUDIO/DOCUMENT as of Sprint 65 PR 6 — a direct
+    read of what send.py/parsing.py actually implement end to end, same
+    reasoning as WhatsAppProvider's own capability set (see
+    capabilities()'s docstring). Every other capability (reactions,
+    typing, templates, story-reply, read/delivery receipts) stays False —
+    not a platform limitation, a statement that nothing else is built and
+    tested yet."""
     caps = provider.capabilities()
+    supported = {Capability.TEXT, Capability.IMAGE, Capability.VIDEO, Capability.AUDIO, Capability.DOCUMENT}
     assert caps.channel == "instagram"
-    assert caps.supports(Capability.TEXT) is True
+    for capability in supported:
+        assert caps.supports(capability) is True, f"{capability} should be advertised"
     for capability in Capability:
-        if capability is Capability.TEXT:
+        if capability in supported:
             continue
         assert caps.supports(capability) is False, f"{capability} should not be advertised yet"
 
@@ -337,6 +343,126 @@ def test_unsupported_message_shapes_normalize_to_empty_text(message):
     assert messages[0].text == ""
 
 
+# --- inbound media (Sprint 65 PR 6) -------------------------------------
+
+
+@pytest.mark.parametrize(
+    "meta_type,kind",
+    [
+        ("image", MediaKind.IMAGE),
+        ("video", MediaKind.VIDEO),
+        ("audio", MediaKind.AUDIO),
+        ("file", MediaKind.DOCUMENT),
+    ],
+)
+def test_parse_webhook_normalizes_a_supported_attachment(provider, meta_type, kind):
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "IG_ACCT_1",
+                "messaging": [
+                    {
+                        "sender": {"id": "IGSID_1"},
+                        "message": {
+                            "mid": "mid.1",
+                            "attachments": [
+                                {"type": meta_type, "payload": {"url": "https://cdn.example/x"}}
+                            ],
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+    messages = provider.parse_webhook(json.dumps(payload).encode())
+
+    assert len(messages) == 1
+    assert messages[0].media == (MediaRef(kind=kind, url="https://cdn.example/x"),)
+    assert messages[0].text == ""  # text and attachment are mutually exclusive on Meta's side
+
+
+def test_parse_webhook_ignores_an_unknown_attachment_type_without_crashing(provider, caplog):
+    """Meta adding a new attachment type (e.g. "share", "story_mention",
+    "template") must never crash parsing — the message still normalizes
+    (something was received), just with no media."""
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "IG_ACCT_1",
+                "messaging": [
+                    {
+                        "sender": {"id": "IGSID_1"},
+                        "message": {
+                            "mid": "mid.1",
+                            "attachments": [{"type": "story_mention", "payload": {}}],
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+    with caplog.at_level("DEBUG", logger="app.channels.instagram.parsing"):
+        messages = provider.parse_webhook(json.dumps(payload).encode())
+
+    assert len(messages) == 1
+    assert messages[0].media == ()
+
+
+def test_parse_webhook_ignores_an_attachment_missing_a_url(provider):
+    """Malformed payload (a recognized type, but no `payload.url`) — skip
+    that one attachment, never raise."""
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "IG_ACCT_1",
+                "messaging": [
+                    {
+                        "sender": {"id": "IGSID_1"},
+                        "message": {"mid": "mid.1", "attachments": [{"type": "image", "payload": {}}]},
+                    }
+                ],
+            }
+        ],
+    }
+    messages = provider.parse_webhook(json.dumps(payload).encode())
+
+    assert len(messages) == 1
+    assert messages[0].media == ()
+
+
+def test_parse_webhook_multiple_attachments_all_map(provider):
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "IG_ACCT_1",
+                "messaging": [
+                    {
+                        "sender": {"id": "IGSID_1"},
+                        "message": {
+                            "mid": "mid.1",
+                            "attachments": [
+                                {"type": "image", "payload": {"url": "https://cdn.example/1.png"}},
+                                {"type": "video", "payload": {"url": "https://cdn.example/2.mp4"}},
+                            ],
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+    messages = provider.parse_webhook(json.dumps(payload).encode())
+
+    assert len(messages) == 1
+    assert messages[0].media == (
+        MediaRef(kind=MediaKind.IMAGE, url="https://cdn.example/1.png"),
+        MediaRef(kind=MediaKind.VIDEO, url="https://cdn.example/2.mp4"),
+    )
+
+
 # --- documented placeholders -------------------------------------------
 
 
@@ -464,6 +590,94 @@ def test_send_malformed_success_response_is_non_retryable(provider):
     from app.channels.instagram.send import send_instagram_message
 
     receipt = send_instagram_message(_outbound(), _creds(), client=_client(handler))
+
+    assert receipt.status == "failed"
+    assert receipt.retryable is False
+
+
+@pytest.mark.parametrize(
+    "kind,meta_type",
+    [
+        (MediaKind.IMAGE, "image"),
+        (MediaKind.VIDEO, "video"),
+        (MediaKind.AUDIO, "audio"),
+        (MediaKind.DOCUMENT, "file"),
+    ],
+)
+def test_send_media_builds_the_correct_attachment_payload(provider, kind, meta_type):
+    """Sprint 65 PR 6: a media OutboundMessage sends `message.attachment`,
+    never `message.text` — Meta's API doesn't accept both in one request
+    (see send.py's module docstring)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body == {
+            "recipient": {"id": "IGSID_1"},
+            "message": {
+                "attachment": {"type": meta_type, "payload": {"url": "https://cdn.example/x"}}
+            },
+            "messaging_type": "RESPONSE",
+        }
+        return httpx.Response(200, json={"recipient_id": "IGSID_1", "message_id": "mid.media-1"})
+
+    from app.channels.instagram.send import send_instagram_message
+
+    message = OutboundMessage(
+        channel="instagram",
+        external_conversation_id="IGSID_1",
+        text="ignored when media is present",
+        media=(MediaRef(kind=kind, url="https://cdn.example/x"),),
+    )
+    receipt = send_instagram_message(message, _creds(), client=_client(handler))
+
+    assert receipt.status == "sent"
+    assert receipt.external_message_id == "mid.media-1"
+
+
+def test_send_media_only_sends_the_first_item_when_several_are_given(provider):
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"recipient_id": "IGSID_1", "message_id": "mid.multi-1"})
+
+    from app.channels.instagram.send import send_instagram_message
+
+    message = OutboundMessage(
+        channel="instagram",
+        external_conversation_id="IGSID_1",
+        text="",
+        media=(
+            MediaRef(kind=MediaKind.IMAGE, url="https://cdn.example/1.png"),
+            MediaRef(kind=MediaKind.IMAGE, url="https://cdn.example/2.png"),
+        ),
+    )
+    receipt = send_instagram_message(message, _creds(), client=_client(handler))
+
+    assert receipt.status == "sent"
+    assert len(calls) == 1
+    assert calls[0]["message"]["attachment"]["payload"]["url"] == "https://cdn.example/1.png"
+
+
+def test_send_media_kind_with_no_meta_mapping_fails_gracefully(provider, monkeypatch):
+    """Defensive backstop (unreachable via the real capability-gated path,
+    since every MediaKind is mapped) — proves an unmapped kind returns a
+    structured failure instead of raising, per this PR's "never invent
+    behavior for an unsupported media type" requirement."""
+    import app.channels.instagram.send as send_module
+
+    monkeypatch.setattr(send_module, "_ATTACHMENT_TYPE", {})
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("should not make an HTTP call for an unmapped media kind")
+
+    message = OutboundMessage(
+        channel="instagram",
+        external_conversation_id="IGSID_1",
+        text="",
+        media=(MediaRef(kind=MediaKind.IMAGE, url="https://cdn.example/x"),),
+    )
+    receipt = send_module.send_instagram_message(message, _creds(), client=_client(handler))
 
     assert receipt.status == "failed"
     assert receipt.retryable is False

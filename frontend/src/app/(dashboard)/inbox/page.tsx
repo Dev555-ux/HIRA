@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  FileText,
   Inbox as InboxIcon,
   MessageSquare,
   RefreshCw,
@@ -34,6 +35,7 @@ import type {
   Conversation,
   ConversationChannelFilter,
   ConversationStatusFilter,
+  MediaAttachment,
   Message,
 } from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
@@ -408,13 +410,16 @@ function MessageBubble({ message }: { message: Message }) {
     >
       <div
         className={cn(
-          "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm",
+          "max-w-[80%] space-y-2 rounded-2xl px-4 py-2.5 text-sm",
           message.direction === "outbound"
             ? "rounded-tr-sm bg-secondary text-secondary-foreground"
             : "rounded-tl-sm bg-muted",
         )}
       >
-        {message.body}
+        {message.media.map((attachment, i) => (
+          <MediaAttachmentView key={i} attachment={attachment} />
+        ))}
+        {message.body && <p>{message.body}</p>}
       </div>
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span>{formatRelativeTime(message.created_at)}</span>
@@ -422,4 +427,41 @@ function MessageBubble({ message }: { message: Message }) {
       </div>
     </div>
   );
+}
+
+// Channel-agnostic — driven entirely by `attachment.kind`, never by which
+// channel sent it, matching the backend's own no-channel-branching rule
+// (messaging-platform.md §3). Any future channel's media renders through
+// this same component.
+function MediaAttachmentView({ attachment }: { attachment: MediaAttachment }) {
+  switch (attachment.kind) {
+    case "image":
+      return (
+        // Caller-supplied, channel-native URL (often a short-lived Meta CDN
+        // link) — next/image's remote-pattern allowlist doesn't fit an
+        // open-ended set of channels.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={attachment.url}
+          alt={attachment.caption ?? "Attachment"}
+          className="max-h-64 max-w-full rounded-lg object-contain"
+        />
+      );
+    case "video":
+      return <video src={attachment.url} controls className="max-h-64 max-w-full rounded-lg" />;
+    case "audio":
+      return <audio src={attachment.url} controls className="w-full max-w-64" />;
+    case "document":
+      return (
+        <a
+          href={attachment.url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2 rounded-lg border bg-background/50 px-3 py-2 text-sm underline-offset-2 hover:underline"
+        >
+          <FileText className="size-4 shrink-0" />
+          {attachment.caption ?? "Document"}
+        </a>
+      );
+  }
 }

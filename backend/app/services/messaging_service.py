@@ -51,7 +51,7 @@ from app.ai.tools import confirmation_message_for, execute_tool_call
 from app.calendar.providers.base import CalendarError
 from app.channels.base.credentials import ChannelCredentials
 from app.channels.base.errors import ChannelError
-from app.channels.base.message import NormalizedMessage, OutboundMessage
+from app.channels.base.message import MediaKind, MediaRef, NormalizedMessage, OutboundMessage
 from app.core.config import settings
 from app.instagram.credentials import get_page_access_token as get_instagram_access_token
 from app.instagram.credentials import get_stored_credential as get_stored_instagram_credential
@@ -89,6 +89,34 @@ AUTONOMOUS_TOOL_FAILURE_TEXT = (
     "I wasn't able to complete that automatically, so I've flagged it for the team — "
     "they'll follow up with you shortly."
 )
+
+
+def _serialize_media(media: tuple[MediaRef, ...]) -> list[dict] | None:
+    """`Message.media`'s storage shape — a plain list of dicts, the same
+    fields `MediaRef` carries. `None` (not `[]`) for no media, matching
+    every other optional JSONB column on this model (e.g. `ai_meta`)."""
+    if not media:
+        return None
+    return [
+        {"kind": ref.kind.value, "url": ref.url, "mime_type": ref.mime_type, "caption": ref.caption}
+        for ref in media
+    ]
+
+
+def _deserialize_media(media: list[dict] | None) -> tuple[MediaRef, ...]:
+    """Inverse of `_serialize_media` — reads a `Message.media` column back
+    into the `MediaRef` tuple `OutboundMessage.media` expects."""
+    if not media:
+        return ()
+    return tuple(
+        MediaRef(
+            kind=MediaKind(item["kind"]),
+            url=item["url"],
+            mime_type=item.get("mime_type"),
+            caption=item.get("caption"),
+        )
+        for item in media
+    )
 
 
 class WhatsAppWindowExpiredError(RuntimeError):
@@ -184,13 +212,23 @@ class MessagingService:
             )
 
             body = normalized.text
+            # Sprint 65 PR 6: `normalized.media` (channel-agnostic, populated
+            # by any provider that implements attachment parsing) takes
+            # priority over `raw.get("type")` (a WhatsApp-specific hack —
+            # WhatsApp's own `.raw` message dict happens to carry Meta's
+            # native "type" field; Instagram's does not, which is exactly
+            # why Instagram media messages need this derivation instead).
+            message_type = normalized.media[0].kind.value if normalized.media else normalized.raw.get(
+                "type", "text"
+            )
             message = Message(
                 conversation_id=conversation.id,
                 business_id=business_id,
                 direction="inbound",
                 wa_message_id=wa_message_id,
                 body=body,
-                type=normalized.raw.get("type", "text"),
+                type=message_type,
+                media=_serialize_media(normalized.media),
                 status="received",
             )
             self._db.add(message)
@@ -457,6 +495,7 @@ class MessagingService:
                 message.body,
                 access_token=send_context.access_token,
                 channel=send_context.channel,
+                media=message.media,
             )
             message.status = "sent"
             message.wa_message_id = wa_message_id
@@ -602,6 +641,7 @@ class MessagingService:
                 message.body,
                 access_token=send_context.access_token,
                 channel=send_context.channel,
+                media=message.media,
             )
         except Exception:
             # Previously `except WhatsAppSendError` only. This message was
@@ -660,6 +700,7 @@ class MessagingService:
         *,
         access_token: str,
         channel: str,
+        media: list[dict] | None = None,
     ) -> str:
         """The default `sender`: routes through ChannelManager -> the
         channel registry -> the resolved Provider's send() instead of
@@ -680,6 +721,12 @@ class MessagingService:
         `**kwargs`, so the new `channel` kwarg is silently absorbed by all
         of them without any test changes needed.
 
+        Sprint 65 PR 6: `media` (the sending Message row's own `.media`
+        column — a `list[dict] | None`, see `_serialize_media()`/
+        `_deserialize_media()`) threads through the same way — `None`/`[]`
+        builds a plain-text `OutboundMessage` exactly as before, so a
+        text-only send is byte-for-byte unchanged.
+
         Preserves the exact contract `send_via_channel_manager` and,
         before it, `send_text` had: raise WhatsAppSendError on any
         failure, return the provider's message id on success — so
@@ -687,7 +734,10 @@ class MessagingService:
         its own `sender`) need no change to their exception handling.
         """
         message = OutboundMessage(
-            channel=channel, external_conversation_id=external_conversation_id, text=body
+            channel=channel,
+            external_conversation_id=external_conversation_id,
+            text=body,
+            media=_deserialize_media(media),
         )
         creds = ChannelCredentials(
             channel=channel, access_token=access_token, external_account_id=external_account_id

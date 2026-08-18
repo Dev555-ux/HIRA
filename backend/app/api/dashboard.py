@@ -9,6 +9,7 @@ indistinguishable from a non-existent one (404).
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -56,8 +57,26 @@ DEFAULT_ACTIVITY_LIMIT = 20
 MAX_ACTIVITY_LIMIT = 50
 
 
+class MediaAttachmentRequest(BaseModel):
+    """One `Message.media` entry — the same shape as
+    `app.channels.base.message.MediaRef`, serialized. `kind` is validated
+    against the channel-neutral `Capability`-backed set this platform
+    models (see `app.channels.base.message.MediaKind`); whether the
+    conversation's specific channel actually supports it is a send-time
+    concern (graceful `DeliveryReceipt` failure), not a draft-edit-time one
+    — see `update_draft()`'s docstring."""
+
+    kind: Literal["image", "video", "audio", "document"]
+    url: str
+    mime_type: str | None = None
+    caption: str | None = None
+
+
 class UpdateDraftRequest(BaseModel):
     body: str
+    # Sprint 65 PR 6: omitted/`null` leaves existing media untouched; `[]`
+    # clears it. See `update_draft()`'s docstring.
+    media: list[MediaAttachmentRequest] | None = None
 
 
 def get_reply_sender():
@@ -133,6 +152,7 @@ def list_pending(
                 "id": str(m.id),
                 "conversation_id": str(m.conversation_id),
                 "body": m.body,
+                "media": m.media or [],
                 "created_at": to_iso_utc(m.created_at),
                 "customer": _serialize_customer(customers.get(m.conversation_id)),
                 "conversation_preview": previews.get(m.conversation_id),
@@ -209,13 +229,23 @@ def edit_draft(
             detail=f"Draft body cannot exceed {MAX_DRAFT_LENGTH} characters",
         )
 
+    media = (
+        [m.model_dump() for m in payload.media] if payload.media is not None else None
+    )
     try:
-        message = update_draft(db, principal.business_id, message_id, body=body)
+        message = update_draft(db, principal.business_id, message_id, body=body, media=media)
     except ValueError as exc:
         # Not this business's pending message, doesn't exist, or already approved —
         # indistinguishable, same as approve/reject/regenerate/escalate.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found") from exc
-    return {"data": {"id": str(message.id), "body": message.body, "status": message.status}}
+    return {
+        "data": {
+            "id": str(message.id),
+            "body": message.body,
+            "media": message.media or [],
+            "status": message.status,
+        }
+    }
 
 
 @router.post("/messages/{message_id}/reject")

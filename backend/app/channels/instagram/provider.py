@@ -5,6 +5,9 @@ and `send()` (foundation only, no live Meta calls). Sprint 65 PR 5
 implements `send()` for real (see `send.py`) and advertises
 `Capability.TEXT` accordingly — outbound Instagram messages now flow
 through `ChannelManager`/`MessagingService` exactly like WhatsApp's.
+Sprint 65 PR 6 adds media: `IMAGE`/`VIDEO`/`AUDIO`/`DOCUMENT` join `TEXT`
+in `capabilities()`, backed by real inbound attachment parsing
+(`parsing.py`) and outbound attachment sending (`send.py`).
 `validate_credentials()` is still a documented stub (`credentials.py`) —
 not needed for the connect flow (Sprint 65 PR 2 has its own live Graph API
 check) or the send path (messaging-platform.md §6: only called during
@@ -44,16 +47,23 @@ class InstagramProvider(ChannelProvider):
     channel_id = CHANNEL_ID
 
     def capabilities(self) -> CapabilitySet:
-        """`TEXT` only, as of Sprint 65 PR 5 — a direct read of what
-        `send()`/`parsing.py` actually implement end to end (text-only,
-        no media/reactions/typing/read-receipts — see `parsing.py`'s
-        module docstring for exactly which inbound payload shapes are
-        still unsupported). Matches `WhatsAppProvider.capabilities()`'s
-        exact reasoning (messaging-platform.md §7): declare only what's
+        """`TEXT` + `IMAGE`/`VIDEO`/`AUDIO`/`DOCUMENT` as of Sprint 65 PR 6
+        — a direct read of what `send.py`/`parsing.py` actually implement
+        end to end: inbound `attachments` map onto `NormalizedMessage.media`
+        (`parsing._extract_media()`), outbound `MediaRef`s send as a real
+        Meta attachment message (`send.py`'s `_ATTACHMENT_TYPE`), both
+        tested. Still no reactions/typing/read-receipts/story-reply — not
+        built this PR. Matches `WhatsAppProvider.capabilities()`'s exact
+        reasoning (messaging-platform.md §7): declare only what's
         genuinely built and tested, never what the platform could
         theoretically do.
         """
-        return CapabilitySet(channel=self.channel_id, supported=frozenset({Capability.TEXT}))
+        return CapabilitySet(
+            channel=self.channel_id,
+            supported=frozenset(
+                {Capability.TEXT, Capability.IMAGE, Capability.VIDEO, Capability.AUDIO, Capability.DOCUMENT}
+            ),
+        )
 
     def validate_credentials(self, creds: ChannelCredentials) -> ConnectionResult:
         """Delegates to `credentials.validate_instagram_credentials()`,

@@ -259,6 +259,35 @@ def test_post_persists_inbound_and_dispatches_reply(db_session):
     assert dispatched[0][1] == inbound[0].id
 
 
+def test_post_persists_inbound_media(db_session):
+    """Sprint 65 PR 6: an inbound image attachment persists onto
+    Message.media and Message.type derives from the attachment kind, not
+    the WhatsApp-only `raw.get("type")` fallback (Instagram's raw event
+    dict has no top-level "type" key)."""
+    _connected_business(db_session)
+    client, _dispatched = _client(db_session)
+
+    payload = _inbound_payload("IG_ACCT_1", "mid.img-1", sender_id="IGSID_9", text="")
+    payload["entry"][0]["messaging"][0]["message"] = {
+        "mid": "mid.img-1",
+        "attachments": [{"type": "image", "payload": {"url": "https://cdn.example/photo.jpg"}}],
+    }
+    body = json.dumps(payload).encode()
+    resp = client.post(
+        "/webhooks/instagram",
+        content=body,
+        headers={"X-Hub-Signature-256": _sign(body), "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 200
+
+    inbound = db_session.scalars(select(Message).where(Message.direction == "inbound")).one()
+    assert inbound.type == "image"
+    assert inbound.body == ""
+    assert inbound.media == [
+        {"kind": "image", "url": "https://cdn.example/photo.jpg", "mime_type": None, "caption": None}
+    ]
+
+
 def test_post_dedupes_repeated_message_id(db_session):
     _connected_business(db_session)
     client, dispatched = _client(db_session)

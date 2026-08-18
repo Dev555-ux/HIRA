@@ -188,6 +188,12 @@ class Message(Base):
         String(24), default="received"
     )  # received | pending_approval | sending | sent | failed | rejected | escalated
     ai_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Sprint 65 PR 6: list of {kind, url, mime_type, caption} dicts, the same
+    # shape as app.channels.base.message.MediaRef serialized for storage —
+    # empty/null for a text-only message. Populated from NormalizedMessage.media
+    # on inbound (MessagingService.record_inbound) and read back into
+    # OutboundMessage.media on outbound (MessagingService._send).
+    media: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # Critical audit fix #2, Part D: the only way to tell how long a Message
     # has been sitting in its *current* status (specifically "sending" —
