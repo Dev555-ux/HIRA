@@ -150,7 +150,9 @@ class MessagingService:
             customer = self._get_or_create_customer(
                 business_id, wa_phone, normalized.sender_display_name
             )
-            conversation = self._get_or_create_conversation(business_id, customer.id, now)
+            conversation = self._get_or_create_conversation(
+                business_id, customer.id, now, normalized.channel
+            )
 
             body = normalized.text
             message = Message(
@@ -222,10 +224,14 @@ class MessagingService:
         return customer
 
     def _get_or_create_conversation(
-        self, business_id: uuid.UUID, customer_id: uuid.UUID, now: datetime
+        self, business_id: uuid.UUID, customer_id: uuid.UUID, now: datetime, channel: str
     ) -> Conversation:
         """Unchanged from `webhooks/whatsapp.py::_get_or_create_conversation`
-        (pre-PR-7)."""
+        (pre-PR-7), plus `channel` (Sprint 65 PR 4) — set only when a new
+        Conversation is created; an existing one keeps whatever channel it
+        was created with, since a Customer (and therefore its Conversation)
+        is single-channel for its whole lifetime by construction (see
+        `Conversation.channel`'s own docstring, app/models.py)."""
         conversation = self._db.scalars(
             select(Conversation)
             .where(
@@ -237,7 +243,7 @@ class MessagingService:
         ).first()
         if conversation is None:
             conversation = Conversation(
-                business_id=business_id, customer_id=customer_id, status="active"
+                business_id=business_id, customer_id=customer_id, status="active", channel=channel
             )
             self._db.add(conversation)
             self._db.flush()

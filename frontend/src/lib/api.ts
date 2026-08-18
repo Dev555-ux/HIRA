@@ -13,6 +13,7 @@ import type {
   CalendarStatus,
   ConnectWhatsAppPayload,
   Conversation,
+  ConversationChannelFilter,
   ConversationStatusFilter,
   CreateAppointmentPayload,
   CreateBusinessPayload,
@@ -234,6 +235,7 @@ export const api = {
     params: {
       search?: string;
       status?: ConversationStatusFilter;
+      channel?: ConversationChannelFilter;
       limit?: number;
       offset?: number;
     } = {},

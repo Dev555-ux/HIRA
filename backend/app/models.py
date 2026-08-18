@@ -129,6 +129,19 @@ class Conversation(Base):
     )
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | escalated | closed
+    # Sprint 65 PR 4: which ChannelProvider this conversation's messages
+    # arrived through (e.g. "whatsapp", "instagram") — matches
+    # NormalizedMessage.channel (app/channels/base/message.py). A
+    # Conversation is 1:1 with a Customer, and a Customer is looked up by
+    # (business_id, wa_phone) alone — WhatsApp phone numbers and Instagram
+    # IGSIDs are separate, never-colliding identifier spaces (no
+    # cross-channel customer merging exists), so a conversation is
+    # single-channel for its whole lifetime by construction. Set once at
+    # creation (MessagingService._get_or_create_conversation), never
+    # changed after. Defaults to "whatsapp" so every pre-existing row
+    # (created before this column existed, back when WhatsApp was the only
+    # channel) backfills correctly — see the migration.
+    channel: Mapped[str] = mapped_column(String(32), default="whatsapp", server_default="whatsapp")
     window_expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(nullable=True)
     # Rolling summary of this conversation's messages older than the raw

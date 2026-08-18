@@ -82,6 +82,7 @@ def _serialize_summary(
     return {
         "id": str(conversation.id),
         "status": conversation.status,
+        "channel": conversation.channel,
         "customer": {
             "id": str(customer.id),
             "display_name": customer.display_name,
@@ -115,6 +116,7 @@ def list_conversations(
     db: Session = Depends(get_db),
     search: str | None = Query(default=None, min_length=1, max_length=200),
     status_filter: StatusFilter | None = Query(default=None, alias="status"),
+    channel: str | None = Query(default=None, min_length=1, max_length=32),
     limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
@@ -128,6 +130,13 @@ def list_conversations(
     if search:
         like = f"%{search.strip()}%"
         stmt = stmt.where(or_(Customer.display_name.ilike(like), Customer.wa_phone.ilike(like)))
+
+    if channel:
+        # Not a closed Literal like status_filter on purpose — this filters
+        # on whatever string Conversation.channel actually holds, so a
+        # future channel needs no change here (see
+        # Conversation.channel's own docstring, app/models.py).
+        stmt = stmt.where(Conversation.channel == channel)
 
     if status_filter == "open":
         stmt = stmt.where(Conversation.status == "active")

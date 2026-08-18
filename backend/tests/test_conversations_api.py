@@ -30,12 +30,15 @@ def _customer(db, business_id, *, wa_phone, display_name=None):
     return customer
 
 
-def _conversation(db, business_id, customer_id, *, conv_status="active", last_message_at=None):
+def _conversation(
+    db, business_id, customer_id, *, conv_status="active", last_message_at=None, channel="whatsapp"
+):
     conv = Conversation(
         business_id=business_id,
         customer_id=customer_id,
         status=conv_status,
         last_message_at=last_message_at,
+        channel=channel,
     )
     db.add(conv)
     db.flush()
@@ -368,6 +371,149 @@ def test_pagination_limits_results_and_reports_total(db_session):
     resp2 = client.get("/api/v1/conversations", headers=_auth(), params={"limit": 2, "offset": 2})
     assert len(resp2.json()["data"]) == 2
     assert resp.json()["data"] != resp2.json()["data"]
+    app.dependency_overrides.clear()
+
+
+# --- channel (Sprint 65 PR 4) --------------------------------------------
+
+
+def test_list_returns_an_instagram_conversation_with_its_channel(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="IGSID_1")
+    _conversation(db_session, biz.id, cust.id, channel="instagram")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth())
+
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["channel"] == "instagram"
+    app.dependency_overrides.clear()
+
+
+def test_get_conversation_exposes_channel_in_detail(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust = _customer(db_session, biz.id, wa_phone="IGSID_1")
+    conv = _conversation(db_session, biz.id, cust.id, channel="instagram")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get(f"/api/v1/conversations/{conv.id}", headers=_auth())
+
+    assert resp.json()["data"]["channel"] == "instagram"
+    app.dependency_overrides.clear()
+
+
+def test_list_mixed_channels_orders_by_activity_regardless_of_channel(db_session):
+    """Ordering is purely by last_message_at — channel must never affect it
+    (the Inbox does not care which provider produced a conversation)."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    cust1 = _customer(db_session, biz.id, wa_phone="+10000001")
+    cust2 = _customer(db_session, biz.id, wa_phone="IGSID_2")
+    older = _conversation(
+        db_session, biz.id, cust1.id, channel="whatsapp", last_message_at=NOW - timedelta(hours=2)
+    )
+    newer = _conversation(db_session, biz.id, cust2.id, channel="instagram", last_message_at=NOW)
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth())
+
+    data = resp.json()["data"]
+    assert [row["id"] for row in data] == [str(newer.id), str(older.id)]
+    assert [row["channel"] for row in data] == ["instagram", "whatsapp"]
+    app.dependency_overrides.clear()
+
+
+def test_pagination_across_mixed_channels(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    for i in range(3):
+        cust = _customer(db_session, biz.id, wa_phone=f"+1000000{i}")
+        _conversation(
+            db_session,
+            biz.id,
+            cust.id,
+            channel="whatsapp",
+            last_message_at=NOW - timedelta(minutes=i),
+        )
+    for i in range(3):
+        cust = _customer(db_session, biz.id, wa_phone=f"IGSID_{i}")
+        _conversation(
+            db_session,
+            biz.id,
+            cust.id,
+            channel="instagram",
+            last_message_at=NOW - timedelta(minutes=10 + i),
+        )
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    page1 = client.get(
+        "/api/v1/conversations", headers=_auth(), params={"limit": 4, "offset": 0}
+    ).json()
+    page2 = client.get(
+        "/api/v1/conversations", headers=_auth(), params={"limit": 4, "offset": 4}
+    ).json()
+
+    assert page1["meta"] == {"total": 6, "limit": 4, "offset": 0}
+    assert len(page1["data"]) == 4
+    assert len(page2["data"]) == 2
+    ids_page1 = {row["id"] for row in page1["data"]}
+    ids_page2 = {row["id"] for row in page2["data"]}
+    assert ids_page1.isdisjoint(ids_page2)  # no overlap/duplication across pages
+    app.dependency_overrides.clear()
+
+
+def test_filter_by_channel_returns_only_that_channel(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    wa_cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    ig_cust = _customer(db_session, biz.id, wa_phone="IGSID_1")
+    _conversation(db_session, biz.id, wa_cust.id, channel="whatsapp")
+    ig_conv = _conversation(db_session, biz.id, ig_cust.id, channel="instagram")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth(), params={"channel": "instagram"})
+
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["id"] == str(ig_conv.id)
+    app.dependency_overrides.clear()
+
+
+def test_filter_by_channel_omitted_returns_every_channel(db_session):
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    wa_cust = _customer(db_session, biz.id, wa_phone="+10000001")
+    ig_cust = _customer(db_session, biz.id, wa_phone="IGSID_1")
+    _conversation(db_session, biz.id, wa_cust.id, channel="whatsapp")
+    _conversation(db_session, biz.id, ig_cust.id, channel="instagram")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth())
+
+    assert len(resp.json()["data"]) == 2
+    app.dependency_overrides.clear()
+
+
+def test_search_by_ig_phone_field_finds_instagram_customers(db_session):
+    """Search reuses the existing Customer.wa_phone ILIKE match — no second
+    search implementation needed, since Instagram's IGSID is stored in the
+    same field WhatsApp's phone number already is."""
+    biz, _ = _seed_business(db_session, "A", "user_a")
+    ig_cust = _customer(db_session, biz.id, wa_phone="IGSID_998877")
+    wa_cust = _customer(db_session, biz.id, wa_phone="+15551230000")
+    _conversation(db_session, biz.id, ig_cust.id, channel="instagram")
+    _conversation(db_session, biz.id, wa_cust.id, channel="whatsapp")
+    db_session.commit()
+
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    resp = client.get("/api/v1/conversations", headers=_auth(), params={"search": "998877"})
+
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert data[0]["channel"] == "instagram"
     app.dependency_overrides.clear()
 
 

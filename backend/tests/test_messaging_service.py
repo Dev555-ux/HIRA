@@ -41,10 +41,14 @@ def _business(db) -> Business:
 
 
 def _normalized(
-    wa_message_id="wamid.1", from_phone="+15551230000", text="hi", display_name="Test User"
+    wa_message_id="wamid.1",
+    from_phone="+15551230000",
+    text="hi",
+    display_name="Test User",
+    channel="whatsapp",
 ):
     return NormalizedMessage(
-        channel="whatsapp",
+        channel=channel,
         external_conversation_id=from_phone,
         external_message_id=wa_message_id,
         external_sender_id=from_phone,
@@ -80,6 +84,43 @@ def test_record_inbound_persists_customer_conversation_and_message(db_session):
     assert message.body == "hi"
     assert message.direction == "inbound"
     assert message.wa_message_id == "wamid.1"
+
+
+def test_record_inbound_persists_the_normalized_messages_channel(db_session):
+    """Sprint 65 PR 4: Conversation.channel is set from
+    NormalizedMessage.channel, not hardcoded — proven with a channel value
+    that isn't "whatsapp", since MessagingService must stay generic (no
+    channel-name branching)."""
+    business = _business(db_session)
+
+    result = MessagingService(db_session).record_inbound(
+        business.id,
+        [_normalized(wa_message_id="mid.1", from_phone="IGSID_1", channel="instagram")],
+    )
+
+    conversation_id, *_ = result[0]
+    conversation = db_session.get(Conversation, conversation_id)
+    assert conversation.channel == "instagram"
+
+
+def test_record_inbound_keeps_an_existing_conversations_channel(db_session):
+    """A Conversation's channel is set once, at creation — a later message
+    in the same conversation (necessarily the same channel in practice,
+    see Conversation.channel's own docstring) doesn't overwrite it."""
+    business = _business(db_session)
+    service = MessagingService(db_session)
+    service.record_inbound(
+        business.id,
+        [_normalized(wa_message_id="mid.1", from_phone="IGSID_1", channel="instagram")],
+    )
+    result = service.record_inbound(
+        business.id,
+        [_normalized(wa_message_id="mid.2", from_phone="IGSID_1", channel="instagram")],
+    )
+
+    conversation_id, *_ = result[0]
+    conversation = db_session.get(Conversation, conversation_id)
+    assert conversation.channel == "instagram"
 
 
 def test_record_inbound_reuses_existing_customer_and_conversation(db_session):

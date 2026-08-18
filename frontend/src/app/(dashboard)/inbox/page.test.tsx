@@ -36,6 +36,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
   return {
     id: "conv-1",
     status: "active",
+    channel: "whatsapp",
     customer: { id: "cust-1", display_name: "Alice Smith", wa_phone: "+15551230000" },
     last_message_at: new Date().toISOString(),
     preview: "Are you open today?",
@@ -111,7 +112,54 @@ describe("InboxPage", () => {
     // second match in each case.
     expect(screen.getAllByText("Open")).toHaveLength(2);
     expect(screen.getAllByText("Pending")).toHaveLength(2);
-    expect(screen.getByText("WhatsApp")).toBeInTheDocument();
+    // The channel filter chip is also labeled "WhatsApp" — the badge is
+    // the second match.
+    expect(screen.getAllByText("WhatsApp")).toHaveLength(2);
+  });
+
+  it("renders an Instagram conversation with the Instagram badge", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue({
+      data: [
+        conversation({
+          id: "conv-2",
+          channel: "instagram",
+          customer: { id: "cust-2", display_name: "Bo Yang", wa_phone: "IGSID_42" },
+        }),
+      ],
+      meta: { total: 1, limit: 20, offset: 0 },
+    });
+
+    renderWithProviders(<InboxPage />);
+
+    expect(await screen.findByText("Bo Yang")).toBeInTheDocument();
+    // The channel filter chip is also labeled "Instagram" — the badge is
+    // the second match. "WhatsApp" still appears once, as its own filter
+    // chip, even though no WhatsApp conversation is in this list.
+    expect(screen.getAllByText("Instagram")).toHaveLength(2);
+    expect(screen.getAllByText("WhatsApp")).toHaveLength(1);
+  });
+
+  it("renders a mixed WhatsApp + Instagram conversation list, each with its own badge", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue({
+      data: [
+        conversation({ id: "conv-1", channel: "whatsapp" }),
+        conversation({
+          id: "conv-2",
+          channel: "instagram",
+          customer: { id: "cust-2", display_name: "Bo Yang", wa_phone: "IGSID_42" },
+        }),
+      ],
+      meta: { total: 2, limit: 20, offset: 0 },
+    });
+
+    renderWithProviders(<InboxPage />);
+
+    expect(await screen.findByText("Alice Smith")).toBeInTheDocument();
+    expect(screen.getByText("Bo Yang")).toBeInTheDocument();
+    // Each channel filter chip shares its label with its badge, so each
+    // appears twice: once as the filter chip, once as this row's badge.
+    expect(screen.getAllByText("WhatsApp")).toHaveLength(2);
+    expect(screen.getAllByText("Instagram")).toHaveLength(2);
   });
 
   it("debounces search input, then calls the API with the search term", async () => {
@@ -142,6 +190,21 @@ describe("InboxPage", () => {
       expect(api.listConversations).toHaveBeenCalledWith(
         expect.any(Function),
         expect.objectContaining({ status: "pending" }),
+      ),
+    );
+  });
+
+  it("calls the API with the selected channel filter", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<InboxPage />);
+    await screen.findByText("No conversations yet");
+
+    await user.click(screen.getByRole("button", { name: "Instagram" }));
+
+    await waitFor(() =>
+      expect(api.listConversations).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.objectContaining({ channel: "instagram" }),
       ),
     );
   });
@@ -177,8 +240,36 @@ describe("InboxPage", () => {
     expect(screen.getByRole("button", { name: /approve & send/i })).toBeInTheDocument();
     expect(api.getConversation).toHaveBeenCalledWith(expect.any(Function), "conv-1");
     expect(api.listMessages).toHaveBeenCalledWith(expect.any(Function), "conv-1");
-    // WhatsApp badge appears in both the list row and the detail header.
-    expect(screen.getAllByText("WhatsApp")).toHaveLength(2);
+    // WhatsApp badge appears in both the list row and the detail header,
+    // plus the channel filter chip sharing the same label.
+    expect(screen.getAllByText("WhatsApp")).toHaveLength(3);
+  });
+
+  it("shows the Instagram badge in the conversation detail header, using the existing message components", async () => {
+    const igConversation = conversation({
+      channel: "instagram",
+      customer: { id: "cust-2", display_name: "Bo Yang", wa_phone: "IGSID_42" },
+    });
+    vi.mocked(api.listConversations).mockResolvedValue({
+      data: [igConversation],
+      meta: { total: 1, limit: 20, offset: 0 },
+    });
+    vi.mocked(api.getConversation).mockResolvedValue(igConversation);
+    vi.mocked(api.listMessages).mockResolvedValue({
+      data: [message({ id: "m1", direction: "inbound", body: "Do you deliver?" })],
+      meta: { total: 1, limit: 50, offset: 0 },
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<InboxPage />);
+    await user.click(await screen.findByText("Bo Yang"));
+
+    // Same MessageBubble rendering as WhatsApp — no duplicate/channel-
+    // specific message component.
+    expect(await screen.findByText("Do you deliver?")).toBeInTheDocument();
+    // Instagram badge appears in both the list row and the detail header,
+    // plus the channel filter chip sharing the same label.
+    expect(screen.getAllByText("Instagram")).toHaveLength(3);
   });
 
   it("shows a badge for escalated, rejected, and sending outbound messages, not a bare bubble", async () => {

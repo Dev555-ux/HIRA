@@ -4,13 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
 import { POLL_INTERVAL_MS } from "@/lib/config";
-import type { ConversationStatusFilter } from "@/lib/types";
+import type { ConversationChannelFilter, ConversationStatusFilter } from "@/lib/types";
 
 const CONVERSATIONS_KEY = "conversations" as const;
 
 export function useConversations(params: {
   search?: string;
   status?: ConversationStatusFilter;
+  channel?: ConversationChannelFilter;
   limit?: number;
   offset?: number;
 }) {

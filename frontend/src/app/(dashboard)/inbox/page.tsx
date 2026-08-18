@@ -27,9 +27,15 @@ import {
   useConversations,
 } from "@/hooks/use-conversations";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { CHANNELS } from "@/lib/channels";
 import { CONVERSATION_STATUS_BADGE } from "@/lib/conversations";
 import { VARIANT_TO_STATE } from "@/lib/status";
-import type { Conversation, ConversationStatusFilter, Message } from "@/lib/types";
+import type {
+  Conversation,
+  ConversationChannelFilter,
+  ConversationStatusFilter,
+  Message,
+} from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
 const FILTERS: { label: string; value: ConversationStatusFilter | undefined }[] = [
@@ -37,6 +43,17 @@ const FILTERS: { label: string; value: ConversationStatusFilter | undefined }[] 
   { label: "Open", value: "open" },
   { label: "Pending", value: "pending" },
   { label: "Closed", value: "closed" },
+];
+
+// Its own axis, not merged into FILTERS above — status and channel filter
+// independently (Sprint 65 PR 4). Built from CHANNELS so a future channel
+// needs no change here.
+const CHANNEL_FILTERS: { label: string; value: ConversationChannelFilter | undefined }[] = [
+  { label: "All", value: undefined },
+  ...Object.entries(CHANNELS).map(([value, { label }]) => ({
+    label,
+    value: value as ConversationChannelFilter,
+  })),
 ];
 
 const MESSAGE_STATUS_BADGE: Partial<
@@ -60,12 +77,16 @@ const MESSAGE_STATUS_BADGE: Partial<
 export default function InboxPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ConversationStatusFilter | undefined>(undefined);
+  const [channelFilter, setChannelFilter] = useState<ConversationChannelFilter | undefined>(
+    undefined,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const debouncedQuery = useDebouncedValue(query);
 
   const { data, isPending, isError, error, isFetching, refetch } = useConversations({
     search: debouncedQuery || undefined,
     status: filter,
+    channel: channelFilter,
   });
   const conversations = data?.data ?? [];
 
@@ -76,7 +97,7 @@ export default function InboxPage() {
       </Suspense>
       <PageHeader
         title="Inbox"
-        description="Customer conversations from WhatsApp."
+        description="Customer conversations from every connected channel."
         action={
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RefreshCw className={isFetching ? "animate-spin" : ""} />
@@ -108,6 +129,18 @@ export default function InboxPage() {
             </Button>
           ))}
         </div>
+        <div className="flex gap-1" role="group" aria-label="Filter by channel">
+          {CHANNEL_FILTERS.map((f) => (
+            <Button
+              key={f.label}
+              size="sm"
+              variant={channelFilter === f.value ? "secondary" : "ghost"}
+              onClick={() => setChannelFilter(f.value)}
+            >
+              {f.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
@@ -119,7 +152,7 @@ export default function InboxPage() {
           onRetry={refetch}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          hasQuery={query.length > 0 || filter !== undefined}
+          hasQuery={query.length > 0 || filter !== undefined || channelFilter !== undefined}
         />
         <ConversationDetail conversationId={selectedId} onBack={() => setSelectedId(null)} />
       </div>
@@ -192,7 +225,7 @@ function ConversationList({
             description={
               hasQuery
                 ? "Try a different search term or filter."
-                : "Conversations will appear here once a customer messages your WhatsApp number."
+                : "Conversations will appear here once a customer messages a connected channel."
             }
             action={
               !hasQuery && (
@@ -232,7 +265,7 @@ function ConversationList({
                       {conv.preview ?? "No messages yet"}
                     </p>
                     <div className="flex gap-1">
-                      <ChannelBadge />
+                      <ChannelBadge channel={conv.channel} />
                       <StatusPill state={VARIANT_TO_STATE[statusBadge.variant]}>
                         {statusBadge.label}
                       </StatusPill>
@@ -304,7 +337,7 @@ function ConversationDetail({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <p className="truncate text-sm font-medium">{name}</p>
-              {conversation && <ChannelBadge />}
+              {conversation && <ChannelBadge channel={conversation.channel} />}
             </div>
             {conversation && (
               <p className="text-xs text-muted-foreground">{conversation.customer.wa_phone}</p>

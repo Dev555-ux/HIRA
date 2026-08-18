@@ -1,5 +1,7 @@
 // Types mirroring the backend API contracts (documentation/API.md).
 
+import type { Channel } from "@/lib/channels";
+
 export interface PendingReplyCustomer {
   id: string;
   display_name: string | null;
@@ -100,6 +102,11 @@ export interface PaginatedEnvelope<T> {
 // conversations.py's module docstring for the exact filter semantics).
 export type ConversationStatusFilter = "open" | "pending" | "closed" | "escalated";
 
+// Sprint 65 PR 4: filters Conversation.channel directly (?channel= query
+// param) — a separate axis from status, not merged into
+// ConversationStatusFilter above.
+export type ConversationChannelFilter = Channel;
+
 // Escalation Queue Workspace (/api/v1/escalations, Sprint 69, DEC-040).
 // Created by POST /messages/{id}/escalate; this is the read/manage side.
 export type EscalationReason =
@@ -143,6 +150,7 @@ export interface ConversationCustomer {
 export interface Conversation {
   id: string;
   status: "active" | "escalated" | "closed";
+  channel: Channel;
   customer: ConversationCustomer;
   last_message_at: string | null;
   preview: string | null;
