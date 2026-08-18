@@ -85,6 +85,24 @@ def get_stored_credential(db: Session, business_id: uuid.UUID) -> InstagramCrede
     ).first()
 
 
+def get_credential_by_ig_account_id(
+    db: Session, instagram_business_account_id: str
+) -> InstagramCredential | None:
+    """The reverse lookup app/webhooks/instagram.py needs (Sprint 65 PR 3):
+    a webhook delivery only carries the Instagram Business Account id
+    (`extract_routing_key()`), not a HIRA business_id — unlike WhatsApp,
+    where `phone_number_id` is denormalized onto `Business` itself, this
+    credential lives only in this table, so resolving "which business is
+    this for" means querying it by the unique
+    `instagram_business_account_id` column (see
+    `uq_instagram_credentials_ig_account_id`, app/models.py)."""
+    return db.scalars(
+        select(InstagramCredential).where(
+            InstagramCredential.instagram_business_account_id == instagram_business_account_id
+        )
+    ).first()
+
+
 def disconnect(db: Session, business_id: uuid.UUID) -> bool:
     """Removes only the stored connection. Never touches Message, Lead, or
     any other customer data — this table has no relation to any of it

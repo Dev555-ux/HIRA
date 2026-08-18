@@ -62,10 +62,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 
 from app.channels.base.message import NormalizedMessage
 
 CHANNEL_ID = "instagram"
+
+logger = logging.getLogger(__name__)
 
 
 def signature_valid(raw_body: bytes, header: str | None, app_secret: str) -> bool:
@@ -116,7 +119,12 @@ def parse_messaging_events(messaging_events: list[dict]) -> list[NormalizedMessa
     for event in messaging_events:
         message = event.get("message")
         if message is None:
-            continue  # a read receipt or other non-message event
+            # A read receipt, reaction, or any other non-message event —
+            # never crash because Meta adds a new event type; debug-only
+            # since this isn't an error, just something this provider
+            # doesn't turn into a NormalizedMessage yet.
+            logger.debug("Skipping non-message Instagram messaging event: %s", sorted(event.keys()))
+            continue
 
         sender_id = event.get("sender", {}).get("id", "")
         messages.append(

@@ -230,6 +230,50 @@ def test_parse_webhook_normalizes_a_text_message(provider):
     assert message.media == ()
 
 
+def test_parse_webhook_normalizes_multiple_messages_in_one_delivery(provider):
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "IG_ACCT_1",
+                "messaging": [
+                    {"sender": {"id": "IGSID_1"}, "message": {"mid": "mid.1", "text": "First"}},
+                    {"sender": {"id": "IGSID_2"}, "message": {"mid": "mid.2", "text": "Second"}},
+                ],
+            }
+        ],
+    }
+    messages = provider.parse_webhook(json.dumps(payload).encode())
+
+    assert [m.external_message_id for m in messages] == ["mid.1", "mid.2"]
+    assert [m.text for m in messages] == ["First", "Second"]
+
+
+def test_parse_webhook_ignores_an_unknown_event_type_without_crashing(provider, caplog):
+    """Meta adding a new event shape (e.g. a reaction, no `message` key)
+    must never crash the parser — recognized as "not a message" and
+    debug-logged, same as a read receipt (Sprint 65 PR 3)."""
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "IG_ACCT_1",
+                "messaging": [
+                    {
+                        "sender": {"id": "IGSID_1"},
+                        "reaction": {"mid": "mid.1", "action": "react", "emoji": "❤"},
+                    }
+                ],
+            }
+        ],
+    }
+    with caplog.at_level("DEBUG", logger="app.channels.instagram.parsing"):
+        messages = provider.parse_webhook(json.dumps(payload).encode())
+
+    assert messages == []
+    assert any("Skipping non-message" in record.message for record in caplog.records)
+
+
 def test_parse_webhook_malformed_json_raises(provider):
     with pytest.raises(WebhookVerificationFailedError):
         provider.parse_webhook(b"not json")

@@ -40,6 +40,7 @@ from app.core.time import to_iso_utc
 from app.channels import register_all as register_all_channels
 from app.db.session import get_db
 from app.models import Message
+from app.webhooks.instagram import router as instagram_webhook_router
 from app.webhooks.whatsapp import router as whatsapp_router
 
 logger = logging.getLogger(__name__)
@@ -203,6 +204,7 @@ app.add_middleware(
 app.add_middleware(RequestLoggingMiddleware)
 init_rate_limiting(app)
 app.include_router(whatsapp_router)
+app.include_router(instagram_webhook_router)
 app.include_router(whatsapp_api_router)
 app.include_router(embedded_signup_router)
 app.include_router(analytics_router)

@@ -125,21 +125,28 @@ class MessagingService:
         new_inbound: list[tuple] = []
         now = datetime.now(timezone.utc)
         for normalized in messages:
-            # Read straight from the original native payload (carried
-            # unchanged on `.raw`) for these two fields — see PR 5's
-            # identical note in the code this replaces: NormalizedMessage's
-            # own external_message_id/external_sender_id default a missing
-            # value to "", while this dedupe/lookup logic has always relied
-            # on a missing value being None. Unreachable in practice (the
-            # platform always sends both), kept byte-for-byte anyway.
-            wa_message_id = normalized.raw.get("id")
+            # Sprint 65 PR 3: these two used to read normalized.raw.get("id")/
+            # ("from") — WhatsApp Cloud API's own native JSON key names,
+            # not this DTO's channel-agnostic fields. Harmless while
+            # WhatsApp was the only channel (its .raw dict happens to use
+            # those exact keys, so the values were always identical), but
+            # Instagram's native payload has neither key — both reads would
+            # silently return None, turning the dedupe check below into
+            # "WHERE wa_message_id IS NULL" (matches any other NULL-id row)
+            # and the customer lookup into "WHERE wa_phone IS NULL"
+            # (collapses every Instagram sender into one existing
+            # NULL-phone customer). Reading the DTO's own fields instead is
+            # a byte-for-byte no-op for WhatsApp (same source values, see
+            # app/channels/whatsapp/parsing.py::parse_messages) and the fix
+            # Instagram actually needs.
+            wa_message_id = normalized.external_message_id
             already = self._db.scalars(
                 select(Message).where(Message.wa_message_id == wa_message_id)
             ).first()
             if already is not None:
                 continue  # dedupe
 
-            wa_phone = normalized.raw.get("from")
+            wa_phone = normalized.external_conversation_id
             customer = self._get_or_create_customer(
                 business_id, wa_phone, normalized.sender_display_name
             )
