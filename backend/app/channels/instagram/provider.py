@@ -1,29 +1,20 @@
 """InstagramProvider — Instagram's implementation of ChannelProvider.
 
-Purpose: Sprint 65 PR 1 — foundation only. Implements every method the
-`ChannelProvider` contract requires, honestly split into two groups:
-
-Genuinely implemented now (pure computation, no Meta API call, no OAuth):
-`capabilities()`, `extract_routing_key()`, `verify_webhook_signature()`,
-`verify_subscription()`, `parse_webhook()`. These don't need a live
-account to be correct, so they're built and tested for real, not stubbed.
-
-Deliberately NOT implemented (both require a live Meta API call this PR
-is explicitly scoped not to make): `validate_credentials()`, `send()`.
-Both raise `NotImplementedError` with a clear message pointing at their
-implementation target module — see `credentials.py` and `send.py`.
+Purpose: Sprint 65 PR 1 built every method except `validate_credentials()`
+and `send()` (foundation only, no live Meta calls). Sprint 65 PR 5
+implements `send()` for real (see `send.py`) and advertises
+`Capability.TEXT` accordingly — outbound Instagram messages now flow
+through `ChannelManager`/`MessagingService` exactly like WhatsApp's.
+`validate_credentials()` is still a documented stub (`credentials.py`) —
+not needed for the connect flow (Sprint 65 PR 2 has its own live Graph API
+check) or the send path (messaging-platform.md §6: only called during
+connect/onboarding, never the per-message hot path), so it stays
+unimplemented until something actually calls it.
 
 Does NOT do — same constraint as every `ChannelProvider`: no database
 session, no ORM model, no persistence, no CRM, no AI invocation. Nothing
 here calls `db.scalars`, `db.add`, `db.commit`, or imports anything from
 app.models.
-
-Not wired anywhere: registered in the channel registry (see
-`__init__.py`), but no webhook route, no API route, no MessagingService
-change points at this channel. `ChannelManager.send()` would immediately
-raise `CapabilityNotSupportedError` for it today — see `capabilities()`'s
-own docstring for why that's a deliberate safety property of this PR, not
-an oversight.
 """
 
 from __future__ import annotations
@@ -32,7 +23,7 @@ import hmac
 import json
 from typing import Mapping
 
-from app.channels.base.capabilities import CapabilitySet
+from app.channels.base.capabilities import Capability, CapabilitySet
 from app.channels.base.credentials import ChannelCredentials
 from app.channels.base.errors import WebhookVerificationFailedError
 from app.channels.base.message import NormalizedMessage, OutboundMessage
@@ -53,26 +44,16 @@ class InstagramProvider(ChannelProvider):
     channel_id = CHANNEL_ID
 
     def capabilities(self) -> CapabilitySet:
-        """Empty on purpose. Not a claim about what Instagram Messaging
-        can do (see documentation/architecture/messaging-platform.md §7
-        for a platform-level capability estimate, and `parsing.py`'s
-        module docstring for exactly which payload shapes this provider
-        already recognizes) — a claim about what this codebase actually
-        implements end to end, which today is nothing: `send()` is an
-        unconditional `NotImplementedError`. Declaring any capability
-        `True` while `send()` can't act on it would let
-        `ChannelManager.send()`'s capability check pass and then hit an
-        unhandled `NotImplementedError` deep inside transport — an ugly
-        failure mode a capability check exists specifically to prevent.
-        An empty set makes `CapabilityNotSupportedError` the failure
-        instead, raised before any provider method is even called.
-
-        Update this the moment `send()` genuinely handles a capability
-        end to end (starting with `Capability.TEXT`, mirroring
-        `WhatsAppProvider`) — not before, and not because the platform
-        theoretically supports more.
+        """`TEXT` only, as of Sprint 65 PR 5 — a direct read of what
+        `send()`/`parsing.py` actually implement end to end (text-only,
+        no media/reactions/typing/read-receipts — see `parsing.py`'s
+        module docstring for exactly which inbound payload shapes are
+        still unsupported). Matches `WhatsAppProvider.capabilities()`'s
+        exact reasoning (messaging-platform.md §7): declare only what's
+        genuinely built and tested, never what the platform could
+        theoretically do.
         """
-        return CapabilitySet(channel=self.channel_id, supported=frozenset())
+        return CapabilitySet(channel=self.channel_id, supported=frozenset({Capability.TEXT}))
 
     def validate_credentials(self, creds: ChannelCredentials) -> ConnectionResult:
         """Delegates to `credentials.validate_instagram_credentials()`,
@@ -152,9 +133,8 @@ class InstagramProvider(ChannelProvider):
         return parse_inbound_payload(payload)
 
     def send(self, message: OutboundMessage, creds: ChannelCredentials) -> DeliveryReceipt:
-        """Delegates to `send.send_instagram_message()`, which raises
-        `NotImplementedError` — see that function's docstring. Not
-        implemented in this PR (no Meta API calls). Unreachable via
-        `ChannelManager.send()` today regardless, since `capabilities()`
-        advertises nothing for this provider to be asked to send."""
+        """One transport attempt via `send.send_instagram_message()` — no
+        retry loop here (ChannelManager's job, messaging-platform.md §5).
+        See that function's docstring for the request/response shape and
+        retry classification."""
         return send_instagram_message(message, creds)

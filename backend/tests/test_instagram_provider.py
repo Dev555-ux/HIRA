@@ -1,12 +1,15 @@
-"""Sprint 65 PR 1 — InstagramProvider foundation checks.
+"""Sprint 65 PR 1 — InstagramProvider foundation checks; Sprint 65 PR 5
+adds outbound send() checks against a mocked Graph API.
 
-No database, no HTTP, no Meta calls anywhere in this file — matching
-`tests/test_whatsapp_provider.py`'s DB-free contract. Covers what's
-genuinely implemented (capabilities, routing key, signature verification,
-subscription handshake, best-effort payload parsing) and asserts the
-documented placeholders (`validate_credentials`, `send`) raise
-`NotImplementedError` rather than silently returning fabricated success/
-failure — see `provider.py`'s module docstring for why that split exists.
+No database anywhere in this file — matching
+`tests/test_whatsapp_provider.py`'s DB-free contract (send() tests use a
+mocked `httpx` transport, same convention as that file's own outbound
+section). Covers what's genuinely implemented (capabilities, routing key,
+signature verification, subscription handshake, best-effort payload
+parsing, outbound send) and asserts `validate_credentials()` — still a
+documented placeholder, see `provider.py`'s module docstring for why —
+raises `NotImplementedError` rather than silently returning a fabricated
+result.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import hashlib
 import hmac
 import json
 
+import httpx
 import pytest
 
 from app.channels.base.capabilities import Capability
@@ -90,13 +94,18 @@ def test_default_registry_exposes_both_channels_once_both_are_imported():
 # --- capability reporting ---------------------------------------------------
 
 
-def test_capabilities_are_empty(provider):
-    """Deliberately empty — see capabilities()'s own docstring. Not a
-    platform limitation; a statement that nothing is implemented
-    end-to-end yet (send() is NotImplementedError)."""
+def test_capabilities_are_text_only(provider):
+    """TEXT only, as of Sprint 65 PR 5 — a direct read of what send()/
+    parsing.py actually implement end to end, same reasoning as
+    WhatsAppProvider's own capability set (see capabilities()'s docstring).
+    Every other capability stays False — not a platform limitation, a
+    statement that nothing else is built and tested yet."""
     caps = provider.capabilities()
     assert caps.channel == "instagram"
+    assert caps.supports(Capability.TEXT) is True
     for capability in Capability:
+        if capability is Capability.TEXT:
+            continue
         assert caps.supports(capability) is False, f"{capability} should not be advertised yet"
 
 
@@ -339,10 +348,155 @@ def test_validate_credentials_raises_not_implemented(provider):
         provider.validate_credentials(creds)
 
 
-def test_send_raises_not_implemented(provider):
-    message = OutboundMessage(channel="instagram", external_conversation_id="IGSID_1", text="hi")
-    creds = ChannelCredentials(
-        channel="instagram", access_token="tok", external_account_id="IG_ACCT_1"
+# --- outbound send, against a mocked Graph API (Sprint 65 PR 5) -------------
+
+
+def _client(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _outbound(text="hi") -> OutboundMessage:
+    return OutboundMessage(channel="instagram", external_conversation_id="IGSID_1", text=text)
+
+
+def _creds(external_account_id="PAGE_1") -> ChannelCredentials:
+    return ChannelCredentials(
+        channel="instagram", access_token="page-token", external_account_id=external_account_id
     )
-    with pytest.raises(NotImplementedError):
-        provider.send(message, creds)
+
+
+def test_send_success_returns_delivery_receipt(provider):
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v21.0/PAGE_1/messages"
+        assert request.headers["Authorization"] == "Bearer page-token"
+        import json as _json
+
+        body = _json.loads(request.content)
+        assert body == {
+            "recipient": {"id": "IGSID_1"},
+            "message": {"text": "hi"},
+            "messaging_type": "RESPONSE",
+        }
+        return httpx.Response(200, json={"recipient_id": "IGSID_1", "message_id": "mid.sent-1"})
+
+    from app.channels.instagram.send import send_instagram_message
+
+    receipt = send_instagram_message(_outbound(), _creds(), client=_client(handler))
+
+    assert receipt.status == "sent"
+    assert receipt.external_message_id == "mid.sent-1"
+
+
+@pytest.mark.parametrize("code", [190, 10, 100])
+def test_send_non_retryable_meta_error_codes(provider, code):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400, json={"error": {"message": "some raw graph detail xyz123", "code": code}}
+        )
+
+    from app.channels.instagram.send import send_instagram_message
+
+    receipt = send_instagram_message(_outbound(), _creds(), client=_client(handler))
+
+    assert receipt.status == "failed"
+    assert receipt.retryable is False
+    # Never leaks Meta's raw error message/body — only the status + code.
+    assert "xyz123" not in (receipt.error or "")
+
+
+@pytest.mark.parametrize("code", [4, 32])
+def test_send_retryable_meta_error_codes(provider, code):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"message": "rate limited", "code": code}})
+
+    from app.channels.instagram.send import send_instagram_message
+
+    receipt = send_instagram_message(_outbound(), _creds(), client=_client(handler))
+
+    assert receipt.status == "failed"
+    assert receipt.retryable is True
+
+
+def test_send_unmapped_error_code_defaults_to_non_retryable(provider):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"error": {"message": "??", "code": 999999}})
+
+    from app.channels.instagram.send import send_instagram_message
+
+    receipt = send_instagram_message(_outbound(), _creds(), client=_client(handler))
+
+    assert receipt.status == "failed"
+    assert receipt.retryable is False
+
+
+def test_send_5xx_is_retryable(provider):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="internal error")
+
+    from app.channels.instagram.send import send_instagram_message
+
+    receipt = send_instagram_message(_outbound(), _creds(), client=_client(handler))
+
+    assert receipt.status == "failed"
+    assert receipt.retryable is True
+
+
+def test_send_network_failure_is_retryable(provider):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    from app.channels.instagram.send import send_instagram_message
+
+    receipt = send_instagram_message(_outbound(), _creds(), client=_client(handler))
+
+    assert receipt.status == "failed"
+    assert receipt.retryable is True
+
+
+def test_send_malformed_success_response_is_non_retryable(provider):
+    """A 2xx status but a body that doesn't match Meta's documented shape
+    — Meta most likely already accepted the message, so retrying risks a
+    duplicate send to a real customer."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"unexpected": "shape"})
+
+    from app.channels.instagram.send import send_instagram_message
+
+    receipt = send_instagram_message(_outbound(), _creds(), client=_client(handler))
+
+    assert receipt.status == "failed"
+    assert receipt.retryable is False
+
+
+def test_send_missing_external_account_id_fails_without_calling_out(provider):
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("should not make an HTTP call without a Page id")
+
+    from app.channels.instagram.send import send_instagram_message
+
+    receipt = send_instagram_message(
+        _outbound(), _creds(external_account_id=None), client=_client(handler)
+    )
+
+    assert receipt.status == "failed"
+    assert receipt.retryable is False
+
+
+def test_provider_send_delegates_to_send_instagram_message(provider, monkeypatch):
+    """InstagramProvider.send() is a thin delegation — one transport
+    attempt, no retry loop, no persistence (verified by construction: this
+    module never imports a database session). Patches `httpx.Client.post`
+    at the transport level, same convention as
+    tests/test_ai_reply_worker_idempotency.py::_stub_whatsapp_transport,
+    since `provider.send()` takes no client-injection seam of its own."""
+
+    def fake_post(self, url, *, headers=None, json=None, **kwargs):
+        return httpx.Response(200, json={"recipient_id": "IGSID_1", "message_id": "mid.1"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+
+    receipt = provider.send(_outbound(), _creds())
+
+    assert receipt.status == "sent"
+    assert receipt.external_message_id == "mid.1"

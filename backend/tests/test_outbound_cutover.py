@@ -92,4 +92,4 @@ def test_approve_and_send_default_sender_surfaces_send_failure_end_to_end(db_ses
 
     persisted = db_session.scalars(select(Message).where(Message.id == message.id)).one()
     assert persisted.status == "failed"
-    assert persisted.ai_meta["failure_reason"] == "whatsapp_send_failed"
+    assert persisted.ai_meta["failure_reason"] == "channel_send_failed"

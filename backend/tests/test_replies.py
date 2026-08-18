@@ -785,7 +785,7 @@ def test_approve_and_send_marks_failed_on_a_non_whatsapp_send_error(db_session):
     db_session.expire_all()
     recovered = db_session.get(Message, message_id)
     assert recovered.status == "failed"
-    assert recovered.ai_meta["failure_reason"] == "whatsapp_send_failed"
+    assert recovered.ai_meta["failure_reason"] == "channel_send_failed"
 
 
 def test_approve_and_send_marks_failed_without_orphaning_a_real_booking(db_session, monkeypatch):
@@ -813,7 +813,7 @@ def test_approve_and_send_marks_failed_without_orphaning_a_real_booking(db_sessi
     db_session.expire_all()
     recovered = db_session.get(Message, message_id)
     assert recovered.status == "failed"
-    assert recovered.ai_meta["failure_reason"] == "whatsapp_send_failed"
+    assert recovered.ai_meta["failure_reason"] == "channel_send_failed"
     # The booking that already executed is not orphaned — it landed in the
     # same commit as the message's failed status.
     appointments = db_session.scalars(select(Appointment)).all()

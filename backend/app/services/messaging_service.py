@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
@@ -52,15 +53,29 @@ from app.channels.base.credentials import ChannelCredentials
 from app.channels.base.errors import ChannelError
 from app.channels.base.message import NormalizedMessage, OutboundMessage
 from app.core.config import settings
+from app.instagram.credentials import get_page_access_token as get_instagram_access_token
+from app.instagram.credentials import get_stored_credential as get_stored_instagram_credential
 from app.jobs import enqueue_job
 from app.models import Business, Conversation, Customer, Message
 from app.services.channel_manager import ChannelManager
 from app.services.execution_traces import get_pending_action
 from app.services.messaging import WhatsAppNotConnectedError, WhatsAppSendError
 from app.services.replies import get_pending_reply
-from app.whatsapp.credentials import get_access_token, get_stored_credential
+from app.whatsapp.credentials import get_access_token as get_whatsapp_access_token
+from app.whatsapp.credentials import get_stored_credential as get_stored_whatsapp_credential
 
 logger = logging.getLogger(__name__)
+
+# Sprint 65 PR 5: human-readable label for a channel id, used only in
+# log lines and user-facing error text (never for behavior — nothing
+# branches on the label itself). Falls back to the raw id for a channel
+# not yet listed here, rather than raising.
+_CHANNEL_LABELS = {"whatsapp": "WhatsApp", "instagram": "Instagram"}
+
+
+def _channel_label(channel: str) -> str:
+    return _CHANNEL_LABELS.get(channel, channel)
+
 
 # Unchanged from app/webhooks/whatsapp.py's pre-PR-7 SERVICE_WINDOW — every
 # inbound message still extends Conversation.window_expires_at by exactly
@@ -84,6 +99,20 @@ class WhatsAppWindowExpiredError(RuntimeError):
     so a booking can't execute with no way left to notify the customer it
     happened. Relocated from app/services/replies.py in Sprint 64A PR 7 —
     same class, same meaning, moved alongside approve_and_send()."""
+
+
+@dataclass(frozen=True)
+class _SendContext:
+    """What `MessagingService._send()` needs to build an `OutboundMessage`/
+    `ChannelCredentials` pair — resolved per-channel by
+    `MessagingService._resolve_send_context()` (Sprint 65 PR 5). Not a
+    public DTO: this never leaves `MessagingService`, unlike the
+    `app.channels.base` DTOs a `ChannelProvider` speaks."""
+
+    channel: str
+    external_account_id: str
+    external_conversation_id: str
+    access_token: str
 
 
 class MessagingService:
@@ -253,6 +282,48 @@ class MessagingService:
     # Outbound
     # ------------------------------------------------------------------
 
+    def _resolve_send_context(
+        self, business: Business, customer: Customer, conversation: Conversation
+    ) -> _SendContext | None:
+        """The one place MessagingService has to know which table a
+        channel's credentials live in (Sprint 65 PR 5). Everything else in
+        `send_reply()`/`approve_and_send()` stays channel-agnostic — this
+        is a narrow, deliberate exception to "no channel-name branching"
+        (messaging-platform.md §3), the exact gap that document's own §8
+        step 7 / §10 flagged as real, expected work for the first channel
+        after WhatsApp, not an architecture change.
+
+        Returns `None` if this conversation's channel has no usable stored
+        credential — callers treat that identically to "not connected,"
+        same as the pre-PR-5 WhatsApp-only check did.
+        """
+        if conversation.channel == "whatsapp":
+            if not business.whatsapp_phone_number_id:
+                return None
+            credential = get_stored_whatsapp_credential(self._db, business.id)
+            if credential is None:
+                return None
+            return _SendContext(
+                channel="whatsapp",
+                external_account_id=business.whatsapp_phone_number_id,
+                external_conversation_id=customer.wa_phone,
+                access_token=get_whatsapp_access_token(credential),
+            )
+        if conversation.channel == "instagram":
+            credential = get_stored_instagram_credential(self._db, business.id)
+            if credential is None:
+                return None
+            return _SendContext(
+                channel="instagram",
+                # Meta's Send API is keyed by the connected Page, not the
+                # IG business account id — see app/channels/instagram/
+                # send.py's module docstring.
+                external_account_id=credential.page_id,
+                external_conversation_id=customer.wa_phone,
+                access_token=get_instagram_access_token(credential),
+            )
+        return None
+
     def send_reply(
         self,
         business: Business,
@@ -281,10 +352,11 @@ class MessagingService:
         the resulting `on_commit_failure` (or None) so the caller's single
         outer commit can compensate if it fails.
 
-        Checked up front, before any tool call: no WhatsApp connection
-        (phone number or stored credential) or an expired 24-hour service
-        window both mean there's no way to notify the customer, so nothing
-        here should proceed far enough to need reverting. Mirrors
+        Checked up front, before any tool call: no channel connection
+        (phone number/Page or stored credential — see
+        `_resolve_send_context()`, Sprint 65 PR 5) or an expired 24-hour
+        service window both mean there's no way to notify the customer, so
+        nothing here should proceed far enough to need reverting. Mirrors
         `approve_and_send`'s identical up-front checks.
 
         Every failure branch sets `message.ai_meta["failure_reason"]` — the
@@ -295,17 +367,18 @@ class MessagingService:
         """
         sender = sender or self._send
         customer = self._db.get(Customer, conversation.customer_id)
-        credential = get_stored_credential(self._db, business.id)
+        send_context = self._resolve_send_context(business, customer, conversation)
 
-        if not business.whatsapp_phone_number_id or credential is None:
+        if send_context is None:
             message.status = "failed"
             message.ai_meta = {
                 **(message.ai_meta or {}),
-                "failure_reason": "whatsapp_not_connected",
+                "failure_reason": "channel_not_connected",
             }
             logger.warning(
-                "Autonomous send skipped for conversation %s: WhatsApp not connected",
+                "Autonomous send skipped for conversation %s: %s not connected",
                 conversation.id,
+                _channel_label(conversation.channel),
             )
             return None
 
@@ -316,11 +389,12 @@ class MessagingService:
             message.status = "failed"
             message.ai_meta = {
                 **(message.ai_meta or {}),
-                "failure_reason": "whatsapp_window_expired",
+                "failure_reason": "channel_window_expired",
             }
             logger.warning(
-                "Autonomous send skipped for conversation %s: WhatsApp 24h service window expired",
+                "Autonomous send skipped for conversation %s: %s 24h service window expired",
                 conversation.id,
+                _channel_label(conversation.channel),
             )
             return None
 
@@ -378,10 +452,11 @@ class MessagingService:
 
         try:
             wa_message_id = sender(
-                business.whatsapp_phone_number_id,
-                customer.wa_phone,
+                send_context.external_account_id,
+                send_context.external_conversation_id,
                 message.body,
-                access_token=get_access_token(credential),
+                access_token=send_context.access_token,
+                channel=send_context.channel,
             )
             message.status = "sent"
             message.wa_message_id = wa_message_id
@@ -394,7 +469,7 @@ class MessagingService:
             # than overwriting it with the send failure and losing why the
             # turn actually failed.
             message.status = "failed"
-            message.ai_meta = {"failure_reason": "whatsapp_send_failed", **(message.ai_meta or {})}
+            message.ai_meta = {"failure_reason": "channel_send_failed", **(message.ai_meta or {})}
             logger.exception("Autonomous send failed for conversation %s", conversation.id)
 
         return on_commit_failure
@@ -415,9 +490,10 @@ class MessagingService:
 
         Raises ValueError if the message isn't an approvable pending reply
         for this business. Raises WhatsAppNotConnectedError up front
-        (before any tool call or send is attempted) if the business has no
-        WhatsApp number/credentials configured. Raises
-        WhatsAppWindowExpiredError (after marking the message failed) if
+        (before any tool call or send is attempted; despite the name, this
+        covers any channel — see `_resolve_send_context()`, Sprint 65 PR 5)
+        if the conversation's channel has no usable stored credential.
+        Raises WhatsAppWindowExpiredError (after marking the message failed) if
         the customer's 24-hour service window has closed — checked after
         claiming but before any tool call, so a booking can't execute with
         no way left to tell the customer it happened. Raises CalendarError
@@ -444,11 +520,11 @@ class MessagingService:
         business = self._db.get(Business, business_id)
         customer = self._db.get(Customer, conversation.customer_id)
 
-        if not business.whatsapp_phone_number_id:
-            raise WhatsAppNotConnectedError("This business has not connected WhatsApp yet")
-        credential = get_stored_credential(self._db, business_id)
-        if credential is None:
-            raise WhatsAppNotConnectedError("This business has not connected WhatsApp yet")
+        send_context = self._resolve_send_context(business, customer, conversation)
+        if send_context is None:
+            raise WhatsAppNotConnectedError(
+                f"This business has not connected {_channel_label(conversation.channel)} yet"
+            )
 
         claimed = self._db.execute(
             update(Message)
@@ -466,16 +542,18 @@ class MessagingService:
             message.status = "failed"
             message.ai_meta = {
                 **(message.ai_meta or {}),
-                "failure_reason": "whatsapp_window_expired",
+                "failure_reason": "channel_window_expired",
             }
             self._db.commit()
+            channel_label = _channel_label(conversation.channel)
             logger.warning(
-                "WhatsApp 24h service window expired for message %s (business %s); not sent",
+                "%s 24h service window expired for message %s (business %s); not sent",
+                channel_label,
                 message_id,
                 business_id,
             )
             raise WhatsAppWindowExpiredError(
-                "The customer's 24-hour WhatsApp service window has closed. "
+                f"The customer's 24-hour {channel_label} service window has closed. "
                 "A template message would be required to reach them now, which isn't "
                 "supported yet."
             )
@@ -519,10 +597,11 @@ class MessagingService:
 
         try:
             wa_message_id = sender(
-                business.whatsapp_phone_number_id,
-                customer.wa_phone,
+                send_context.external_account_id,
+                send_context.external_conversation_id,
                 message.body,
-                access_token=get_access_token(credential),
+                access_token=send_context.access_token,
+                channel=send_context.channel,
             )
         except Exception:
             # Previously `except WhatsAppSendError` only. This message was
@@ -544,7 +623,7 @@ class MessagingService:
             # tool call ran with commit=False — cleans that up before the
             # original exception propagates.
             message.status = "failed"
-            message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "whatsapp_send_failed"}
+            message.ai_meta = {**(message.ai_meta or {}), "failure_reason": "channel_send_failed"}
             try:
                 self._db.commit()
             except Exception:
@@ -573,15 +652,33 @@ class MessagingService:
         logger.info("Sent reply %s for business %s", message_id, business_id)
         return message
 
-    def _send(self, phone_number_id: str, to: str, body: str, *, access_token: str) -> str:
+    def _send(
+        self,
+        external_account_id: str,
+        external_conversation_id: str,
+        body: str,
+        *,
+        access_token: str,
+        channel: str,
+    ) -> str:
         """The default `sender`: routes through ChannelManager -> the
-        channel registry -> WhatsAppProvider.send() instead of calling the
-        Graph API directly. Replaces the standalone
+        channel registry -> the resolved Provider's send() instead of
+        calling a Graph API directly. Replaces the standalone
         `app.services.messaging.send_via_channel_manager()` (Sprint 64A
         PR 6), now private to this class rather than a free function three
         other modules imported — "no remaining adapter layer" (PR 7 scope)
         means this logic has exactly one caller-facing home, not zero
         implementations of it.
+
+        Sprint 65 PR 5: generalized from a WhatsApp-only implementation —
+        `channel` (from `_resolve_send_context()`) now selects the DTO tag
+        `ChannelManager` resolves a provider from, instead of a hardcoded
+        `"whatsapp"` literal. `external_account_id`/`external_conversation_id`
+        replace the old `phone_number_id`/`to` parameter names, but keep the
+        exact same positional order and kwarg-only `access_token` — every
+        existing test-injected `sender` fake already accepts arbitrary
+        `**kwargs`, so the new `channel` kwarg is silently absorbed by all
+        of them without any test changes needed.
 
         Preserves the exact contract `send_via_channel_manager` and,
         before it, `send_text` had: raise WhatsAppSendError on any
@@ -589,15 +686,17 @@ class MessagingService:
         `send_reply`/`approve_and_send` above (and every test injecting
         its own `sender`) need no change to their exception handling.
         """
-        message = OutboundMessage(channel="whatsapp", external_conversation_id=to, text=body)
+        message = OutboundMessage(
+            channel=channel, external_conversation_id=external_conversation_id, text=body
+        )
         creds = ChannelCredentials(
-            channel="whatsapp", access_token=access_token, external_account_id=phone_number_id
+            channel=channel, access_token=access_token, external_account_id=external_account_id
         )
         try:
             receipt = ChannelManager().send(message, creds)
         except ChannelError as exc:
             raise WhatsAppSendError(str(exc)) from exc
         if receipt.status == "failed":
-            raise WhatsAppSendError(receipt.error or "WhatsApp send failed")
+            raise WhatsAppSendError(receipt.error or f"{_channel_label(channel)} send failed")
         assert receipt.external_message_id is not None  # invariant when status == "sent"
         return receipt.external_message_id

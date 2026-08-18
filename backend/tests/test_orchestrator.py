@@ -1678,7 +1678,7 @@ def test_autonomous_mode_escalates_when_the_whatsapp_send_itself_fails(db_sessio
 
     outbound = db_session.scalars(select(Message).where(Message.direction == "outbound")).one()
     assert outbound.status == "failed"
-    assert outbound.ai_meta["failure_reason"] == "whatsapp_send_failed"
+    assert outbound.ai_meta["failure_reason"] == "channel_send_failed"
     db_session.refresh(conversation)
     assert conversation.status == "escalated"
     escalation = db_session.scalars(

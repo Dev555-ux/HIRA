@@ -75,6 +75,8 @@ These are checked by repository-wide grep, not just code review — re-run them 
 
 A capability-adjacent invariant worth naming separately, since it's the one that actually makes §8 cheap: **no layer above the provider branches on channel name.** `ChannelManager` and `MessagingService` check `provider.capabilities().supports(Capability.X)`, never `if channel == "whatsapp"`. `grep -rn '== "whatsapp"' app/services/channel_manager.py app/services/messaging_service.py` should return nothing.
 
+**One deliberate, documented exception** (Sprint 65 PR 5), the same shape as invariant 7's playground.py exception: `MessagingService._resolve_send_context()` is the single place that dispatches on `conversation.channel` to pick which credential table backs an outbound send (`WhatsAppCredential` vs `InstagramCredential` — genuinely different tables with different fields, not something a capability flag can express). This was flagged as real, expected work in §10's "Known limitations" (credential resolution being WhatsApp-specific) before any second channel existed — not a redesign discovered after the fact. Everything *else* in `send_reply()`/`approve_and_send()` — tool execution, status transitions, retry, capability checks — stays 100% channel-agnostic; only credential *sourcing* branches. `grep -n 'conversation.channel ==' app/services/messaging_service.py` should return matches only inside `_resolve_send_context()`; any other hit is a real violation of this invariant.
+
 ---
 
 ## 4. Data flow
@@ -345,6 +347,8 @@ A provider declares what it supports via `capabilities() -> CapabilitySet`; `Cha
 
 **WhatsApp today** (`WhatsAppProvider.capabilities()`): `{TEXT}` only. This is not a limitation of Meta's platform — it is a direct read of what this codebase's send/receive path actually implements (`_extract_text` only reads a body for `type == "text"`; `send_text`/`send_text_once` only ever build `type: "text"` payloads). Update this the moment media/template support is actually built — not before.
 
+**Instagram today** (`InstagramProvider.capabilities()`, Sprint 65 PR 5): `{TEXT}` only, same reasoning — `send_instagram_message()` only ever builds a plain-text `message.text` payload; no media, reactions, typing indicators, or read receipts are sent or received. Media/story-reply/reaction support is real future work (see `app/channels/instagram/parsing.py`'s own module docstring for exactly which inbound shapes already normalize to an empty body), not modeled here.
+
 **A realistic read on future channels**, useful when scoping a new provider's `capabilities()` — not a commitment, a planning aid:
 
 | Capability | WhatsApp | Instagram | Messenger | Email | Web Chat |
@@ -451,7 +455,7 @@ Carried forward from the Sprint 64A PR 7 report — read this before assuming an
 
 - **Tool execution lives inside `MessagingService`** (`execute_tool_call` is imported and called from `send_reply()`/`approve_and_send()`). A messaging-orchestration class currently also triggers calendar/CRM side effects. This is inherited from the pre-Sprint-64A design (sending and governed tool execution were already one atomic step); a cleaner AI/CRM-vs-Messaging boundary is real future work, not something this architecture pass attempted.
 - **Session-window semantics (`Conversation.window_expires_at`, the 24h rule) are applied unconditionally**, not gated behind a capability check. Fine with one channel; before a channel with no such window (Email, Web Chat) shares this code path, this needs a `Capability.SESSION_WINDOW`-style check rather than an unconditional 24h extension.
-- **Credential resolution is WhatsApp-specific** (`get_stored_credential`/`WhatsAppCredential`). A business with two connected channels needs a per-channel credential lookup — not built. See §8 step 7.
+- **Credential resolution** (`MessagingService._resolve_send_context()`, Sprint 65 PR 5) now dispatches WhatsApp vs. Instagram — the two channels that exist today — but is still a closed `if/elif`, not a registry a third channel plugs into automatically. Adding a third channel means extending that method, not just registering a provider. See §3's note on this invariant's one documented exception.
 - **`send_text()`/`send_text_once()` retry-loop duplication**: `send_text()` has zero production callers as of PR 6/7 but is retained (and independently tested) because nothing has ported its direct tests to the transport-level stub pattern yet. Candidate for deletion once that porting happens.
 - **Shadow Mode (`app/channels/whatsapp/shadow.py`) is dormant**, not deleted. It compared the legacy inline WhatsApp parser against `WhatsAppProvider` during the PR 3→5 migration; there's nothing left to compare it against now that production and the shadow path share one parser. Its comparator/metrics/logging are generic enough to repoint at a future migration (e.g., validating a rewritten provider, or an Instagram provider's first weeks in production) — see its own module docstring before reusing it.
 - **The capability matrix in §7 is a planning aid, not a spec** — verify against the actual platform's current API before building a provider against it. Platform capabilities change; this table won't be kept in sync automatically.

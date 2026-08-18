@@ -154,7 +154,7 @@ def test_approve_returns_409_when_whatsapp_window_expired(db_session):
     assert sent == []  # Meta API was never attempted
     db_session.refresh(msg)
     assert msg.status == "failed"
-    assert msg.ai_meta["failure_reason"] == "whatsapp_window_expired"
+    assert msg.ai_meta["failure_reason"] == "channel_window_expired"
     app.dependency_overrides.clear()
 
 

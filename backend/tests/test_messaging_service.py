@@ -259,7 +259,7 @@ def test_send_success_returns_the_provider_message_id(db_session, monkeypatch):
     monkeypatch.setattr(httpx.Client, "post", fake_post)
 
     result = MessagingService(db_session)._send(
-        "PN1", "+15551230000", "hi", access_token="test-token"
+        "PN1", "+15551230000", "hi", access_token="test-token", channel="whatsapp"
     )
 
     assert result == "wamid.sent-1"
@@ -274,4 +274,6 @@ def test_send_failure_raises_whatsapp_send_error(db_session, monkeypatch):
     monkeypatch.setattr(httpx.Client, "post", fake_post)
 
     with pytest.raises(WhatsAppSendError):
-        MessagingService(db_session)._send("PN1", "+15551230000", "hi", access_token="bad-token")
+        MessagingService(db_session)._send(
+            "PN1", "+15551230000", "hi", access_token="bad-token", channel="whatsapp"
+        )
