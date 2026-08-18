@@ -42,4 +42,5 @@ def register_all() -> None:
     guarantees `get_default_registry().get(channel_id)` can find the
     provider when something legitimately does.
     """
+    import app.channels.instagram  # noqa: F401
     import app.channels.whatsapp  # noqa: F401

@@ -16,6 +16,12 @@ _INSECURE_PRODUCTION_DEFAULTS = {
     "whatsapp_verify_token": "dev-verify-token",
     "whatsapp_app_secret": "dev-app-secret",
     "whatsapp_access_token": "dev-access-token",
+    # instagram_verify_token deliberately NOT here yet: this guard blocks
+    # production startup for every deployment the moment a field is added,
+    # and Sprint 65 PR 1 ships no reachable Instagram webhook route — every
+    # currently-live deployment would fail to boot over an unset env var
+    # for a feature nothing can hit yet. Add it here in the same PR that
+    # actually stands up app/webhooks/instagram.py, not before.
     # Sprint 69.5: "mock" returns a canned reply to every real customer with
     # no error, no crash, and nothing in Sentry — the most severe silent
     # misconfiguration this guard can catch.
@@ -72,6 +78,15 @@ class Settings(BaseSettings):
     whatsapp_access_token: str = "dev-access-token"
     whatsapp_api_base: str = "https://graph.facebook.com"
     whatsapp_graph_version: str = "v21.0"
+
+    # Instagram / Meta (Sprint 65 PR 1 — foundation only; no webhook route
+    # exists yet, so this isn't reachable in production today). Meta's
+    # subscription-handshake verify token is configured per webhook
+    # callback URL in the Meta App dashboard, not shared across products —
+    # deliberately a distinct setting from whatsapp_verify_token, not a
+    # reuse of it, even though HIRA's WhatsApp and Instagram integrations
+    # may eventually live under the same Meta App.
+    instagram_verify_token: str = "dev-verify-token"
 
     # WhatsApp Embedded Signup (Track B / ONBOARD-E, TODOS.md, DEC-052).
     # Master kill-switch: OFF means production keeps using the existing

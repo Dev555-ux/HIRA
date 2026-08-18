@@ -20,7 +20,14 @@ import subprocess
 import sys
 
 
-def test_importing_app_main_registers_whatsapp_in_a_fresh_process():
+def test_importing_app_main_registers_every_channel_in_a_fresh_process():
+    """Sprint 65 PR 1 added InstagramProvider to `register_all()` alongside
+    WhatsAppProvider — registered, not routed (see
+    `app/channels/__init__.py::register_all()`'s docstring): no webhook
+    route or MessagingService path resolves "instagram" yet. This test
+    asserts both are present after a genuinely fresh `app.main` import,
+    the same guarantee this test originally existed to prove for WhatsApp
+    alone."""
     result = subprocess.run(
         [
             sys.executable,
@@ -34,7 +41,9 @@ def test_importing_app_main_registers_whatsapp_in_a_fresh_process():
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "whatsapp" in result.stdout, (
-        f"Default registry did not contain 'whatsapp' after importing app.main "
-        f"in a fresh process. stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
+    for channel_id in ("whatsapp", "instagram"):
+        assert channel_id in result.stdout, (
+            f"Default registry did not contain {channel_id!r} after importing "
+            f"app.main in a fresh process. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
