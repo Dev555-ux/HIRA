@@ -152,13 +152,12 @@ class TestJobOutboxMigration:
     def test_migration_leaves_a_single_head(self):
         # Pinned to the current chain tip, not literally c8f2e91a4b3d (this
         # PR's own migration) — bumped whenever a later migration is
-        # appended (most recently 82bc3b6617e7, High-priority audit fix: CI
-        # tests against real migrations — the two indexes it adds are
-        # exactly the drift the new alembic-built test schema surfaced),
+        # appended (most recently 5dc1b9c22f2d, Sprint 65 PR 2: add
+        # instagram_credentials and instagram_oauth_attempts tables),
         # same maintenance this assertion has always implied.
         cfg = Config(str(BACKEND_DIR / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["82bc3b6617e7"]
+        assert script.get_heads() == ["5dc1b9c22f2d"]
 
     def test_upgrade_then_downgrade_round_trips(self):
         module = _load_migration_module()

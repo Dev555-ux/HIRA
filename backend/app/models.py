@@ -345,6 +345,68 @@ class WhatsAppCredential(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
+class InstagramCredential(Base):
+    """A business's connected Instagram professional account (Sprint 65 PR
+    2) — mirrors WhatsAppCredential's shape: one row per business, secrets
+    encrypted at rest with the same Fernet key. `instagram_business_account_id`
+    is additionally unique so one IG account can't be claimed by two
+    businesses (app/instagram/credentials.py turns a violation into a clear
+    409, not a raw IntegrityError)."""
+
+    __tablename__ = "instagram_credentials"
+    __table_args__ = (
+        UniqueConstraint(
+            "instagram_business_account_id", name="uq_instagram_credentials_ig_account_id"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), unique=True
+    )
+    page_id: Mapped[str] = mapped_column(String(64))
+    page_access_token_encrypted: Mapped[str] = mapped_column(Text)
+    instagram_business_account_id: Mapped[str] = mapped_column(String(64))
+    instagram_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # connected | needs_reconnect | invalid_credentials | permission_revoked
+    # — see app/instagram/credentials.py::check_connection_health for how
+    # this is (re)computed; there is no "disconnected" value here, that
+    # state is the row's absence, same convention as stored/None elsewhere.
+    connection_status: Mapped[str] = mapped_column(String(24), default="connected")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class InstagramOAuthAttempt(Base):
+    """Short-lived, server-side bridge for Instagram's OAuth connect flow
+    (Sprint 65 PR 2). Two jobs, one row, reused across the flow's two phases
+    rather than two tables:
+
+    1. Before the callback: `state` is the signed, single-use nonce
+       app/instagram/oauth.py issues — adds single-use enforcement
+       app/calendar/oauth.py's own state scheme doesn't have (it only checks
+       signature + age).
+    2. After a callback that finds more than one eligible Page:
+       `user_access_token_encrypted` + `selection_token` turn this same row
+       into the temporary handle `POST /connect/finalize` uses to complete a
+       specific choice, without ever sending a raw Meta access token to the
+       frontend and back.
+    """
+
+    __tablename__ = "instagram_oauth_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"))
+    state: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    selection_token: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
+    user_access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class ExecutionTrace(Base):
     """One row per customer turn's app/ai/plan.py::ExecutionPlan (Sprint 76)
     — a dedicated table, not another ai_meta key, because a trace is

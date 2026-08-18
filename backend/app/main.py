@@ -26,6 +26,7 @@ from app.api.embedded_signup import router as embedded_signup_router
 from app.api.escalations import router as escalations_router
 from app.api.founder_ops import outbox_router as outbox_jobs_router
 from app.api.founder_ops import router as founder_ops_router
+from app.api.instagram import router as instagram_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.leads import router as leads_router
 from app.api.onboarding import router as onboarding_router
@@ -217,6 +218,7 @@ app.include_router(appointments_router)
 app.include_router(escalations_router)
 app.include_router(founder_ops_router)
 app.include_router(outbox_jobs_router)
+app.include_router(instagram_router)
 
 
 @app.get("/health")

@@ -88,6 +88,20 @@ class Settings(BaseSettings):
     # may eventually live under the same Meta App.
     instagram_verify_token: str = "dev-verify-token"
 
+    # Instagram OAuth / connection flow (Sprint 65 PR 2). Empty by default
+    # like google_client_id/secret above; app/instagram/oauth.py raises a
+    # clear, actionable error if a real connect is attempted without these
+    # set. Uses classic scope-based Facebook Login (client_id + scope), not
+    # the config_id "Business Login" product embedded_signup_config_id above
+    # is for — that one needs a Meta Business Login configuration Meta only
+    # provisions after Tech Provider approval; this one is a standard OAuth
+    # app any Meta Developer account can create and exercise today in
+    # Development Mode against the founder's own test Pages.
+    instagram_app_id: str = ""
+    instagram_app_secret: str = ""
+    instagram_oauth_redirect_uri: str = ""
+    instagram_graph_version: str = "v21.0"
+
     # WhatsApp Embedded Signup (Track B / ONBOARD-E, TODOS.md, DEC-052).
     # Master kill-switch: OFF means production keeps using the existing
     # guided-manual connect flow (app/api/whatsapp.py) untouched — no route
