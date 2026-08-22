@@ -7,8 +7,13 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://stoneveil.in"),
   title: "HIRA Dashboard",
   description: "Manage your AI employee's conversations, bookings, and leads.",
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({
