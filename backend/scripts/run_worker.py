@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import logging
 
-from app.jobs.worker import OutboxWorker
-
 # Importing this module registers the AI-reply handler (PR 4) so the worker can
 # discover it. Every production task handler must be imported here before the
 # loop starts polling; add later workflows' modules alongside it as they land.
-import app.ai.tasks  # noqa: F401 — imported for its handler-registration side effect
+import app.ai.tasks  # imported for its handler-registration side effect
+import app.whatsapp.conversion_tasks  # noqa: F401 — registers the LeadSubmitted handler
+from app.jobs.worker import OutboxWorker
 
 
 def main() -> None:

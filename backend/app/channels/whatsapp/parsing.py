@@ -71,7 +71,16 @@ def parse_messages(messages: list[dict], contacts: list[dict]) -> list[Normalize
     and `external_sender_id` are both the customer's WhatsApp phone number
     (`wa_id`/`from`) — WhatsApp has no separate per-thread id, so the phone
     number *is* the thread identity, matched to a HIRA `Conversation`
-    downstream."""
+    downstream.
+
+    `referral.ctwa_clid` (Sprint 73) is Meta's click id for a Click-to-
+    WhatsApp ad, present only on the first message of an ad-originated
+    thread and absent from every other message — hence `or None`, so an
+    empty string from a malformed payload is treated as "no click id"
+    rather than a falsy-but-present value the conversions path would then
+    have to re-check. The rest of the `referral` object (source_id,
+    headline, body, ...) is deliberately not extracted: nothing needs it,
+    and it stays available in `.raw` if that changes."""
     names = {contact.get("wa_id"): contact.get("profile", {}).get("name") for contact in contacts}
     return [
         NormalizedMessage(
@@ -81,6 +90,7 @@ def parse_messages(messages: list[dict], contacts: list[dict]) -> list[Normalize
             external_sender_id=msg.get("from", ""),
             sender_display_name=names.get(msg.get("from")),
             text=_extract_text(msg),
+            ctwa_clid=msg.get("referral", {}).get("ctwa_clid") or None,
             raw=msg,
         )
         for msg in messages
