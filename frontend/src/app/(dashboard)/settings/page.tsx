@@ -627,7 +627,7 @@ const ACCESS_TOKEN_HELP = [
   {
     title: "Generate a permanent access token",
     description:
-      'From that System User: Generate New Token → select your App → grant the "whatsapp_business_messaging" and "whatsapp_business_management" permissions → copy the token immediately (Meta only shows it once).',
+      'From that System User: Generate New Token → select your App → grant the "whatsapp_business_messaging", "whatsapp_business_management" and "whatsapp_business_manage_events" permissions → copy the token immediately (Meta only shows it once).',
     guideUrl: "https://developers.facebook.com/docs/whatsapp/business-management-api/get-started",
   },
 ];

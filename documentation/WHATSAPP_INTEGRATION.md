@@ -101,6 +101,40 @@ Code map:
    - Verify token: the same string as `WHATSAPP_VERIFY_TOKEN`
    - Subscribe to the **messages** field.
 
+### Conversions API for Business Messaging (Sprint 73)
+
+HIRA reports **one** conversion event to Meta: `LeadSubmitted`, sent when a `Lead` moves into the `qualified` stage *and* its conversation originated from a Click-to-WhatsApp ad. No other event (Purchase, Schedule, …) is implemented, and nothing is backfilled.
+
+**Token permission**: the System User token must additionally grant **`whatsapp_business_manage_events`** on top of `whatsapp_business_messaging` + `whatsapp_business_management`. Without it both Graph calls below return a 4xx; the rest of the product is unaffected (the conversion job fails permanently and is visible in `job_outbox`, nothing else breaks).
+
+**Flow**:
+
+1. Meta puts `referral.ctwa_clid` on the **first** inbound message of an ad-originated thread. `app/channels/whatsapp/parsing.py` lifts it onto `NormalizedMessage.ctwa_clid`; `MessagingService.record_inbound` writes it once to `conversations.ctwa_clid` and never overwrites it.
+2. `update_lead` (stage → `qualified`) calls `enqueue_lead_submitted`, which enqueues an outbox job **inside the caller's transaction** under `idempotency_key = "ctwa_lead_submitted:{lead_id}"`. No `ctwa_clid` → nothing is queued and nothing is sent; the lead is simply *not attributable to a Click-to-WhatsApp ad*. Meta does **not** deduplicate these events, so that unique key is the only thing standing between a re-qualified lead and a duplicate conversion.
+3. The worker runs `app/whatsapp/conversion_tasks.py`, which resolves the dataset id if it isn't cached yet and posts the event:
+   - `GET  /{version}/{WABA_ID}/dataset` → cached on `businesses.whatsapp_dataset_id` (never fabricated; a WABA with no dataset fails the job rather than inventing an id).
+   - `POST /{version}/{DATASET_ID}/events` with `action_source: "business_messaging"`, `messaging_channel: "whatsapp"`, `user_data: {whatsapp_business_account_id, ctwa_clid}`, `partner_agent: "hira"`.
+
+Both calls reuse `WHATSAPP_API_BASE` + `WHATSAPP_GRAPH_VERSION` and the business's own stored `WhatsAppCredential` token — no new environment variable, no new credential store.
+
+**Live verification status**: ⚠️ **deferred, and confirmed blocked**. Every path above is covered by unit/integration tests against a mocked Graph transport (`backend/tests/test_whatsapp_conversions.py`, 29 tests). Nothing in the code simulates or asserts a successful live send.
+
+A live `GET /{version}/debug_token` against the currently configured System User token (2026-08-24) returns `type: SYSTEM_USER`, `is_valid: true`, `expires_at: 0`, scopes:
+
+```
+public_profile, whatsapp_business_management, whatsapp_business_messaging
+```
+
+`whatsapp_business_manage_events` is **not** granted.
+
+A live `GET /v21.0/{WABA_ID}/dataset` against the real test WABA (`2511632579311134`, "HIRA Test Business") on 2026-08-24 returned **`200 {"data": []}`** — *not* a 4xx. So the failure mode here is "no dataset exists," not "permission denied": `resolve_dataset_id()` raises `ConversionEventError(retryable=False)` on the empty list, and the job fails permanently rather than reporting a false success. That branch is now verified against the live Graph API, not just against a mock.
+
+**Known gap this surfaced**: a dataset is *created* by `POST /{WABA_ID}/dataset` (per Meta's onboarding guide). This implementation only reads (`GET`) — it can use a dataset that exists but cannot provision one. Deliberate: creating an ads dataset on a business's account is a side effect worth an explicit decision, not something a background job should do silently on first qualify. Decide before the live demo (see TODOS.md ONBOARD-G).
+
+**Known gap — attribution window**: Meta drops events sent more than **7 days** after the ad click, and accepts only one CAPI event per ad click. The one-event rule is enforced (outbox `idempotency_key`); the 7-day rule is **not** — `conversations.ctwa_clid` has no timestamp, so a lead qualified two weeks after the click still enqueues a job that Meta will silently discard. Add `ctwa_clid_at` and skip past-window events if that waste matters.
+
+Closing live verification needs (a) Advanced Access for `whatsapp_business_messaging` (which auto-grants `whatsapp_business_manage_events`), (b) a regenerated System User token carrying the new scope, (c) a provisioned dataset, and (d) a real Click-to-WhatsApp ad driving a real click, so an actual `ctwa_clid` exists to report against. Nothing here is fabricated anywhere in the code or the tests.
+
 ### Test with curl
 
 Webhook verification (GET handshake):
