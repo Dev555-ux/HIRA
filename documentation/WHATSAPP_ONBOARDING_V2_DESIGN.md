@@ -46,9 +46,10 @@ What HIRA **cannot** automate, by Meta's own design (and shouldn't try to): the 
 
 ### 4. Which permissions are requested?
 
-Two scopes, granted to HIRA's Tech Provider app when the business completes the flow:
-- `whatsapp_business_management` — read/manage the business's WABA settings and message templates.
+Three scopes, granted to HIRA's Tech Provider app when the business completes the flow:
+- `whatsapp_business_management` — read/manage the business's WABA settings and message templates. Also required to look up the WABA's Conversions API `dataset_id`.
 - `whatsapp_business_messaging` — send and receive messages on the business's behalf (the one HIRA's core product depends on).
+- `whatsapp_business_manage_events` — log Business Messaging conversion events (Sprint 73: `LeadSubmitted` for leads that originated from a Click-to-WhatsApp ad). Without it the dataset lookup and the event POST both fail with a 4xx; nothing else in the product is affected.
 
 ### 5. What tokens are issued?
 

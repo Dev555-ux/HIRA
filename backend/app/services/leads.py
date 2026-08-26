@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.core.time import to_iso_utc
 from app.db.tenant import get_scoped
 from app.models import Customer, Lead, LeadEvent, User
+from app.whatsapp.conversion_tasks import QUALIFIED_STAGE, enqueue_lead_submitted
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def _normalize_follow_up(value: datetime | None) -> datetime | None:
     DateTime column in this schema (created_at, resolved_at, window_expires_at)."""
     if value is None or value.tzinfo is None:
         return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _stringify(value: Any) -> str | None:
@@ -195,9 +196,12 @@ def update_lead(
         updates["next_follow_up_at"] = _normalize_follow_up(updates["next_follow_up_at"])
 
     events = []
+    entered_qualified = False
     for field, value in updates.items():
         old_value = getattr(lead, field)
         setattr(lead, field, value)
+        if field == "stage" and value == QUALIFIED_STAGE and old_value != QUALIFIED_STAGE:
+            entered_qualified = True
         if field in _EVENT_FIELDS and old_value != value:
             events.append(
                 LeadEvent(
@@ -209,6 +213,19 @@ def update_lead(
             )
 
     db.add_all(events)
+    if entered_qualified:
+        # Sprint 73: report the qualification to Meta as a LeadSubmitted
+        # conversion event, but only for ad-originated conversations and only
+        # through the outbox — enqueued here, inside this function's
+        # transaction, so it commits (or rolls back) with the stage change
+        # itself and never blocks this request on a Graph API call. A no-op
+        # for leads with no ctwa_clid, and idempotent per lead.
+        #
+        # Deliberately *only* the transition: a lead created directly at
+        # stage="qualified" via POST /api/v1/leads does not fire. That
+        # matches the trigger as specified; widen it here (create_lead) if
+        # direct-to-qualified creation ever needs reporting too.
+        enqueue_lead_submitted(db, lead)
     if commit:
         db.commit()
         db.refresh(lead)

@@ -21,9 +21,9 @@ Future integration point: `ChannelProvider.parse_webhook()` returns
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Mapping
 
 
 class MediaKind(str, Enum):
@@ -80,6 +80,14 @@ class NormalizedMessage:
     text: str
     sender_display_name: str | None = None
     media: tuple[MediaRef, ...] = ()
+    # Ad-click id, when this message is the one that opened an ad-originated
+    # thread (Sprint 73). WhatsApp calls it `referral.ctwa_clid`; a provider
+    # that has no such concept simply leaves it None. Carried on the DTO
+    # rather than read out of `.raw` downstream for the same reason
+    # external_message_id is (see MessagingService.record_inbound's comment):
+    # `.raw` key names are channel-native and silently return None on any
+    # channel that doesn't share WhatsApp's payload shape.
+    ctwa_clid: str | None = None
     raw: Mapping[str, object] = field(default_factory=dict)
 
 

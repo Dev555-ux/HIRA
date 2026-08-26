@@ -39,7 +39,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable, Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -123,7 +123,7 @@ class MessagingService:
         job land atomically, unchanged from before this PR.
         """
         new_inbound: list[tuple] = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for normalized in messages:
             # Read straight from the original native payload (carried
             # unchanged on `.raw`) for these two fields — see PR 5's
@@ -159,6 +159,15 @@ class MessagingService:
             self._db.flush()
             conversation.last_message_at = now
             conversation.window_expires_at = now + SERVICE_WINDOW
+
+            # Sprint 73: capture the Click-to-WhatsApp click id the first
+            # (and only) time Meta sends it. Never overwritten — a later
+            # message in the same thread carries no referral object, and if
+            # a customer somehow re-enters through a second ad, the click
+            # that actually opened this conversation is the one Meta
+            # attributes against.
+            if conversation.ctwa_clid is None and normalized.ctwa_clid:
+                conversation.ctwa_clid = normalized.ctwa_clid
 
             if settings.use_transactional_outbox:
                 # Local import: app.ai.tasks imports app.ai.processing at
@@ -298,7 +307,7 @@ class MessagingService:
 
         if (
             conversation.window_expires_at is not None
-            and datetime.now(timezone.utc).replace(tzinfo=None) > conversation.window_expires_at
+            and datetime.now(UTC).replace(tzinfo=None) > conversation.window_expires_at
         ):
             message.status = "failed"
             message.ai_meta = {
@@ -448,7 +457,7 @@ class MessagingService:
 
         if (
             conversation.window_expires_at is not None
-            and datetime.now(timezone.utc).replace(tzinfo=None) > conversation.window_expires_at
+            and datetime.now(UTC).replace(tzinfo=None) > conversation.window_expires_at
         ):
             message.status = "failed"
             message.ai_meta = {

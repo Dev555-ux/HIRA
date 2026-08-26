@@ -53,6 +53,13 @@ class Business(Base):
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     whatsapp_phone_number_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     whatsapp_business_account_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Meta Conversions API for Business Messaging (Sprint 73): the dataset a
+    # LeadSubmitted event is posted to. Not a secret and not something a
+    # business enters — resolved lazily from `GET /{WABA_ID}/dataset` the
+    # first time a conversion event is actually sent, then cached here (see
+    # app/whatsapp/conversions.py::resolve_dataset_id). NULL means "not
+    # looked up yet," never "no dataset" — nothing fabricates a value.
+    whatsapp_dataset_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # The actual dialable number (e.g. "+1 555 123 4567"), distinct from
     # whatsapp_phone_number_id (a Meta-internal identifier, not a phone
     # number). Meta returns this from the same verify_whatsapp_credentials()
@@ -129,6 +136,15 @@ class Conversation(Base):
     )
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | escalated | closed
+    # Click-to-WhatsApp click id (Sprint 73). Present only when this thread
+    # started from a CTWA ad — Meta puts it in the `referral` object on the
+    # *first* inbound message of such a conversation and never repeats it,
+    # so it is captured once (MessagingService.record_inbound) and never
+    # overwritten. NULL means this conversation is not attributable to an
+    # ad, which is the normal case; it is the hard precondition for sending
+    # a Conversions API event (app/whatsapp/conversions.py) and is never
+    # defaulted, guessed, or backfilled.
+    ctwa_clid: Mapped[str | None] = mapped_column(String(512), nullable=True)
     window_expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(nullable=True)
     # Rolling summary of this conversation's messages older than the raw
