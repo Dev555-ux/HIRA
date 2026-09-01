@@ -25,6 +25,18 @@ from app.jobs.worker import OutboxWorker
 # discover it. Every production task handler must be imported here before the
 # loop starts polling; add later workflows' modules alongside it as they land.
 import app.ai.tasks  # noqa: F401 — imported for its handler-registration side effect
+import app.whatsapp.conversion_tasks  # noqa: F401 — registers the LeadSubmitted handler
+
+# Handler registration above only makes the AI-reply job discoverable — actually
+# sending its reply resolves a channel provider (WhatsAppProvider) out of the same
+# registry app/main.py populates for the API process (see
+# app/channels/__init__.py::register_all's own docstring). This process never
+# imports app.main, so without this call that registry stays empty here and every
+# send raises ProviderNotFoundError, surfacing as a "Failed" outbound message
+# despite the AI reply being generated correctly.
+from app.channels import register_all as register_all_channels
+
+register_all_channels()
 
 
 def main() -> None:
