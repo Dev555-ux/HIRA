@@ -38,3 +38,32 @@ def test_importing_app_main_registers_whatsapp_in_a_fresh_process():
         f"Default registry did not contain 'whatsapp' after importing app.main "
         f"in a fresh process. stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+def test_importing_run_worker_registers_whatsapp_in_a_fresh_process():
+    """Same bug, second process: `scripts/run_worker.py` (the outbox worker,
+    where a production AI reply actually gets sent once
+    `USE_TRANSACTIONAL_OUTBOX=true`) never imports `app.main`, so the fix
+    above didn't cover it — the registry stayed empty there, and every
+    outbound send raised `ProviderNotFoundError`, surfacing to the founder as
+    a "Failed" reply despite the AI reply being generated correctly. Fixed by
+    `scripts/run_worker.py` calling `register_all()` itself at import time,
+    same as it already does for its own job handlers."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import scripts.run_worker\n"
+            "from app.channels.registry import get_default_registry\n"
+            "print(get_default_registry().available())",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "whatsapp" in result.stdout, (
+        f"Default registry did not contain 'whatsapp' after importing "
+        f"scripts.run_worker in a fresh process. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
