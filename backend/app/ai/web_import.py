@@ -74,6 +74,12 @@ def _extract_readable_text(soup: BeautifulSoup) -> str:
     for tag in soup.find_all(_NOISE_TAGS):
         tag.decompose()
     for tag in soup.find_all(True):
+        # decompose() recursively decomposes descendants too, but find_all(True)
+        # already materialized its full list before this loop started — a
+        # descendant of a just-decomposed ad container still shows up here,
+        # with .attrs wiped to None, so .get() below would crash on it.
+        if tag.decomposed:
+            continue
         classes = " ".join(tag.get("class") or [])
         identifier = f"{tag.get('id', '')} {classes}".lower()
         if any(hint in identifier for hint in _AD_HINTS):
