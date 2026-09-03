@@ -50,6 +50,36 @@ def test_fetch_page_strips_noise_and_extracts_paragraphs():
     assert "Copyright 2026 Acme" not in text
 
 
+def test_fetch_page_handles_ad_container_with_nested_tags():
+    # Regression: decompose() recursively decomposes descendants too, but the
+    # ad-hint loop iterates a list of *every* tag on the page, gathered before
+    # any decomposing starts. A nested tag inside a just-decomposed ad
+    # container still appears later in that list with its .attrs wiped to
+    # None, and .get("class") on it used to raise AttributeError — a 500 on
+    # any real page where an ad/promo/banner/sponsor container had a child
+    # element (extremely common: <div class="promo-banner"><span>...).
+    html = """
+    <html>
+      <head><title>Acme Clinic</title></head>
+      <body>
+        <div class="promo-banner"><span>50% off today!</span></div>
+        <main><p>We are open 9am to 5pm.</p></main>
+      </body>
+    </html>
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=html)
+
+    title, text = fetch_page(
+        "https://example.com", client=_client(handler), resolve_host=_resolve_public
+    )
+
+    assert title == "Acme Clinic"
+    assert "We are open 9am to 5pm." in text
+    assert "50% off today!" not in text
+
+
 def test_fetch_page_falls_back_to_body_text_without_block_tags():
     html = "<html><head><title>Plain</title></head><body><div>Just some text</div></body></html>"
 
