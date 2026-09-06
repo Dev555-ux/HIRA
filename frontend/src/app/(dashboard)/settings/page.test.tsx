@@ -309,27 +309,43 @@ describe("SettingsPage", () => {
     });
 
     describe("connection wizard", () => {
-      it("offers a collapsed setup guide on the intro step, expandable on demand (Sprint 72)", async () => {
+      it("offers per-field setup help, collapsed by default, expandable on demand (Sprint 72; DEC-053 split this per field)", async () => {
         const user = userEvent.setup();
         renderWithProviders();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
+        const dialog = screen.getByRole("dialog");
+        await user.click(within(dialog).getByRole("button", { name: "Connect WhatsApp" })); // entry -> phone
 
-        const toggle = screen.getByRole("button", { name: /need help finding these values/i });
-        expect(toggle).toHaveAttribute("aria-expanded", "false");
+        const appToggle = screen.getByRole("button", { name: /don't have a meta app yet/i });
+        expect(appToggle).toHaveAttribute("aria-expanded", "false");
         expect(screen.queryByText("Create a Meta App")).not.toBeInTheDocument();
 
-        await user.click(toggle);
+        await user.click(appToggle);
 
-        expect(toggle).toHaveAttribute("aria-expanded", "true");
+        expect(appToggle).toHaveAttribute("aria-expanded", "true");
         expect(screen.getByText("Create a Meta App")).toBeInTheDocument();
+        expect(screen.getAllByRole("link", { name: /meta's guide/i }).length).toBeGreaterThan(0);
+
+        // The System User / access-token help lives on the token step instead
+        // (DEC-053: relocated to where each is first needed, not upfront).
+        await user.type(screen.getByLabelText("Your WhatsApp Number", { selector: "input" }), "9876543210");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.type(screen.getByLabelText("Business Account", { selector: "input" }), "waba-123");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+
+        const tokenToggle = screen.getByRole("button", { name: /don't have an access token yet/i });
+        expect(tokenToggle).toHaveAttribute("aria-expanded", "false");
+        expect(screen.queryByText("Create a System User")).not.toBeInTheDocument();
+
+        await user.click(tokenToggle);
+
+        expect(tokenToggle).toHaveAttribute("aria-expanded", "true");
         expect(screen.getByText("Create a System User")).toBeInTheDocument();
         expect(screen.getByText("Generate a permanent access token")).toBeInTheDocument();
-        expect(screen.getByText("Configure the webhook")).toBeInTheDocument();
-        expect(screen.getAllByRole("link", { name: /meta's guide/i }).length).toBeGreaterThan(0);
       });
 
-      it("walks from why-connect to the real form, submits real credentials, and lands on webhook setup", async () => {
+      it("walks from the entry screen through the field-by-field form, submits real credentials, and lands on webhook setup (DEC-053/054 replaced the combined form)", async () => {
         const user = userEvent.setup();
         vi.mocked(api.connectWhatsApp).mockResolvedValue({
           connected: true,
@@ -342,24 +358,29 @@ describe("SettingsPage", () => {
         renderWithProviders();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
-        expect(screen.getByRole("heading", { name: "Connect WhatsApp" })).toBeInTheDocument();
-        expect(screen.getByText(/nothing changes for them/i)).toBeInTheDocument();
-
-        await user.click(screen.getByRole("button", { name: "I have these ready" }));
+        const dialog = screen.getByRole("dialog");
+        expect(within(dialog).getByRole("heading", { name: "Connect WhatsApp" })).toBeInTheDocument();
         expect(
-          screen.getByRole("heading", { name: "Connect WhatsApp for Bright Smile Dental Studio" }),
+          within(dialog).getByText(/your customers will continue using the same number/i),
         ).toBeInTheDocument();
 
-        const connectButton = screen.getByRole("button", { name: "Connect" });
-        expect(connectButton).toBeDisabled();
+        await user.click(within(dialog).getByRole("button", { name: "Connect WhatsApp" })); // entry -> phone
+        expect(screen.getByRole("heading", { name: "Your WhatsApp Number" })).toBeInTheDocument();
 
-        await user.type(screen.getByLabelText("Phone Number ID"), "9876543210");
-        await user.type(screen.getByLabelText("WhatsApp Business Account ID"), "waba-123");
-        await user.type(screen.getByLabelText("System User access token"), "real-access-token");
-        await user.type(screen.getByLabelText("App Secret"), "real-app-secret");
-        expect(connectButton).not.toBeDisabled();
+        await user.type(screen.getByLabelText("Your WhatsApp Number", { selector: "input" }), "9876543210");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
 
-        await user.click(connectButton);
+        expect(screen.getByRole("heading", { name: "Business Account" })).toBeInTheDocument();
+        await user.type(screen.getByLabelText("Business Account", { selector: "input" }), "waba-123");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+
+        expect(screen.getByRole("heading", { name: "Access Key" })).toBeInTheDocument();
+        await user.type(screen.getByLabelText("Access Key", { selector: "input" }), "real-access-token");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+
+        expect(screen.getByRole("heading", { name: "App Secret" })).toBeInTheDocument();
+        await user.type(screen.getByLabelText("App Secret", { selector: "input" }), "real-app-secret");
+        await user.click(screen.getByRole("button", { name: "Connect" }));
 
         await waitFor(() =>
           expect(api.connectWhatsApp).toHaveBeenCalledWith(expect.any(Function), {
@@ -475,11 +496,15 @@ describe("SettingsPage", () => {
         renderWithProviders();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
-        await user.click(screen.getByRole("button", { name: "I have these ready" }));
-        await user.type(screen.getByLabelText("Phone Number ID"), "9876543210");
-        await user.type(screen.getByLabelText("WhatsApp Business Account ID"), "waba-123");
-        await user.type(screen.getByLabelText("System User access token"), "real-access-token");
-        await user.type(screen.getByLabelText("App Secret"), "real-app-secret");
+        const dialog = screen.getByRole("dialog");
+        await user.click(within(dialog).getByRole("button", { name: "Connect WhatsApp" })); // entry -> phone
+        await user.type(screen.getByLabelText("Your WhatsApp Number", { selector: "input" }), "9876543210");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.type(screen.getByLabelText("Business Account", { selector: "input" }), "waba-123");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.type(screen.getByLabelText("Access Key", { selector: "input" }), "real-access-token");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.type(screen.getByLabelText("App Secret", { selector: "input" }), "real-app-secret");
         await user.click(screen.getByRole("button", { name: "Connect" }));
 
         expect(await screen.findByText("Couldn't load your webhook details")).toBeInTheDocument();
@@ -503,42 +528,40 @@ describe("SettingsPage", () => {
         renderWithProviders();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
-        await user.click(screen.getByRole("button", { name: "I have these ready" }));
-        await user.type(screen.getByLabelText("Phone Number ID"), "9876543210");
-        await user.type(screen.getByLabelText("WhatsApp Business Account ID"), "waba-123");
-        await user.type(screen.getByLabelText("System User access token"), "bad-token");
-        await user.type(screen.getByLabelText("App Secret"), "real-app-secret");
+        const dialog = screen.getByRole("dialog");
+        await user.click(within(dialog).getByRole("button", { name: "Connect WhatsApp" })); // entry -> phone
+        await user.type(screen.getByLabelText("Your WhatsApp Number", { selector: "input" }), "9876543210");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.type(screen.getByLabelText("Business Account", { selector: "input" }), "waba-123");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.type(screen.getByLabelText("Access Key", { selector: "input" }), "bad-token");
+        await user.click(screen.getByRole("button", { name: "Continue" }));
+        await user.type(screen.getByLabelText("App Secret", { selector: "input" }), "real-app-secret");
         await user.click(screen.getByRole("button", { name: "Connect" }));
 
         expect(
           await screen.findByText("Meta rejected the access token — check you copied it."),
         ).toBeInTheDocument();
-        // Still open — the owner can fix the field and retry, not start over.
-        expect(
-          screen.getByRole("heading", { name: /connect whatsapp for/i }),
-        ).toBeInTheDocument();
+        // Still open on the same field — the owner can fix and retry, not start over.
+        expect(screen.getByRole("heading", { name: "App Secret" })).toBeInTheDocument();
       });
 
-      it("resets back to the intro step after closing and reopening", async () => {
+      it("resets back to the entry step after closing and reopening", async () => {
         const user = userEvent.setup();
         renderWithProviders();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
-        await user.click(screen.getByRole("button", { name: "I have these ready" }));
-        expect(
-          screen.getByRole("heading", { name: /connect whatsapp for/i }),
-        ).toBeInTheDocument();
+        let dialog = screen.getByRole("dialog");
+        await user.click(within(dialog).getByRole("button", { name: "Connect WhatsApp" })); // entry -> phone
+        expect(screen.getByRole("heading", { name: "Your WhatsApp Number" })).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "Close" }));
-        expect(
-          screen.queryByRole("heading", { name: /connect whatsapp for/i }),
-        ).not.toBeInTheDocument();
+        expect(screen.queryByRole("heading", { name: "Your WhatsApp Number" })).not.toBeInTheDocument();
 
         await user.click(await screen.findByRole("button", { name: "Connect WhatsApp" }));
-        expect(screen.getByRole("heading", { name: "Connect WhatsApp" })).toBeInTheDocument();
-        expect(
-          screen.queryByRole("heading", { name: /connect whatsapp for/i }),
-        ).not.toBeInTheDocument();
+        dialog = screen.getByRole("dialog");
+        expect(within(dialog).getByRole("heading", { name: "Connect WhatsApp" })).toBeInTheDocument();
+        expect(screen.queryByRole("heading", { name: "Your WhatsApp Number" })).not.toBeInTheDocument();
       });
 
       it("opens automatically when navigated here with ?whatsapp=connect", async () => {

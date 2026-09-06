@@ -1,49 +1,72 @@
 "use client";
 
-import { ArrowRight, Check, CheckCheck, Pause, Play } from "lucide-react";
+import { ArrowRight, Check, CheckCheck, Pause, Play, UserRoundCheck } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion, MotionConfig, useMotionValue, useSpring } from "framer-motion";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { ReviewReplyCard } from "@/components/review-reply-card";
 import { StatusPill } from "@/components/ui/status-pill";
-import { WorkingIndicator } from "@/components/ui/working-indicator";
-import type { ActivityState } from "@/components/ui/activity-dot";
+import { ThinkingIndicator } from "@/components/ui/working-indicator";
 import { useInView } from "@/hooks/use-in-view";
 import { cn } from "@/lib/utils";
 
-// HIRA V5 — "Proof First": the hero demonstrates HIRA instead of describing
-// it. Left column keeps the existing argument (headline/CTA); right column
-// (dominant on desktop) plays one real HIRA workflow. Reuses ReviewReplyCard,
-// WorkingIndicator, and StatusPill/ActivityDot verbatim rather than
-// inventing parallel UI.
-const CUSTOMER_MESSAGE = "Do you have availability for a cleaning this Thursday?";
+// HIRA V6.1 — "Premium Proof, quieter": same one-real-workflow thesis as V6,
+// restaged twice more per founder review — (1) the reasoning now narrates in
+// full (thinking → checking the calendar → verifying → replying →
+// reserving), and (2) the card itself recedes (lighter border/glow/shadow,
+// quieter chips) so the headline stays the primary thing a visitor reads.
+// Still reuses StatusPill and ThinkingIndicator verbatim from the app's own
+// AI-state vocabulary (DESIGN-MOTION-001 §6) rather than a chat-app
+// typing-dots cliché.
+const CUSTOMER_MESSAGE = "Hi, can you book an AC service tomorrow after 3 PM?";
 const CUSTOMER_MESSAGE_TIME = "9:47 PM";
-const DRAFTED_REPLY = "Thursday at 10:00 AM works — you're all set!";
+// Rendered as separate lines in one bubble — a real business reply reads as
+// short, scannable sentences, not one run-on paragraph.
+const HIRA_REPLY_LINES = [
+  "You're all set!",
+  "I've booked your service for tomorrow at 4:00 PM.",
+  "I've assigned Ravi to your service.",
+  "You'll receive a reminder one hour before your appointment.",
+];
+const HIRA_REPLY_TIME = "9:48 PM";
 
-const OUTCOME_ITEMS = ["Customer confirmed", "Appointment booked", "Calendar updated"];
+const VERIFY_CHECKS = ["Calendar checked", "Service area verified", "Technician assigned"];
+const RESERVED_CHECK = "Appointment confirmed";
 
-const STAGES = ["idle", "message", "processing", "knowledge", "calendar", "draft", "resolved"] as const;
+const STAGES = [
+  "idle",
+  "message",
+  "thinking",
+  "checking",
+  "verified",
+  "reply",
+  "reserved",
+  "resolved",
+] as const;
 type Stage = (typeof STAGES)[number];
 
-// V5.1: slowed down so each stage is actually readable, not just legible in
-// a screenshot — deliberately paced rather than reused from the small
-// --motion-* token scale (those top out at 1.8s; this is a narrative, not a
-// micro-interaction), same reasoning signature-demo.tsx's own BEATS array
-// already uses for its multi-second holds. One hold per transition
-// (STAGES.length - 1): idle→message, message→processing, processing→
-// knowledge, knowledge→calendar, calendar→draft, draft→resolved.
-const HOLDS_MS = [400, 1800, 2600, 1600, 1600, 2400] as const;
+// The working line's label narrates what HIRA is doing at each thinking
+// beat — "thinking" and "checking" are the same primitive, just a different
+// sentence, so the story reads as one continuous train of thought.
+const THINKING_LABEL: Partial<Record<Stage, string>> = {
+  thinking: "Thinking…",
+  checking: "Checking technician availability…",
+};
+
+// One hold per transition (STAGES.length - 1). Paced to be read, not just
+// glanced at: idle→message, message→thinking, thinking→checking,
+// checking→verified, verified→reply, reply→reserved, reserved→resolved.
+const HOLDS_MS = [600, 1300, 1900, 1500, 1700, 1400, 2000] as const;
 
 // How long the resolved outcome stays on screen before the demo settles
 // back to idle, ready to replay.
-const RESOLVED_HOLD_MS = 6500;
+const RESOLVED_HOLD_MS = 5500;
 
 const DEMO_SUMMARY =
   `Live product demonstration: a customer messages at ${CUSTOMER_MESSAGE_TIME} asking, ` +
-  `"${CUSTOMER_MESSAGE}" HIRA checks business knowledge and the calendar, then drafts a reply: ` +
-  `"${DRAFTED_REPLY}" The business owner has nothing left to do — customer confirmed, appointment ` +
-  `booked, calendar updated.`;
+  `"${CUSTOMER_MESSAGE}" HIRA checks technician availability, the calendar, and the service ` +
+  `area, assigns a technician, then replies: "${HIRA_REPLY_LINES.join(" ")}" Appointment ` +
+  `confirmed — nothing left for the owner to do, and HIRA only escalates if it ever needs a human.`;
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -57,47 +80,209 @@ function useReducedMotion() {
   return reduced;
 }
 
-function CustomerMessage() {
+// The house entrance curve (--ease-out-quart) as a bezier framer-motion can
+// consume directly, for the handful of non-spring transitions below.
+const EASE_OUT = [0.16, 1, 0.3, 1] as const;
+
+// A touch slower and floatier than a snappy UI spring — this is a narrative
+// beat arriving, not a control responding to a click.
+const springIn = { type: "spring", stiffness: 130, damping: 20, mass: 0.7 } as const;
+
+const staggerContainer = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.12, delayChildren: 0.08 } },
+};
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: springIn },
+};
+
+// A quieter chip for inside the demo card: keeps the ActivityDot's success
+// colour (still a real state signal) but drops StatusPill's own border/
+// shadow so it doesn't compete with the conversation for attention.
+// text-foreground/70 (not text-muted-foreground) — WCAG AA audit found the
+// muted-on-muted pairing measured 4.4:1 against the card, just under the
+// 4.5:1 floor for this text size; this passes with real margin (~6.7:1)
+// while staying visually quieter than full-strength foreground.
+const quietPillClassName = "border-transparent bg-muted/60 text-foreground/70 shadow-none";
+
+function ChipsRow({ items }: { items: string[] }) {
   return (
-    <div className="animate-fade-in flex flex-col items-start gap-1">
-      <div className="max-w-[85%] rounded-md bg-muted px-3 py-2 text-sm">{CUSTOMER_MESSAGE}</div>
-      <span className="text-xs text-muted-foreground">{CUSTOMER_MESSAGE_TIME}</span>
-    </div>
+    <motion.div
+      variants={staggerContainer}
+      initial="hidden"
+      animate="show"
+      className="flex flex-wrap gap-2"
+    >
+      {items.map((label) => (
+        <motion.div key={label} variants={fadeUp}>
+          <StatusPill state="success" className={quietPillClassName}>
+            {label}
+          </StatusPill>
+        </motion.div>
+      ))}
+    </motion.div>
   );
 }
 
-function stepState(stageIndex: number, stepStage: Stage): ActivityState {
-  const stepIndex = STAGES.indexOf(stepStage);
-  if (stageIndex < stepIndex) return "idle";
-  if (stageIndex === stepIndex) return "working";
-  return "success";
-}
-
-function Outcome() {
+function CustomerBubble() {
   return (
-    <div className="animate-signature-settle space-y-4 text-center">
-      <p className="text-2xl font-bold tracking-tight sm:text-3xl">No action required</p>
-      <ul className="space-y-1.5 text-left text-sm text-muted-foreground">
-        {OUTCOME_ITEMS.map((item) => (
-          <li key={item} className="flex items-center gap-2">
-            <Check className="size-4 shrink-0 text-success" aria-hidden="true" />
-            {item}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ResolvedDemo() {
-  return (
-    <div className="space-y-4">
-      <CustomerMessage />
-      <div className="space-y-2">
-        <StatusPill state="success">Using Business Knowledge</StatusPill>
-        <StatusPill state="success">Calendar checked</StatusPill>
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ ...springIn, delay: 0.1 }}
+      className="flex flex-col items-start gap-1"
+    >
+      <div className="max-w-[82%] rounded-2xl rounded-bl-md bg-muted px-3.5 py-2.5 text-sm">
+        {CUSTOMER_MESSAGE}
       </div>
-      <Outcome />
+      <span className="text-[0.6875rem] text-muted-foreground">{CUSTOMER_MESSAGE_TIME}</span>
+    </motion.div>
+  );
+}
+
+function HiraBubble({ typing, sent }: { typing: boolean; sent: boolean }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ ...springIn, delay: 0.08 }}
+      className="flex flex-col items-end gap-1 self-end"
+    >
+      {/* text-foreground, not the paired text-brand-foreground token — WCAG
+          AA audit measured that pairing at 3.2:1 on this bg, under the 4.5:1
+          floor for text-sm. Dark text on the brand fill passes at ~5.7:1. */}
+      <div className="max-w-[78%] space-y-1 rounded-2xl rounded-br-md bg-brand px-3.5 py-2.5 text-sm text-foreground">
+        {HIRA_REPLY_LINES.map((line, i) => (
+          <p key={line}>
+            {line}
+            {typing && i === HIRA_REPLY_LINES.length - 1 && (
+              <motion.span
+                aria-hidden="true"
+                animate={{ opacity: [1, 0] }}
+                transition={{ duration: 0.8, repeat: Infinity, repeatType: "reverse" }}
+                className="ml-0.5 inline-block h-3.5 w-[2px] translate-y-0.5 bg-brand-foreground align-middle"
+              />
+            )}
+          </p>
+        ))}
+      </div>
+      {sent && (
+        <motion.span
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3, duration: 0.3 }}
+          className="flex items-center gap-1 text-[0.6875rem] text-muted-foreground"
+        >
+          {HIRA_REPLY_TIME}
+          <CheckCheck className="size-3 text-[#53bdeb]" aria-hidden="true" />
+        </motion.span>
+      )}
+    </motion.div>
+  );
+}
+
+function ResolvedBanner() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={springIn}
+      className="relative flex items-center gap-3 overflow-hidden rounded-xl bg-success/10 px-4 py-3"
+    >
+      {/* A single light sweep on arrival — never loops, just marks the
+          moment as a small, one-time celebration rather than decoration. */}
+      <motion.span
+        aria-hidden="true"
+        initial={{ x: "-120%" }}
+        animate={{ x: "220%" }}
+        transition={{ duration: 1, ease: EASE_OUT, delay: 0.35 }}
+        className="pointer-events-none absolute inset-y-0 left-0 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-white/40 to-transparent"
+      />
+      <motion.span
+        initial={{ scale: 0.5, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ ...springIn, delay: 0.1 }}
+        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground"
+      >
+        <Check className="size-4" aria-hidden="true" />
+      </motion.span>
+      <div>
+        <p className="text-sm font-semibold">Reminder scheduled</p>
+        <p className="text-xs text-muted-foreground">No action needed — it&apos;s handled.</p>
+      </div>
+    </motion.div>
+  );
+}
+
+function ConversationBody({ stage }: { stage: Stage }) {
+  const showVerified = stage === "verified" || stage === "reply" || stage === "reserved" || stage === "resolved";
+  const showReply = stage === "reply" || stage === "reserved" || stage === "resolved";
+  const showReserved = stage === "reserved" || stage === "resolved";
+
+  return (
+    <div className="flex flex-col gap-3.5">
+      {stage !== "idle" && <CustomerBubble />}
+
+      <AnimatePresence>
+        {THINKING_LABEL[stage] && (
+          <motion.div
+            key={stage}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: EASE_OUT }}
+            className="mt-1"
+          >
+            <ThinkingIndicator label={THINKING_LABEL[stage]} className="w-40" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {showVerified && (
+        <div className="mt-1">
+          <ChipsRow items={VERIFY_CHECKS} />
+        </div>
+      )}
+
+      {showReply && <HiraBubble typing={stage === "reply"} sent={showReserved} />}
+
+      {showReserved && (
+        <div className="mt-1">
+          <ChipsRow items={[RESERVED_CHECK]} />
+        </div>
+      )}
+
+      <AnimatePresence>
+        {stage === "resolved" && (
+          <div className="mt-1.5">
+            <ResolvedBanner key="resolved" />
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function CardHeader() {
+  return (
+    <div className="flex items-center gap-2 border-b border-border/50 pb-3">
+      <span className="relative flex size-2">
+        <span className="absolute inline-flex size-full animate-ping rounded-full bg-success/50" />
+        <span className="relative inline-flex size-2 rounded-full bg-success" />
+      </span>
+      <span className="text-xs font-medium text-muted-foreground">Business WhatsApp</span>
+    </div>
+  );
+}
+
+function GlassCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-[32px] bg-gradient-to-br from-brand/20 via-border/30 to-transparent p-px shadow-e3">
+      <div className="min-h-[23rem] rounded-[32px] bg-card/90 p-6 backdrop-blur-backdrop-lg sm:p-8">
+        {children}
+      </div>
     </div>
   );
 }
@@ -162,63 +347,100 @@ function ProductDemo({
 
   if (reducedMotion) {
     return (
-      <Card role="img" aria-label={DEMO_SUMMARY} className="overflow-hidden p-6 sm:p-8">
-        <div aria-hidden="true">
-          <ResolvedDemo />
+      <GlassCard>
+        <div role="img" aria-label={DEMO_SUMMARY}>
+          <CardHeader />
+          <div className="mt-4">
+            <ConversationBody stage="resolved" />
+          </div>
         </div>
-      </Card>
+      </GlassCard>
     );
   }
 
   return (
     <div ref={viewRef}>
-      <Card
-        role="group"
-        aria-label={`${DEMO_SUMMARY} Use the button below to replay or pause.`}
-        className="overflow-hidden p-6 sm:p-8"
-      >
-        <div aria-hidden="true" className="space-y-4">
-          {stage !== "idle" && <CustomerMessage />}
-
-          {stage === "processing" && (
-            <WorkingIndicator state="working" label="HIRA is working" />
-          )}
-
-          {(stage === "knowledge" || stage === "calendar") && (
-            <div className="space-y-2">
-              <StatusPill state={stepState(stageIndex, "knowledge")}>
-                Using Business Knowledge
-              </StatusPill>
-              <StatusPill state={stepState(stageIndex, "calendar")}>
-                Calendar checked
-              </StatusPill>
-            </div>
-          )}
-
-          {stage === "draft" && (
-            <ReviewReplyCard
-              body={DRAFTED_REPLY}
-              status="waiting"
-              className="border-0 bg-transparent p-0 shadow-none"
-            />
-          )}
-
-          {stage === "resolved" && <Outcome />}
+      <GlassCard>
+        <div
+          role="group"
+          aria-label={`${DEMO_SUMMARY} Use the button below to replay or pause.`}
+        >
+          <div className="flex items-center justify-between">
+            <CardHeader />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={primaryAction}
+              aria-label={primaryLabel}
+              className="-mr-2 -mt-1"
+            >
+              {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+            </Button>
+          </div>
+          <div className="mt-4" aria-hidden="true">
+            <ConversationBody stage={stage} />
+          </div>
         </div>
-
-        <div className="mt-4 flex justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={primaryAction}
-            aria-label={primaryLabel}
-          >
-            {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
-          </Button>
-        </div>
-      </Card>
+      </GlassCard>
     </div>
+  );
+}
+
+// A few pixels, not a gesture — the card should feel anchored, only ever
+// nudged by the cursor.
+const PARALLAX_RANGE = 6;
+
+function FloatingDemo({ reducedMotion, ...props }: React.ComponentProps<typeof ProductDemo>) {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const rawX = useMotionValue(0);
+  const rawY = useMotionValue(0);
+  const x = useSpring(rawX, { stiffness: 100, damping: 22, mass: 0.6 });
+  const y = useSpring(rawY, { stiffness: 100, damping: 22, mass: 0.6 });
+
+  const handleMouseMove = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (reducedMotion || !sectionRef.current) return;
+      const rect = sectionRef.current.getBoundingClientRect();
+      const relX = (event.clientX - rect.left) / rect.width - 0.5;
+      const relY = (event.clientY - rect.top) / rect.height - 0.5;
+      rawX.set(relX * PARALLAX_RANGE);
+      rawY.set(relY * PARALLAX_RANGE);
+    },
+    [reducedMotion, rawX, rawY],
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    rawX.set(0);
+    rawY.set(0);
+  }, [rawX, rawY]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ ...springIn, delay: 0.2 }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      ref={sectionRef}
+      className="relative"
+    >
+      <div
+        aria-hidden="true"
+        className="absolute -inset-8 -z-10 rounded-[48px] bg-brand/10 opacity-25 blur-3xl animate-ambient-pulse"
+      />
+      <motion.div
+        style={{ x, y }}
+        animate={{ y: [0, -4, 0] }}
+        transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <ProductDemo reducedMotion={reducedMotion} {...props} />
+      </motion.div>
+      <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
+        <UserRoundCheck className="size-3.5 shrink-0" aria-hidden="true" />
+        Escalates only when human attention is required
+      </p>
+    </motion.div>
   );
 }
 
@@ -230,55 +452,89 @@ export function Hero() {
   const handleReset = useCallback(() => setDemoResolved(false), []);
 
   return (
-    <section className="mx-auto flex max-w-6xl flex-col px-4 py-16 sm:px-6 sm:py-24 lg:grid lg:grid-cols-[0.9fr_1.25fr] lg:items-center lg:gap-12 lg:py-32">
-      <div className="order-2 mt-12 text-center lg:order-1 lg:mt-0 lg:text-left">
-        <div className="flex items-center justify-center gap-2.5 lg:justify-start">
-          <span className="size-1.5 rounded-full bg-brand" aria-hidden="true" />
-          <span className="text-[0.6875rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Founder Beta — limited early access
-          </span>
-        </div>
-
-        <h1 className="mt-7 text-balance text-6xl font-black tracking-tighter sm:text-7xl lg:max-w-2xl xl:text-[5.25rem] 2xl:text-8xl">
-          Never miss another{" "}
-          <mark
-            className={cn(
-              "rounded-lg px-1.5 py-0.5 transition-colors duration-[var(--motion-signature)] ease-[var(--ease-out-quart)] [-webkit-box-decoration-break:clone] [box-decoration-break:clone]",
-              resolved ? "bg-brand/15 text-brand" : "bg-muted text-foreground",
-            )}
+    <MotionConfig reducedMotion={reducedMotion ? "always" : "never"}>
+      <section className="mx-auto flex max-w-7xl flex-col px-4 py-20 sm:px-6 sm:py-28 lg:grid lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-20 lg:py-40 xl:gap-24">
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          animate="show"
+          className="mt-12 text-center lg:order-1 lg:mt-0 lg:text-left"
+        >
+          <motion.div
+            variants={fadeUp}
+            className="flex items-center justify-center gap-2.5 lg:justify-start"
           >
-            customer message
-          </mark>
-          .
-        </h1>
-        <p className="mt-6 max-w-md text-pretty text-lg text-muted-foreground sm:text-xl lg:mx-0 lg:max-w-sm">
-          HIRA answers your customers on WhatsApp, books appointments, follows
-          up on leads, and hands the conversation to your team the moment it
-          needs a human touch.
-        </p>
-        <div className="mt-10 flex flex-col items-center gap-5 lg:items-start">
-          <Button asChild size="xl">
-            <Link href="/sign-up">
-              Get started
-              <ArrowRight aria-hidden="true" />
-            </Link>
-          </Button>
-          <a
-            href="#how-it-works"
-            className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
-          >
-            See how it works
-          </a>
-        </div>
-        <p className="mt-8 flex items-center justify-center gap-2 text-sm text-muted-foreground lg:justify-start">
-          <CheckCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
-          Starts in Assisted Mode — you approve every reply until you trust it
-        </p>
-      </div>
+            <span className="size-1.5 rounded-full bg-brand" aria-hidden="true" />
+            <span className="text-[0.6875rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Founder Beta — limited early access
+            </span>
+          </motion.div>
 
-      <div className="order-1 lg:order-2">
-        <ProductDemo reducedMotion={reducedMotion} onResolved={handleResolved} onReset={handleReset} />
-      </div>
-    </section>
+          <motion.h1
+            variants={fadeUp}
+            className="mt-9 text-balance text-5xl font-black leading-tight tracking-tighter sm:text-6xl lg:max-w-xl xl:text-7xl"
+          >
+            Never miss another{" "}
+            {/* text-foreground (not text-brand) on the resolved wash — WCAG
+                AA audit measured brand-on-brand/15 at ~2.8:1, under the 3:1
+                floor for large text even at this size. Foreground on the
+                same tint passes at ~15:1; the tint alone still carries the
+                "resolved" signal. */}
+            <mark
+              className={cn(
+                "rounded-lg px-1.5 py-0.5 transition-colors duration-[var(--motion-signature)] ease-[var(--ease-out-quart)] [-webkit-box-decoration-break:clone] [box-decoration-break:clone]",
+                resolved ? "bg-brand/15 text-foreground" : "bg-muted text-foreground",
+              )}
+            >
+              customer message
+            </mark>
+            .
+          </motion.h1>
+          <motion.p
+            variants={fadeUp}
+            className="mx-auto mt-8 max-w-[56ch] text-pretty text-lg text-muted-foreground sm:text-xl lg:mx-0"
+          >
+            HIRA answers your customers on WhatsApp, books appointments, follows
+            up on leads, and hands the conversation to your team the moment it
+            needs a human touch.
+          </motion.p>
+          <motion.div
+            variants={fadeUp}
+            className="mt-12 flex flex-col items-center gap-5 lg:items-start"
+          >
+            <motion.div
+              whileHover={{ y: -2, scale: 1.01 }}
+              whileTap={{ y: 0, scale: 0.99 }}
+              transition={{ type: "spring", stiffness: 300, damping: 24 }}
+              className="inline-block"
+            >
+              <Button asChild size="xl">
+                <Link href="/sign-up">
+                  Get started
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </Button>
+            </motion.div>
+            <a
+              href="#how-it-works"
+              className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              See how it works
+            </a>
+          </motion.div>
+          <motion.p
+            variants={fadeUp}
+            className="mt-10 flex items-center justify-center gap-2 text-sm text-muted-foreground lg:justify-start"
+          >
+            <CheckCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
+            Starts in Assisted Mode — you approve every reply until you trust it
+          </motion.p>
+        </motion.div>
+
+        <div className="lg:order-2">
+          <FloatingDemo reducedMotion={reducedMotion} onResolved={handleResolved} onReset={handleReset} />
+        </div>
+      </section>
+    </MotionConfig>
   );
 }
