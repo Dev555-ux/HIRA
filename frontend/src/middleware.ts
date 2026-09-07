@@ -15,6 +15,8 @@ const isPublicRoute = createRouteMatcher([
   "/privacy",
   "/terms",
   "/data-deletion",
+  "/contact",
+  "/company",
 ]);
 
 // Real Clerk middleware when configured; a pass-through in dev/mock mode.
