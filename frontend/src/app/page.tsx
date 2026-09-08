@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { MarketingPage } from "@/components/marketing/marketing-page";
 import { authEnabled } from "@/lib/config";
+import { buildFaqSchema, buildSoftwareApplicationSchema } from "@/lib/structured-data";
 
 const SITE_URL = "https://stoneveil.in";
 const TITLE = "HIRA — The AI Employee for WhatsApp-First Businesses";
@@ -26,7 +27,9 @@ export const metadata: Metadata = {
     type: "website",
   },
   twitter: {
-    card: "summary",
+    // opengraph-image.tsx supplies the image for both — Next.js reuses a
+    // page's Open Graph image for Twitter when no twitter-image is set.
+    card: "summary_large_image",
     title: TITLE,
     description: DESCRIPTION,
   },
@@ -42,5 +45,17 @@ export default async function Home() {
   if (userId) {
     redirect("/dashboard");
   }
-  return <MarketingPage />;
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(buildSoftwareApplicationSchema()) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(buildFaqSchema()) }}
+      />
+      <MarketingPage />
+    </>
+  );
 }
