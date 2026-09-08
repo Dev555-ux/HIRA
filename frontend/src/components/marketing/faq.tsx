@@ -1,7 +1,7 @@
 import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
-const FAQS = [
+export const FAQS = [
   {
     question: "Is HIRA a chatbot?",
     answer:
