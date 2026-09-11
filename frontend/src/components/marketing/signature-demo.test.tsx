@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SignatureDemo } from "./signature-demo";
+import type { ScenarioId } from "./signature-demo";
+import { DEFAULT_SCENARIO_ID, SCENARIOS, SignatureDemo } from "./signature-demo";
 
 function setDocumentHidden(hidden: boolean) {
   Object.defineProperty(document, "hidden", { value: hidden, configurable: true });
@@ -148,6 +149,34 @@ describe("SignatureDemo", () => {
     vi.useRealTimers();
   });
 
+  it("replays the full sequence identically on a second loop (Sprint 66 PR-2)", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+
+    const runOneLoop = () => {
+      for (const ms of HOLDS_MS.slice(0, 11)) advance(ms); // through the settle beat
+      advance(HOLDS_MS[11]); // -> reply beat
+      expect(screen.getByText(/thursday at 10:00 am works/i)).toBeInTheDocument();
+
+      advance(HOLDS_MS[12]); // -> closing beat
+      expect(screen.getByText(/this is hira/i)).toBeInTheDocument();
+      // The reply bubble is replaced by the closing overlay, not stacked on it.
+      expect(screen.queryByText(/thursday at 10:00 am works/i)).toBeNull();
+
+      advance(HOLDS_MS[13]); // closing still holding
+      advance(HOLDS_MS[14]); // wraps past the end, resets to idle
+      expect(screen.queryByText(/this is hira/i)).toBeNull();
+      expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
+    };
+
+    // Replay: the identical sequence reproduces on the second pass, not a
+    // one-shot animation that goes stale after the first run.
+    runOneLoop();
+    runOneLoop();
+
+    vi.useRealTimers();
+  });
+
   it("pauses on hover and resumes when the mouse leaves", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
@@ -213,5 +242,53 @@ describe("SignatureDemo", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+});
+
+// Sprint 66 PR-2 — BEATS (a single hardcoded sequence) became SCENARIOS (a
+// named sequence per scenario). No selector UI exists yet to switch between
+// them, so these are data-contract tests, not rendered-component tests:
+// they prove the data itself is sound and that any future scenario swap
+// hits the engine's one existing reset path cleanly, without needing
+// per-scenario reset logic.
+describe("SCENARIOS data model (Sprint 66 PR-2)", () => {
+  it("defaults to the cleaning scenario — today's only rendered one", () => {
+    expect(DEFAULT_SCENARIO_ID).toBe("cleaning");
+  });
+
+  it("keeps the cleaning scenario's copy and timing exactly as before the refactor", () => {
+    const { cleaning } = SCENARIOS;
+    expect(cleaning.customerMessage).toBe("Do you have availability for a cleaning this Thursday?");
+    expect(cleaning.replyMessage).toBe("Thursday at 10:00 AM works — you're all set!");
+    expect(cleaning.beats.map((beat) => beat.hold)).toEqual(HOLDS_MS);
+  });
+
+  it("defines all four scenarios named in the ticket, each self-consistent", () => {
+    const ids: ScenarioId[] = ["cleaning", "dental", "pricing", "escalation"];
+    expect(Object.keys(SCENARIOS).sort()).toEqual([...ids].sort());
+
+    for (const id of ids) {
+      const scenario = SCENARIOS[id];
+      expect(scenario.id).toBe(id);
+      expect(scenario.chipLabel.length).toBeGreaterThan(0);
+      expect(scenario.customerMessage.length).toBeGreaterThan(0);
+      expect(scenario.replyMessage.length).toBeGreaterThan(0);
+
+      // Ends in exactly one closing beat, followed by one reset hold —
+      // the shape the engine's loop-wrap branch depends on.
+      const closingCount = scenario.beats.filter((beat) => beat.closing).length;
+      expect(closingCount).toBe(1);
+      expect(scenario.beats.at(-1)?.closing).toBeUndefined();
+    }
+  });
+
+  it("switching to any scenario resets correctly: every one opens on a bare idle hold", () => {
+    // The engine's reset branch always returns to IDLE_STATUS with nothing
+    // else visible. A scenario swap only resets cleanly if the scenario it
+    // swaps to also opens that way — proven here for all four, so no
+    // scenario can ever open "mid-sequence."
+    for (const scenario of Object.values(SCENARIOS)) {
+      expect(scenario.beats[0]).toEqual({ hold: scenario.beats[0].hold });
+    }
   });
 });

@@ -20,9 +20,6 @@ import { cn } from "@/lib/utils";
 type SystemId = "knowledge" | "calendar" | "team" | "crm";
 type SystemStatus = "idle" | "active" | "done";
 
-const CUSTOMER_MESSAGE = "Do you have availability for a cleaning this Thursday?";
-const REPLY_MESSAGE = "Thursday at 10:00 AM works — you're all set!";
-
 const HUB = { x: 50, y: 50 };
 
 const SYSTEMS: {
@@ -63,9 +60,27 @@ type Beat = {
   closing?: boolean;
 };
 
+// Sprint 66 PR-2 — data model only, no engine change: BEATS (a single
+// hardcoded sequence) becomes SCENARIOS (a named sequence per scenario).
+// DemoWidget still walks whichever `beats` array it's given exactly as
+// before; only where that array comes from changed. Only "cleaning" is
+// wired up to render today (DEFAULT_SCENARIO_ID below) — the other three
+// are real, valid data, ready for the scenario-selector UI (a later PR),
+// not yet reachable from anywhere.
+export type ScenarioId = "cleaning" | "dental" | "pricing" | "escalation";
+
+export type Scenario = {
+  id: ScenarioId;
+  chipLabel: string;
+  customerMessage: string;
+  replyMessage: string;
+  beats: Beat[];
+};
+
 // Same "overlap, not a rigid queue" philosophy as before, sized to four
-// systems: Knowledge and CRM run together, then Calendar and Team.
-const BEATS: Beat[] = [
+// systems: Knowledge and CRM run together, then Calendar and Team. This is
+// verbatim the old top-level BEATS constant, now SCENARIOS.cleaning.beats.
+const CLEANING_BEATS: Beat[] = [
   { hold: 1400 }, // Scene 1 — idle, quiet, nothing moves
   { hold: 500, message: true }, // Scene 2 — the message arrives
   { hold: 300 }, // a breath before HIRA reacts
@@ -82,6 +97,79 @@ const BEATS: Beat[] = [
   { hold: 3200, closing: true }, // Scene 7 — "One message. Four business systems. Zero manual work."
   { hold: 600 }, // hold before the loop resets
 ];
+
+// Same four-system rhythm as cleaning — a clinic booking is structurally
+// the same flow, only the copy changes.
+const DENTAL_BEATS: Beat[] = CLEANING_BEATS;
+
+// Only two systems answer a pricing question — Knowledge and CRM run
+// together, then settle. Calendar/Team simply never receive a beat and
+// stay idle throughout; SystemNode already renders that correctly.
+const PRICING_BEATS: Beat[] = [
+  { hold: 1400 },
+  { hold: 500, message: true },
+  { hold: 300 },
+  { hold: 700, systems: { knowledge: "active" } },
+  { hold: 500, systems: { crm: "active" } },
+  { hold: 700, systems: { knowledge: "done" } },
+  { hold: 500, systems: { crm: "done" } },
+  { hold: 700, settled: true },
+  { hold: 2200, reply: true },
+  { hold: 3200, closing: true },
+  { hold: 600 },
+];
+
+// An escalation only needs CRM (to pull up the customer) and Team (to hand
+// off) — Knowledge/Calendar stay idle throughout.
+const ESCALATION_BEATS: Beat[] = [
+  { hold: 1400 },
+  { hold: 500, message: true },
+  { hold: 300 },
+  { hold: 700, systems: { crm: "active" } },
+  { hold: 500, systems: { team: "active" } },
+  { hold: 700, systems: { crm: "done" } },
+  { hold: 500, systems: { team: "done" } },
+  { hold: 700, settled: true },
+  { hold: 2200, reply: true },
+  { hold: 3200, closing: true },
+  { hold: 600 },
+];
+
+export const SCENARIOS: Record<ScenarioId, Scenario> = {
+  cleaning: {
+    id: "cleaning",
+    chipLabel: "Booking",
+    customerMessage: "Do you have availability for a cleaning this Thursday?",
+    replyMessage: "Thursday at 10:00 AM works — you're all set!",
+    beats: CLEANING_BEATS,
+  },
+  dental: {
+    id: "dental",
+    chipLabel: "Clinic",
+    customerMessage: "Can I book a consultation with Dr. Martinez tomorrow afternoon?",
+    replyMessage: "Dr. Martinez has an opening tomorrow at 3:30 PM — you're all set!",
+    beats: DENTAL_BEATS,
+  },
+  pricing: {
+    id: "pricing",
+    chipLabel: "Knowledge",
+    customerMessage: "What do your plans include, and is there human escalation?",
+    replyMessage:
+      "Every plan includes human escalation, grounded in what you've told HIRA — no generic guessing.",
+    beats: PRICING_BEATS,
+  },
+  escalation: {
+    id: "escalation",
+    chipLabel: "Escalation",
+    customerMessage: "I need to speak with your team about an urgent issue.",
+    replyMessage: "I've flagged this to your team with the full conversation — they'll take it from here.",
+    beats: ESCALATION_BEATS,
+  },
+};
+
+// Default to today's scenario — no selector exists yet (a later PR), so
+// this is the only one ever rendered right now.
+export const DEFAULT_SCENARIO_ID: ScenarioId = "cleaning";
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -226,6 +314,7 @@ function DemoWidget() {
   // DESIGN-MOTION-001 §7.3: at rest until scrolled into view, then alive;
   // pauses again if scrolled away.
   const { ref: viewRef, inView } = useInView<HTMLDivElement>({ once: false, rootMargin: "0px" });
+  const scenario = SCENARIOS[DEFAULT_SCENARIO_ID];
   const [beatIndex, setBeatIndex] = useState(0);
   const [messageVisible, setMessageVisible] = useState(false);
   const [status, setStatus] = useState<Record<SystemId, SystemStatus>>(IDLE_STATUS);
@@ -245,7 +334,7 @@ function DemoWidget() {
     if (paused || tabHidden || reducedMotion || !inView) return;
     const timer = setTimeout(() => {
       const nextIndex = beatIndex + 1;
-      if (nextIndex >= BEATS.length) {
+      if (nextIndex >= scenario.beats.length) {
         setMessageVisible(false);
         setStatus(IDLE_STATUS);
         setSettled(false);
@@ -254,24 +343,24 @@ function DemoWidget() {
         setBeatIndex(0);
         return;
       }
-      const beat = BEATS[nextIndex];
+      const beat = scenario.beats[nextIndex];
       if (beat.message) setMessageVisible(true);
       if (beat.systems) setStatus((prev) => ({ ...prev, ...beat.systems }));
       if (beat.settled) setSettled(true);
       if (beat.reply) setReplyVisible(true);
       if (beat.closing) setClosingVisible(true);
       setBeatIndex(nextIndex);
-    }, BEATS[beatIndex].hold);
+    }, scenario.beats[beatIndex].hold);
     return () => clearTimeout(timer);
-  }, [beatIndex, paused, tabHidden, reducedMotion, inView]);
+  }, [beatIndex, paused, tabHidden, reducedMotion, inView, scenario]);
 
   const anyActive = Object.values(status).some((s) => s === "active");
   const hubState = settled ? "success" : anyActive ? "working" : "idle";
 
   const summary =
-    `Demo: a customer messages HIRA asking, "${CUSTOMER_MESSAGE}" HIRA coordinates four ` +
+    `Demo: a customer messages HIRA asking, "${scenario.customerMessage}" HIRA coordinates four ` +
     "connected systems — Knowledge, CRM, Calendar, and Team — each working independently before " +
-    `settling together in one synchronized moment and sending a reply: "${REPLY_MESSAGE}" One ` +
+    `settling together in one synchronized moment and sending a reply: "${scenario.replyMessage}" One ` +
     "message, four systems, zero manual work.";
 
   if (reducedMotion) {
@@ -279,7 +368,7 @@ function DemoWidget() {
       <div className="mx-auto w-full max-w-md">
         <Card role="img" aria-label={summary} className="space-y-4 overflow-hidden p-6 sm:p-8">
           <div aria-hidden="true" className="space-y-4">
-            <CustomerBubble text={CUSTOMER_MESSAGE} />
+            <CustomerBubble text={scenario.customerMessage} />
             <div className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
               <Cables status={DONE_STATUS} />
               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
@@ -289,7 +378,7 @@ function DemoWidget() {
                 <SystemNode key={sys.id} sys={sys} status="done" settled statusTextVisible />
               ))}
             </div>
-            <ReplyBubble text={REPLY_MESSAGE} />
+            <ReplyBubble text={scenario.replyMessage} />
           </div>
         </Card>
       </div>
@@ -309,7 +398,7 @@ function DemoWidget() {
       onBlur={() => setPaused(false)}
     >
       <Card className="relative space-y-4 overflow-hidden p-6 sm:p-8">
-        {messageVisible && !closingVisible && <CustomerBubble text={CUSTOMER_MESSAGE} />}
+        {messageVisible && !closingVisible && <CustomerBubble text={scenario.customerMessage} />}
 
         <div aria-hidden="true" className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
           <Cables status={status} />
@@ -332,7 +421,7 @@ function DemoWidget() {
           ))}
         </div>
 
-        {replyVisible && !closingVisible && <ReplyBubble text={REPLY_MESSAGE} />}
+        {replyVisible && !closingVisible && <ReplyBubble text={scenario.replyMessage} />}
         {closingVisible && <ClosingLine />}
       </Card>
     </div>
