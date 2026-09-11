@@ -4,6 +4,7 @@ import { Features } from "@/components/marketing/features";
 import { FinalCta } from "@/components/marketing/final-cta";
 import { Hero } from "@/components/marketing/hero";
 import { HowItWorks } from "@/components/marketing/how-it-works";
+import { Journey } from "@/components/marketing/journey";
 import { Problem } from "@/components/marketing/problem";
 import { SignatureDemo } from "@/components/marketing/signature-demo";
 import { SiteFooter } from "@/components/marketing/site-footer";
@@ -21,8 +22,9 @@ import { Trust } from "@/components/marketing/trust";
 //
 //   Quiet footnote           py-6 sm:py-8              — Trust only
 //   Compact band              py-10 sm:py-12            — AiEmployees only
-//   Standard section          py-20 sm:py-28            — Problem, Features,
-//                                                          How It Works, FAQ
+//   Standard section          py-20 sm:py-28            — Journey, Problem,
+//                                                          Features, How It
+//                                                          Works, FAQ
 //   Flagship / hero-adjacent  py-24 sm:py-32(-lg:py-32) — Hero, SignatureDemo
 //   Signal band (bg-primary,  py-24 sm:py-32 lg:py-40   — Solution, FinalCta
 //     inverted, bespoke type)
@@ -50,6 +52,7 @@ export function MarketingPage() {
         <Hero />
         <SignatureDemo />
         <Trust />
+        <Journey />
         <Problem />
         <Solution />
         <AiEmployees />
