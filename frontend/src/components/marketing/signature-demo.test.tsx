@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScenarioId } from "./signature-demo";
 import { DEFAULT_SCENARIO_ID, SCENARIOS, SignatureDemo } from "./signature-demo";
@@ -52,7 +53,7 @@ describe("SignatureDemo", () => {
   it("exposes one accessible label instead of narrating four systems to screen readers", () => {
     render(<SignatureDemo />);
 
-    const group = screen.getByRole("group");
+    const group = screen.getByRole("group", { name: /four.*systems/i });
     expect(group).toHaveAccessibleName(/four.*systems/i);
     // The animated content itself must never be independently reachable —
     // an aria-hidden focusable descendant is an accessibility violation.
@@ -180,7 +181,7 @@ describe("SignatureDemo", () => {
   it("pauses on hover and resumes when the mouse leaves", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
-    const group = screen.getByRole("group");
+    const group = screen.getByRole("group", { name: /four.*systems/i });
 
     fireEvent.mouseEnter(group);
     advance(HOLDS_MS[0]);
@@ -198,7 +199,7 @@ describe("SignatureDemo", () => {
   it("pauses on keyboard focus and resumes on blur", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
-    const group = screen.getByRole("group");
+    const group = screen.getByRole("group", { name: /four.*systems/i });
 
     fireEvent.focus(group);
     advance(HOLDS_MS[0]);
@@ -246,11 +247,9 @@ describe("SignatureDemo", () => {
 });
 
 // Sprint 66 PR-2 — BEATS (a single hardcoded sequence) became SCENARIOS (a
-// named sequence per scenario). No selector UI exists yet to switch between
-// them, so these are data-contract tests, not rendered-component tests:
-// they prove the data itself is sound and that any future scenario swap
-// hits the engine's one existing reset path cleanly, without needing
-// per-scenario reset logic.
+// named sequence per scenario). These are data-contract tests, not
+// rendered-component tests: they prove the data itself is sound,
+// independent of the selector UI PR-3 (below) added on top of it.
 describe("SCENARIOS data model (Sprint 66 PR-2)", () => {
   it("defaults to the cleaning scenario — today's only rendered one", () => {
     expect(DEFAULT_SCENARIO_ID).toBe("cleaning");
@@ -290,5 +289,124 @@ describe("SCENARIOS data model (Sprint 66 PR-2)", () => {
     for (const scenario of Object.values(SCENARIOS)) {
       expect(scenario.beats[0]).toEqual({ hold: scenario.beats[0].hold });
     }
+  });
+});
+
+// Sprint 66 PR-3 — a native <input type="radio"> chip per scenario, wired
+// to a `key={scenarioId}` remount of DemoWidget (see signature-demo.tsx).
+// Keyboard behavior (Tab lands on the checked radio, arrow keys move and
+// select) is real browser/jsdom radio-group behavior, not custom code —
+// verified empirically here, not assumed.
+describe("ScenarioSelector (Sprint 66 PR-3)", () => {
+  beforeEach(() => {
+    mockReducedMotion(false);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("selects every scenario, swapping the demo to that scenario's message", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+
+    const expectations: [ScenarioId, RegExp][] = [
+      ["cleaning", /do you have availability for a cleaning/i],
+      ["dental", /consultation with dr\. martinez/i],
+      ["pricing", /what do your plans include/i],
+      ["escalation", /speak with your team about an urgent issue/i],
+    ];
+
+    for (const [id, messagePattern] of expectations) {
+      const chip = screen.getByRole("radio", { name: new RegExp(`^${SCENARIOS[id].chipLabel}$`, "i") });
+      fireEvent.click(chip);
+      expect(chip).toBeChecked();
+
+      // Every scenario opens with the same idle-then-message rhythm.
+      advance(1400);
+      advance(500);
+      expect(screen.getByText(messagePattern)).toBeInTheDocument();
+    }
+  });
+
+  it("replays after a scenario switch — the newly selected scenario loops just like the default did", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+
+    fireEvent.click(screen.getByRole("radio", { name: /^Escalation$/i }));
+
+    const holds = SCENARIOS.escalation.beats.map((beat) => beat.hold);
+    const runOneLoop = () => {
+      for (const ms of holds.slice(0, 7)) advance(ms); // through the settle beat
+      advance(holds[7]); // -> reply beat
+      expect(screen.getByText(/i've flagged this to your team/i)).toBeInTheDocument();
+
+      advance(holds[8]); // -> closing beat
+      expect(screen.getByText(/this is hira/i)).toBeInTheDocument();
+
+      advance(holds[9]); // closing still holding
+      advance(holds[10]); // wraps past the end, resets to idle
+      expect(screen.queryByText(/this is hira/i)).toBeNull();
+      expect(screen.queryByText(/speak with your team/i)).toBeNull();
+    };
+
+    runOneLoop();
+    runOneLoop(); // replay: reproduces identically without touching the selector again
+  });
+
+  it("is keyboard navigable: Tab lands on the checked chip, arrow keys move and select", async () => {
+    const user = userEvent.setup();
+    render(<SignatureDemo />);
+
+    const cleaningChip = screen.getByRole("radio", { name: /^Cleaning$/i });
+    const dentalChip = screen.getByRole("radio", { name: /^Dental$/i });
+    const pricingChip = screen.getByRole("radio", { name: /^Pricing$/i });
+
+    expect(cleaningChip).toBeChecked();
+
+    await user.tab();
+    expect(cleaningChip).toHaveFocus();
+
+    await user.keyboard("{ArrowRight}");
+    expect(dentalChip).toHaveFocus();
+    expect(dentalChip).toBeChecked();
+    expect(cleaningChip).not.toBeChecked();
+
+    await user.keyboard("{ArrowRight}");
+    expect(pricingChip).toHaveFocus();
+    expect(pricingChip).toBeChecked();
+  });
+
+  it("gives each chip a visible focus ring wired to peer-focus-visible", () => {
+    render(<SignatureDemo />);
+
+    const chip = screen.getByRole("radio", { name: /^Cleaning$/i });
+    const visibleBadge = chip.nextElementSibling;
+    expect(visibleBadge?.className).toContain("peer-focus-visible:ring-2");
+  });
+
+  it("exposes correct ARIA structure: a named group of four radios, one checked", () => {
+    render(<SignatureDemo />);
+
+    const group = screen.getByRole("group", { name: /choose a demo scenario/i });
+    expect(group.tagName).toBe("FIELDSET");
+
+    const radios = screen.getAllByRole("radio");
+    expect(radios).toHaveLength(4);
+    expect(radios.every((r) => r.getAttribute("name") === "signature-demo-scenario")).toBe(true);
+
+    const checked = radios.filter((r) => (r as HTMLInputElement).checked);
+    expect(checked).toHaveLength(1);
+    expect(checked[0]).toHaveAccessibleName(/^Cleaning$/i);
+  });
+
+  it("respects reduced motion for any selected scenario, not just the default", () => {
+    mockReducedMotion(true);
+    render(<SignatureDemo />);
+
+    fireEvent.click(screen.getByRole("radio", { name: /^Dental$/i }));
+
+    expect(screen.getByText(/consultation with dr\. martinez/i)).toBeInTheDocument();
+    expect(screen.getByText(/dr\. martinez has an opening tomorrow/i)).toBeInTheDocument();
   });
 });

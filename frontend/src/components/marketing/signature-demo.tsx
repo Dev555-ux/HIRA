@@ -4,6 +4,7 @@ import { BookOpen, Calendar, UserCheck, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { AIAvatar } from "@/components/ui/ai-avatar";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useInView } from "@/hooks/use-in-view";
 import { cn } from "@/lib/utils";
@@ -138,21 +139,21 @@ const ESCALATION_BEATS: Beat[] = [
 export const SCENARIOS: Record<ScenarioId, Scenario> = {
   cleaning: {
     id: "cleaning",
-    chipLabel: "Booking",
+    chipLabel: "Cleaning",
     customerMessage: "Do you have availability for a cleaning this Thursday?",
     replyMessage: "Thursday at 10:00 AM works — you're all set!",
     beats: CLEANING_BEATS,
   },
   dental: {
     id: "dental",
-    chipLabel: "Clinic",
+    chipLabel: "Dental",
     customerMessage: "Can I book a consultation with Dr. Martinez tomorrow afternoon?",
     replyMessage: "Dr. Martinez has an opening tomorrow at 3:30 PM — you're all set!",
     beats: DENTAL_BEATS,
   },
   pricing: {
     id: "pricing",
-    chipLabel: "Knowledge",
+    chipLabel: "Pricing",
     customerMessage: "What do your plans include, and is there human escalation?",
     replyMessage:
       "Every plan includes human escalation, grounded in what you've told HIRA — no generic guessing.",
@@ -167,8 +168,8 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
   },
 };
 
-// Default to today's scenario — no selector exists yet (a later PR), so
-// this is the only one ever rendered right now.
+// Default to today's scenario — what SignatureDemo's ScenarioSelector
+// (below) opens on.
 export const DEFAULT_SCENARIO_ID: ScenarioId = "cleaning";
 
 function useReducedMotion() {
@@ -309,12 +310,19 @@ function ClosingLine() {
   );
 }
 
-function DemoWidget() {
+// Sprint 66 PR-3 — `key={scenarioId}` at the call site (see SignatureDemo
+// below) remounts this whole widget on scenario change: every useState
+// here reinitializes to its default and every effect's cleanup runs before
+// the new instance's effects fire. That's the entire reset-and-restart
+// mechanism — no manual "reset on scenario change" effect needed, no risk
+// of a stale timer reading the new scenario's (possibly shorter) beats
+// array. The engine below is otherwise byte-for-byte what PR-2 shipped.
+function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
   const reducedMotion = useReducedMotion();
   // DESIGN-MOTION-001 §7.3: at rest until scrolled into view, then alive;
   // pauses again if scrolled away.
   const { ref: viewRef, inView } = useInView<HTMLDivElement>({ once: false, rootMargin: "0px" });
-  const scenario = SCENARIOS[DEFAULT_SCENARIO_ID];
+  const scenario = SCENARIOS[scenarioId];
   const [beatIndex, setBeatIndex] = useState(0);
   const [messageVisible, setMessageVisible] = useState(false);
   const [status, setStatus] = useState<Record<SystemId, SystemStatus>>(IDLE_STATUS);
@@ -428,16 +436,73 @@ function DemoWidget() {
   );
 }
 
+// Sprint 66 PR-3 — the four scenarios in the order the ticket lists them,
+// and their chip emoji. Not part of the Scenario data model itself
+// (SCENARIOS stays presentation-agnostic) — this is UI-layer data, so it
+// lives next to the component that's the only thing that reads it.
+const SCENARIO_ORDER: ScenarioId[] = ["cleaning", "dental", "pricing", "escalation"];
+const SCENARIO_EMOJI: Record<ScenarioId, string> = {
+  cleaning: "🧹",
+  dental: "🦷",
+  pricing: "💰",
+  escalation: "🚨",
+};
+
+// Native <input type="radio"> chips, not a hand-rolled role="radiogroup":
+// a real radio group gets correct roving-tabindex, arrow-key navigation,
+// and Home/End behavior from the browser for free — re-implementing that
+// in JS is exactly the kind of thing a native element already does better.
+// <fieldset>/<legend> gives assistive tech the group's accessible name
+// without a redundant visible heading. Reuses Badge (the app's existing
+// pill/chip primitive, already on --motion-fast) instead of hand-styling
+// a new chip — its focus-visible ring matches the ring already used on the
+// demo widget itself below.
+function ScenarioSelector({
+  scenarioId,
+  onChange,
+}: {
+  scenarioId: ScenarioId;
+  onChange: (id: ScenarioId) => void;
+}) {
+  return (
+    <fieldset className="mb-8 flex flex-wrap justify-center gap-2">
+      <legend className="sr-only">Choose a demo scenario</legend>
+      {SCENARIO_ORDER.map((id) => (
+        <label key={id} className="cursor-pointer">
+          <input
+            type="radio"
+            name="signature-demo-scenario"
+            value={id}
+            checked={scenarioId === id}
+            onChange={() => onChange(id)}
+            className="peer sr-only"
+          />
+          <Badge
+            variant={scenarioId === id ? "default" : "outline"}
+            className="gap-1.5 px-3 py-1 text-sm peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background"
+          >
+            <span aria-hidden="true">{SCENARIO_EMOJI[id]}</span>
+            {SCENARIOS[id].chipLabel}
+          </Badge>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 // Section-level wrapper: a narrower container than before (max-w-2xl, not
 // max-w-6xl) — the radial layout is inherently more compact/vertical than
 // the old wide horizontal flow, so a wide section around it just reads as
 // empty space. Same quiet industrial framing (a single top rule, generous
 // vertical padding) as every other section boundary on the page.
 export function SignatureDemo() {
+  const [scenarioId, setScenarioId] = useState<ScenarioId>(DEFAULT_SCENARIO_ID);
+
   return (
     <section className="border-t py-24 sm:py-32">
       <div className="mx-auto max-w-2xl px-4 sm:px-6">
-        <DemoWidget />
+        <ScenarioSelector scenarioId={scenarioId} onChange={setScenarioId} />
+        <DemoWidget key={scenarioId} scenarioId={scenarioId} />
       </div>
     </section>
   );
