@@ -5,9 +5,9 @@ import { MarketingPage } from "@/components/marketing/marketing-page";
 import { authEnabled } from "@/lib/config";
 
 const SITE_URL = "https://hira-tau.vercel.app";
-const TITLE = "HIRA — The AI Employee for WhatsApp-First Businesses";
+const TITLE = "HIRA — The AI Employee for WhatsApp | Stoneveil";
 const DESCRIPTION =
-  "HIRA is the AI employee businesses hire to answer customers on WhatsApp, book appointments, and follow up on every lead — grounded in your own knowledge, supervised by you.";
+  "HIRA answers your customers on WhatsApp, books appointments, follows up on leads, and hands the conversation to your team when it needs a human touch. Engineered by Stoneveil.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     title: TITLE,
     description: DESCRIPTION,
     url: "/",
-    siteName: "HIRA",
+    siteName: "HIRA by Stoneveil",
     type: "website",
   },
   twitter: {
