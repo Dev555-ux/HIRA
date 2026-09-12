@@ -41,7 +41,15 @@ export const FAQS = [
 
 export function Faq() {
   return (
-    <section id="faq" className="scroll-mt-16 py-20 sm:py-28">
+    // Signal & Depth PR-6 — the only section boundary on the page that was
+    // neither a documented hard color-cut (Solution/AiEmployees/FinalCta,
+    // each with their own comment explaining why a hairline would double-
+    // mark the seam) nor had the standard border-t six other sections use
+    // (HeroTrustStrip, SignatureDemo, Journey, Problem, Features,
+    // HowItWorks). HowItWorks ends on bg-secondary/40; Faq starts on plain
+    // background — a real but subtle shift with nothing marking it. border-t
+    // matches the established pattern; no other property changed.
+    <section id="faq" className="scroll-mt-16 border-t py-20 sm:py-28">
       <Reveal className="mx-auto max-w-2xl px-4 sm:px-6">
         <SectionHeader title="Frequently asked questions" />
         {/* V4 "Signal & Quiet": no more per-row cards — a plain hairline-divided
