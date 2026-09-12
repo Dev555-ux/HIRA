@@ -2,8 +2,8 @@
 
 import { ArrowRight, Check, CheckCheck, Pause, Play, UserRoundCheck } from "lucide-react";
 import Link from "next/link";
-import { AnimatePresence, motion, MotionConfig, useMotionValue, useSpring } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, MotionConfig } from "framer-motion";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ThinkingIndicator } from "@/components/ui/working-indicator";
@@ -387,60 +387,43 @@ function ProductDemo({
   );
 }
 
-// A few pixels, not a gesture — the card should feel anchored, only ever
-// nudged by the cursor.
-const PARALLAX_RANGE = 6;
-
-function FloatingDemo({ reducedMotion, ...props }: React.ComponentProps<typeof ProductDemo>) {
-  const sectionRef = useRef<HTMLDivElement>(null);
-  const rawX = useMotionValue(0);
-  const rawY = useMotionValue(0);
-  const x = useSpring(rawX, { stiffness: 100, damping: 22, mass: 0.6 });
-  const y = useSpring(rawY, { stiffness: 100, damping: 22, mass: 0.6 });
-
-  const handleMouseMove = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      if (reducedMotion || !sectionRef.current) return;
-      const rect = sectionRef.current.getBoundingClientRect();
-      const relX = (event.clientX - rect.left) / rect.width - 0.5;
-      const relY = (event.clientY - rect.top) / rect.height - 0.5;
-      rawX.set(relX * PARALLAX_RANGE);
-      rawY.set(relY * PARALLAX_RANGE);
-    },
-    [reducedMotion, rawX, rawY],
-  );
-
-  const handleMouseLeave = useCallback(() => {
-    rawX.set(0);
-    rawY.set(0);
-  }, [rawX, rawY]);
-
+// Sprint 66 PR-5 — was FloatingDemo: continuous mouse-tracking parallax
+// (useMotionValue/useSpring), an infinite y:[0,-4,0] float, and an infinite
+// animate-ambient-pulse glow. All three are exactly what this pass removes
+// — DESIGN-MOTION-001 §7.2 already says "no parallax on the hero," and a
+// second animated glow here would make two atmosphere layers (the section
+// now has its own, see HeroAtmosphere) instead of one. What's left is the
+// one-time entrance (fade + rise + scale, springIn) — a single composed
+// arrival, not a loop — so the anchor object still feels alive on first
+// paint without ever repeating. ProductDemo itself (the actual proof
+// animation: stages, holds, bubbles) is untouched below.
+function ComposedDemo({ reducedMotion, ...props }: React.ComponentProps<typeof ProductDemo>) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 24, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ ...springIn, delay: 0.2 }}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      ref={sectionRef}
-      className="relative"
+      className="mx-auto max-w-md lg:mx-0"
     >
-      <div
-        aria-hidden="true"
-        className="absolute -inset-8 -z-10 rounded-[48px] bg-brand/10 opacity-25 blur-3xl animate-ambient-pulse"
-      />
-      <motion.div
-        style={{ x, y }}
-        animate={{ y: [0, -4, 0] }}
-        transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <ProductDemo reducedMotion={reducedMotion} {...props} />
-      </motion.div>
+      <ProductDemo reducedMotion={reducedMotion} {...props} />
       <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
         <UserRoundCheck className="size-3.5 shrink-0" aria-hidden="true" />
         Escalates only when human attention is required
       </p>
     </motion.div>
+  );
+}
+
+// Sprint 66 PR-5 — the one atmosphere layer the ticket asks for: a static,
+// aria-hidden radial glow behind the whole section. No keyframes, no
+// scroll/mouse coupling, so "respect reduced motion" holds by having
+// nothing to reduce. pointer-events-none keeps it fully inert. Pure CSS —
+// no image asset, so nothing here can affect LCP.
+function HeroAtmosphere() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      <div className="absolute left-1/2 top-0 h-[42rem] w-[64rem] -translate-x-1/2 -translate-y-1/3 rounded-full bg-brand/[0.07] blur-3xl" />
+    </div>
   );
 }
 
@@ -453,7 +436,8 @@ export function Hero() {
 
   return (
     <MotionConfig reducedMotion={reducedMotion ? "always" : "never"}>
-      <section className="mx-auto flex max-w-7xl flex-col px-4 py-20 sm:px-6 sm:py-28 lg:grid lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-20 lg:py-40 xl:gap-24">
+      <section className="relative mx-auto flex max-w-7xl flex-col px-4 py-20 sm:px-6 sm:py-28 lg:grid lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-20 lg:py-40 xl:gap-24">
+        <HeroAtmosphere />
         <motion.div
           variants={staggerContainer}
           initial="hidden"
@@ -492,7 +476,7 @@ export function Hero() {
           </motion.h1>
           <motion.p
             variants={fadeUp}
-            className="mx-auto mt-8 max-w-[56ch] text-pretty text-lg text-muted-foreground sm:text-xl lg:mx-0"
+            className="mx-auto mt-8 max-w-[52ch] text-pretty text-lg leading-relaxed text-muted-foreground sm:text-xl lg:mx-0"
           >
             HIRA answers your customers on WhatsApp, books appointments, follows
             up on leads, and hands the conversation to your team the moment it
@@ -500,7 +484,7 @@ export function Hero() {
           </motion.p>
           <motion.div
             variants={fadeUp}
-            className="mt-12 flex flex-col items-center gap-5 lg:items-start"
+            className="mt-12 flex flex-col items-center gap-6 lg:items-start"
           >
             <motion.div
               whileHover={{ y: -2, scale: 1.01 }}
@@ -532,7 +516,7 @@ export function Hero() {
         </motion.div>
 
         <div className="lg:order-2">
-          <FloatingDemo reducedMotion={reducedMotion} onResolved={handleResolved} onReset={handleReset} />
+          <ComposedDemo reducedMotion={reducedMotion} onResolved={handleResolved} onReset={handleReset} />
         </div>
       </section>
     </MotionConfig>
