@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { Reveal } from "@/components/marketing/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 const FEATURES = [
   {
@@ -48,40 +50,58 @@ const FEATURES = [
   },
 ];
 
-// V4 "Signal & Quiet": the 3x2 icon-card grid was the single most generic
-// "SaaS feature grid" moment on the page (and, post-V3, visually identical
-// to Problem's cards) — cut in favor of a spec-sheet list, a label column
-// against a description column separated by hairline rules, no
-// border/shadow/radius per row. Same six claims, same order; only the
-// container disappears.
+// Sprint 66 PR-6 — "Signal & Quiet"'s spec-sheet list (V4, see prior history
+// in git blame) becomes a Bento grid: same six claims, same order, same
+// data — only the container and its per-card visual weight change. Applied
+// by array index, not by reordering FEATURES: Knowledge base(0),
+// Appointment booking(1), and Unified inbox(5) get the wide/full-width grid
+// spans and the larger icon/type/padding treatment the ticket asks for;
+// Assisted or Autonomous(2), Escalation(3), and Lead pipeline(4) stay
+// compact. Spans only apply at `lg:` — sm is a plain balanced 2-up grid,
+// and mobile is simple stacked single-column cards, per the brief.
 //
-// Post-launch self-critique: at py-8/py-10 per row, six rows made this the
-// single longest scroll on the page for what is, relatively, its least
-// dense content — a "spacious" list had drifted into "slow." Rows tightened
-// to py-6/py-7 (outer section padding untouched, still the shared Standard
-// tier) — reads as a fast, scannable spec sheet again instead of a second
-// hero-length section.
+// Cards reuse <Card interactive> verbatim (existing radius/shadow/elevation
+// and the existing hover-lift transition) — no new card treatment, no
+// glassmorphism, no gradients. The hover lift is a resting/hover/active
+// CSS transition already defined on Card itself, so this stays pure CSS —
+// no client state, no "use client" needed anywhere in this file.
+const LARGE_FEATURE_INDICES = new Set([0, 1, 5]);
+const LARGE_SPAN_CLASS_NAME: Record<number, string> = {
+  0: "lg:col-span-2",
+  5: "lg:col-span-3",
+};
+
 export function Features() {
   return (
     <section id="features" className="scroll-mt-16 border-t py-20 sm:py-28">
       <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHeader title="Everything the front desk does, minus the wait" className="mx-auto max-w-2xl" />
-        <div className="mt-16 divide-y divide-border border-t sm:mt-20">
-          {FEATURES.map((feature) => (
-            <div
-              key={feature.title}
-              className="grid gap-3 py-6 sm:grid-cols-[16rem_1fr] sm:items-baseline sm:gap-10 sm:py-7"
-            >
-              <div className="flex items-center gap-3">
-                <feature.icon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <h3 className="text-lg font-semibold tracking-tight">{feature.title}</h3>
-              </div>
-              <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
-                {feature.description}
-              </p>
-            </div>
-          ))}
-        </div>
+        {/* Sprint 66 PR-9 — <ul>/<li>, not a bare grid of <div>s: a real set
+            of items, matching the list convention Journey and HeroTrustStrip
+            already use for their own multi-item content. No visual change —
+            Tailwind's preflight already zeroes list-style/margin on every
+            <ul>/<ol> in this app (see Journey's own unnumbered <ol>). */}
+        <ul className="mt-16 grid gap-4 sm:mt-20 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+          {FEATURES.map((feature, index) => {
+            const large = LARGE_FEATURE_INDICES.has(index);
+            return (
+              <li key={feature.title} className={LARGE_SPAN_CLASS_NAME[index]}>
+                <Card interactive className={cn("flex h-full flex-col gap-3", large ? "p-6 sm:p-8" : "p-5 sm:p-6")}>
+                  <feature.icon
+                    className={cn("shrink-0 text-muted-foreground", large ? "size-6" : "size-5")}
+                    aria-hidden="true"
+                  />
+                  <h3 className={cn("font-semibold tracking-tight", large ? "text-xl" : "text-lg")}>
+                    {feature.title}
+                  </h3>
+                  <p className={cn("leading-relaxed text-muted-foreground", large ? "text-base" : "text-sm")}>
+                    {feature.description}
+                  </p>
+                </Card>
+              </li>
+            );
+          })}
+        </ul>
       </Reveal>
     </section>
   );

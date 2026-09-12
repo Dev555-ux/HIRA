@@ -33,6 +33,7 @@ export function AiEmployees() {
       <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <h2 className="sr-only">AI employees, not just automations</h2>
         <Card
+          interactive
           className="mx-auto flex max-w-3xl flex-col items-center gap-4 p-6 text-center sm:flex-row sm:gap-6 sm:text-left"
           onMouseEnter={() => setHovering(true)}
           onMouseLeave={() => setHovering(false)}

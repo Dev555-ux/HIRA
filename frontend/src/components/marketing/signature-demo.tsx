@@ -3,9 +3,12 @@
 import { BookOpen, Calendar, UserCheck, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
+import { PhoneFrame } from "@/components/marketing/phone-frame";
 import { AIAvatar } from "@/components/ui/ai-avatar";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useInView } from "@/hooks/use-in-view";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
 // V5.1 "Orchestration Hub": rebuilt from a sparse six-node row into a
@@ -19,9 +22,6 @@ import { cn } from "@/lib/utils";
 // separate mobile coordinate set is needed anymore.
 type SystemId = "knowledge" | "calendar" | "team" | "crm";
 type SystemStatus = "idle" | "active" | "done";
-
-const CUSTOMER_MESSAGE = "Do you have availability for a cleaning this Thursday?";
-const REPLY_MESSAGE = "Thursday at 10:00 AM works — you're all set!";
 
 const HUB = { x: 50, y: 50 };
 
@@ -63,9 +63,27 @@ type Beat = {
   closing?: boolean;
 };
 
+// Sprint 66 PR-2 — data model only, no engine change: BEATS (a single
+// hardcoded sequence) becomes SCENARIOS (a named sequence per scenario).
+// DemoWidget still walks whichever `beats` array it's given exactly as
+// before; only where that array comes from changed. Only "cleaning" is
+// wired up to render today (DEFAULT_SCENARIO_ID below) — the other three
+// are real, valid data, ready for the scenario-selector UI (a later PR),
+// not yet reachable from anywhere.
+export type ScenarioId = "cleaning" | "dental" | "pricing" | "escalation";
+
+export type Scenario = {
+  id: ScenarioId;
+  chipLabel: string;
+  customerMessage: string;
+  replyMessage: string;
+  beats: Beat[];
+};
+
 // Same "overlap, not a rigid queue" philosophy as before, sized to four
-// systems: Knowledge and CRM run together, then Calendar and Team.
-const BEATS: Beat[] = [
+// systems: Knowledge and CRM run together, then Calendar and Team. This is
+// verbatim the old top-level BEATS constant, now SCENARIOS.cleaning.beats.
+const CLEANING_BEATS: Beat[] = [
   { hold: 1400 }, // Scene 1 — idle, quiet, nothing moves
   { hold: 500, message: true }, // Scene 2 — the message arrives
   { hold: 300 }, // a breath before HIRA reacts
@@ -83,17 +101,78 @@ const BEATS: Beat[] = [
   { hold: 600 }, // hold before the loop resets
 ];
 
-function useReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(query.matches);
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
+// Same four-system rhythm as cleaning — a clinic booking is structurally
+// the same flow, only the copy changes.
+const DENTAL_BEATS: Beat[] = CLEANING_BEATS;
+
+// Only two systems answer a pricing question — Knowledge and CRM run
+// together, then settle. Calendar/Team simply never receive a beat and
+// stay idle throughout; SystemNode already renders that correctly.
+const PRICING_BEATS: Beat[] = [
+  { hold: 1400 },
+  { hold: 500, message: true },
+  { hold: 300 },
+  { hold: 700, systems: { knowledge: "active" } },
+  { hold: 500, systems: { crm: "active" } },
+  { hold: 700, systems: { knowledge: "done" } },
+  { hold: 500, systems: { crm: "done" } },
+  { hold: 700, settled: true },
+  { hold: 2200, reply: true },
+  { hold: 3200, closing: true },
+  { hold: 600 },
+];
+
+// An escalation only needs CRM (to pull up the customer) and Team (to hand
+// off) — Knowledge/Calendar stay idle throughout.
+const ESCALATION_BEATS: Beat[] = [
+  { hold: 1400 },
+  { hold: 500, message: true },
+  { hold: 300 },
+  { hold: 700, systems: { crm: "active" } },
+  { hold: 500, systems: { team: "active" } },
+  { hold: 700, systems: { crm: "done" } },
+  { hold: 500, systems: { team: "done" } },
+  { hold: 700, settled: true },
+  { hold: 2200, reply: true },
+  { hold: 3200, closing: true },
+  { hold: 600 },
+];
+
+export const SCENARIOS: Record<ScenarioId, Scenario> = {
+  cleaning: {
+    id: "cleaning",
+    chipLabel: "Cleaning",
+    customerMessage: "Do you have availability for a cleaning this Thursday?",
+    replyMessage: "Thursday at 10:00 AM works — you're all set!",
+    beats: CLEANING_BEATS,
+  },
+  dental: {
+    id: "dental",
+    chipLabel: "Dental",
+    customerMessage: "Can I book a consultation with Dr. Martinez tomorrow afternoon?",
+    replyMessage: "Dr. Martinez has an opening tomorrow at 3:30 PM — you're all set!",
+    beats: DENTAL_BEATS,
+  },
+  pricing: {
+    id: "pricing",
+    chipLabel: "Pricing",
+    customerMessage: "What do your plans include, and is there human escalation?",
+    replyMessage:
+      "Every plan includes human escalation, grounded in what you've told HIRA — no generic guessing.",
+    beats: PRICING_BEATS,
+  },
+  escalation: {
+    id: "escalation",
+    chipLabel: "Escalation",
+    customerMessage: "I need to speak with your team about an urgent issue.",
+    replyMessage: "I've flagged this to your team with the full conversation — they'll take it from here.",
+    beats: ESCALATION_BEATS,
+  },
+};
+
+// Default to today's scenario — what SignatureDemo's ScenarioSelector
+// (below) opens on.
+export const DEFAULT_SCENARIO_ID: ScenarioId = "cleaning";
 
 // Cables radiate from the hub outward — HIRA reaching into each system,
 // not systems reporting in independently. Same two-line technique as
@@ -125,6 +204,11 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
           );
         }
 
+        // No transition class: idle and done both render this same static
+        // line, but as a *different* element than the active <g> above (key
+        // stays sys.id either way, but the tag itself changes), so React
+        // unmounts/remounts rather than restyles in place — a transition
+        // here would never fire.
         return (
           <line
             key={sys.id}
@@ -134,7 +218,7 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
             y2={sys.y}
             vectorEffect="non-scaling-stroke"
             strokeWidth={1}
-            className="stroke-border transition-colors duration-700"
+            className="stroke-border"
           />
         );
       })}
@@ -164,7 +248,7 @@ function SystemNode({
     >
       <span
         className={cn(
-          "flex size-8 items-center justify-center rounded-full border bg-card transition-all duration-500 [&_svg]:size-4",
+          "flex size-8 items-center justify-center rounded-full border bg-card transition-all duration-[var(--motion-slow)] [&_svg]:size-4",
           status === "idle" && "border-border/50 text-muted-foreground/40",
           status === "active" && "scale-110 border-primary bg-primary/10 text-primary",
           status === "done" && !settled && "border-success bg-success/10 text-success",
@@ -175,7 +259,7 @@ function SystemNode({
       </span>
       <span
         className={cn(
-          "text-[11px] font-medium uppercase tracking-wide transition-colors duration-500",
+          "text-[11px] font-medium uppercase tracking-wide transition-colors duration-[var(--motion-slow)]",
           status === "idle" ? "text-muted-foreground/35" : "text-muted-foreground",
         )}
       >
@@ -183,7 +267,7 @@ function SystemNode({
       </span>
       <span
         className={cn(
-          "block text-[10px] leading-tight transition-opacity duration-500",
+          "block text-[10px] leading-tight transition-opacity duration-[var(--motion-slow)]",
           showStatus ? "opacity-100" : "opacity-0",
           status === "done" ? "text-success" : "text-muted-foreground/70",
         )}
@@ -221,11 +305,19 @@ function ClosingLine() {
   );
 }
 
-function DemoWidget() {
+// Sprint 66 PR-3 — `key={scenarioId}` at the call site (see SignatureDemo
+// below) remounts this whole widget on scenario change: every useState
+// here reinitializes to its default and every effect's cleanup runs before
+// the new instance's effects fire. That's the entire reset-and-restart
+// mechanism — no manual "reset on scenario change" effect needed, no risk
+// of a stale timer reading the new scenario's (possibly shorter) beats
+// array. The engine below is otherwise byte-for-byte what PR-2 shipped.
+function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
   const reducedMotion = useReducedMotion();
   // DESIGN-MOTION-001 §7.3: at rest until scrolled into view, then alive;
   // pauses again if scrolled away.
   const { ref: viewRef, inView } = useInView<HTMLDivElement>({ once: false, rootMargin: "0px" });
+  const scenario = SCENARIOS[scenarioId];
   const [beatIndex, setBeatIndex] = useState(0);
   const [messageVisible, setMessageVisible] = useState(false);
   const [status, setStatus] = useState<Record<SystemId, SystemStatus>>(IDLE_STATUS);
@@ -245,7 +337,7 @@ function DemoWidget() {
     if (paused || tabHidden || reducedMotion || !inView) return;
     const timer = setTimeout(() => {
       const nextIndex = beatIndex + 1;
-      if (nextIndex >= BEATS.length) {
+      if (nextIndex >= scenario.beats.length) {
         setMessageVisible(false);
         setStatus(IDLE_STATUS);
         setSettled(false);
@@ -254,24 +346,24 @@ function DemoWidget() {
         setBeatIndex(0);
         return;
       }
-      const beat = BEATS[nextIndex];
+      const beat = scenario.beats[nextIndex];
       if (beat.message) setMessageVisible(true);
       if (beat.systems) setStatus((prev) => ({ ...prev, ...beat.systems }));
       if (beat.settled) setSettled(true);
       if (beat.reply) setReplyVisible(true);
       if (beat.closing) setClosingVisible(true);
       setBeatIndex(nextIndex);
-    }, BEATS[beatIndex].hold);
+    }, scenario.beats[beatIndex].hold);
     return () => clearTimeout(timer);
-  }, [beatIndex, paused, tabHidden, reducedMotion, inView]);
+  }, [beatIndex, paused, tabHidden, reducedMotion, inView, scenario]);
 
   const anyActive = Object.values(status).some((s) => s === "active");
   const hubState = settled ? "success" : anyActive ? "working" : "idle";
 
   const summary =
-    `Demo: a customer messages HIRA asking, "${CUSTOMER_MESSAGE}" HIRA coordinates four ` +
+    `Demo: a customer messages HIRA asking, "${scenario.customerMessage}" HIRA coordinates four ` +
     "connected systems — Knowledge, CRM, Calendar, and Team — each working independently before " +
-    `settling together in one synchronized moment and sending a reply: "${REPLY_MESSAGE}" One ` +
+    `settling together in one synchronized moment and sending a reply: "${scenario.replyMessage}" One ` +
     "message, four systems, zero manual work.";
 
   if (reducedMotion) {
@@ -279,7 +371,7 @@ function DemoWidget() {
       <div className="mx-auto w-full max-w-md">
         <Card role="img" aria-label={summary} className="space-y-4 overflow-hidden p-6 sm:p-8">
           <div aria-hidden="true" className="space-y-4">
-            <CustomerBubble text={CUSTOMER_MESSAGE} />
+            <CustomerBubble text={scenario.customerMessage} />
             <div className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
               <Cables status={DONE_STATUS} />
               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
@@ -289,7 +381,7 @@ function DemoWidget() {
                 <SystemNode key={sys.id} sys={sys} status="done" settled statusTextVisible />
               ))}
             </div>
-            <ReplyBubble text={REPLY_MESSAGE} />
+            <ReplyBubble text={scenario.replyMessage} />
           </div>
         </Card>
       </div>
@@ -309,7 +401,7 @@ function DemoWidget() {
       onBlur={() => setPaused(false)}
     >
       <Card className="relative space-y-4 overflow-hidden p-6 sm:p-8">
-        {messageVisible && !closingVisible && <CustomerBubble text={CUSTOMER_MESSAGE} />}
+        {messageVisible && !closingVisible && <CustomerBubble text={scenario.customerMessage} />}
 
         <div aria-hidden="true" className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
           <Cables status={status} />
@@ -332,9 +424,77 @@ function DemoWidget() {
           ))}
         </div>
 
-        {replyVisible && !closingVisible && <ReplyBubble text={REPLY_MESSAGE} />}
+        {replyVisible && !closingVisible && <ReplyBubble text={scenario.replyMessage} />}
         {closingVisible && <ClosingLine />}
       </Card>
+    </div>
+  );
+}
+
+// Sprint 66 PR-3 — the four scenarios in the order the ticket lists them,
+// and their chip emoji. Not part of the Scenario data model itself
+// (SCENARIOS stays presentation-agnostic) — this is UI-layer data, so it
+// lives next to the component that's the only thing that reads it.
+const SCENARIO_ORDER: ScenarioId[] = ["cleaning", "dental", "pricing", "escalation"];
+const SCENARIO_EMOJI: Record<ScenarioId, string> = {
+  cleaning: "🧹",
+  dental: "🦷",
+  pricing: "💰",
+  escalation: "🚨",
+};
+
+// Native <input type="radio"> chips, not a hand-rolled role="radiogroup":
+// a real radio group gets correct roving-tabindex, arrow-key navigation,
+// and Home/End behavior from the browser for free — re-implementing that
+// in JS is exactly the kind of thing a native element already does better.
+// <fieldset>/<legend> gives assistive tech the group's accessible name
+// without a redundant visible heading. Reuses Badge (the app's existing
+// pill/chip primitive, already on --motion-fast) instead of hand-styling
+// a new chip — its focus-visible ring matches the ring already used on the
+// demo widget itself below.
+function ScenarioSelector({
+  scenarioId,
+  onChange,
+}: {
+  scenarioId: ScenarioId;
+  onChange: (id: ScenarioId) => void;
+}) {
+  return (
+    <fieldset className="mb-10 flex flex-wrap justify-center gap-2">
+      <legend className="sr-only">Choose a demo scenario</legend>
+      {SCENARIO_ORDER.map((id) => (
+        <label key={id} className="cursor-pointer">
+          <input
+            type="radio"
+            name="signature-demo-scenario"
+            value={id}
+            checked={scenarioId === id}
+            onChange={() => onChange(id)}
+            className="peer sr-only"
+          />
+          <Badge
+            variant={scenarioId === id ? "default" : "outline"}
+            className="gap-1.5 px-3 py-1 text-sm peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background"
+          >
+            <span aria-hidden="true">{SCENARIO_EMOJI[id]}</span>
+            {SCENARIOS[id].chipLabel}
+          </Badge>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+// Sprint 66 PR-4 — one static atmospheric layer behind the phone: a
+// blurred, aria-hidden glow, sized and positioned with plain CSS. No
+// keyframes, no transform on scroll/mouse, so "respect reduced motion" is
+// satisfied by having nothing to reduce in the first place, not by a media
+// query working around an animation. pointer-events-none keeps it fully
+// inert — it can never intercept a click meant for the selector or demo.
+function AtmosphereBackground() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      <div className="absolute left-1/2 top-1/2 h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/5 blur-3xl" />
     </div>
   );
 }
@@ -345,10 +505,16 @@ function DemoWidget() {
 // empty space. Same quiet industrial framing (a single top rule, generous
 // vertical padding) as every other section boundary on the page.
 export function SignatureDemo() {
+  const [scenarioId, setScenarioId] = useState<ScenarioId>(DEFAULT_SCENARIO_ID);
+
   return (
-    <section className="border-t py-24 sm:py-32">
-      <div className="mx-auto max-w-2xl px-4 sm:px-6">
-        <DemoWidget />
+    <section className="relative border-t py-24 sm:py-32">
+      <AtmosphereBackground />
+      <div className="relative mx-auto max-w-2xl px-4 sm:px-6">
+        <ScenarioSelector scenarioId={scenarioId} onChange={setScenarioId} />
+        <PhoneFrame>
+          <DemoWidget key={scenarioId} scenarioId={scenarioId} />
+        </PhoneFrame>
       </div>
     </section>
   );

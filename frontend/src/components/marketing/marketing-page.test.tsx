@@ -29,11 +29,26 @@ describe("MarketingPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("answers who HIRA is built for right below the hero", () => {
+    render(<MarketingPage />);
+
+    expect(screen.getByText("Built for")).toBeInTheDocument();
+    expect(screen.getByText("Dental Clinics")).toBeInTheDocument();
+    expect(screen.getByText("Professional Services")).toBeInTheDocument();
+  });
+
   it("shows a lightweight trust checklist of things HIRA does today", () => {
     render(<MarketingPage />);
 
     expect(screen.getByText("Replies automatically")).toBeInTheDocument();
     expect(screen.getByText("Escalates to humans")).toBeInTheDocument();
+  });
+
+  it("walks the message-to-finished-job journey in order", () => {
+    render(<MarketingPage />);
+
+    const steps = screen.getAllByRole("listitem").filter((li) => /^0[1-5]$/.test(li.textContent?.slice(0, 2) ?? ""));
+    expect(steps.map((li) => li.textContent?.slice(0, 2))).toEqual(["01", "02", "03", "04", "05"]);
   });
 
   it("links every primary CTA to sign-up", () => {
@@ -68,6 +83,7 @@ describe("MarketingPage", () => {
     render(<MarketingPage />);
 
     const h2s = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(h2s.some((t) => /finished job/i.test(t ?? ""))).toBe(true); // Journey
     expect(h2s.some((t) => /whatsapp/i.test(t ?? ""))).toBe(true); // Problem
     expect(h2s.some((t) => /bundle of bots/i.test(t ?? ""))).toBe(true); // Solution
     expect(h2s.some((t) => /ai employees/i.test(t ?? ""))).toBe(true); // AI Employees

@@ -3,7 +3,9 @@ import { Faq } from "@/components/marketing/faq";
 import { Features } from "@/components/marketing/features";
 import { FinalCta } from "@/components/marketing/final-cta";
 import { Hero } from "@/components/marketing/hero";
+import { HeroTrustStrip } from "@/components/marketing/hero-trust-strip";
 import { HowItWorks } from "@/components/marketing/how-it-works";
+import { Journey } from "@/components/marketing/journey";
 import { Problem } from "@/components/marketing/problem";
 import { SignatureDemo } from "@/components/marketing/signature-demo";
 import { SiteFooter } from "@/components/marketing/site-footer";
@@ -11,18 +13,21 @@ import { SiteHeader } from "@/components/marketing/site-header";
 import { Solution } from "@/components/marketing/solution";
 import { Trust } from "@/components/marketing/trust";
 
-// Hero states the problem and SignatureDemo proves the fix immediately after
-// — a visitor sees the promise and its evidence within the first two
-// sections, before Problem makes the deeper case for anyone not yet sold.
+// Hero states the problem, HeroTrustStrip answers who it's for, and
+// SignatureDemo proves the fix — a visitor sees the promise, the audience,
+// and the evidence within the first three sections, before Problem makes
+// the deeper case for anyone not yet sold.
 //
 // Vertical-padding scale for every section below. V4 "Signal & Quiet" split
 // the old three-tier scale into five, on purpose — deliberate hierarchy
 // means sections no longer share one weight:
 //
 //   Quiet footnote           py-6 sm:py-8              — Trust only
-//   Compact band              py-10 sm:py-12            — AiEmployees only
-//   Standard section          py-20 sm:py-28            — Problem, Features,
-//                                                          How It Works, FAQ
+//   Compact band              py-10 sm:py-12            — AiEmployees,
+//                                                          HeroTrustStrip
+//   Standard section          py-20 sm:py-28            — Journey, Problem,
+//                                                          Features, How It
+//                                                          Works, FAQ
 //   Flagship / hero-adjacent  py-24 sm:py-32(-lg:py-32) — Hero, SignatureDemo
 //   Signal band (bg-primary,  py-24 sm:py-32 lg:py-40   — Solution, FinalCta
 //     inverted, bespoke type)
@@ -48,8 +53,10 @@ export function MarketingPage() {
       <SiteHeader />
       <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
         <Hero />
+        <HeroTrustStrip />
         <SignatureDemo />
         <Trust />
+        <Journey />
         <Problem />
         <Solution />
         <AiEmployees />
