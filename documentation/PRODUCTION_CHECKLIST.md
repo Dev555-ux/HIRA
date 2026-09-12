@@ -78,3 +78,9 @@ Explicitly out of scope, each requiring a founder decision this sprint's "no maj
 - Choice of secrets manager (`INFRA-002`).
 - Choice of monitoring/error-tracking tool (`INFRA-005`) — would be a new paid integration.
 - Rate-limiting library/strategy (`INFRA-007`, newly tracked this sprint).
+
+---
+
+For operational verification after deployment, see
+[PRODUCTION_HEALTH_CHECKLIST.md](PRODUCTION_HEALTH_CHECKLIST.md) and
+[PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md).

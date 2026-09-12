@@ -13,6 +13,14 @@ current beta scale — a founder decision made explicitly for this migration,
 not a default. Revisit (RDS, multiple instances, a load balancer) once real
 traffic/uptime requirements justify the added cost and complexity.
 
+## Related Operational Documentation
+
+- [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md) — command-by-command
+  verification and recovery steps for every part of this deployment (SSL,
+  backups, worker/Docker/nginx health, rollback, and more).
+- [PRODUCTION_HEALTH_CHECKLIST.md](PRODUCTION_HEALTH_CHECKLIST.md) — the
+  5-minute checklist to run after every deployment.
+
 ---
 
 ## Architecture at a glance
