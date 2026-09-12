@@ -183,7 +183,29 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
     <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-hidden="true">
       {SYSTEMS.map((sys) => {
         const state = status[sys.id];
-        if (state === "idle") return null;
+
+        // Signal & Depth PR-5 — previously null: the very first frame (and
+        // every idle system before its own beat fires) showed a floating
+        // icon with no visible relationship to the hub at all. A faint,
+        // static baseline (no animation, matching the same near-invisible
+        // treatment idle gets everywhere else in this file) shows the
+        // topology at rest — "these four are connected to HIRA" reads
+        // before a single beat has run, exactly what the graph should
+        // communicate before anyone reads the copy.
+        if (state === "idle") {
+          return (
+            <line
+              key={sys.id}
+              x1={HUB.x}
+              y1={HUB.y}
+              x2={sys.x}
+              y2={sys.y}
+              vectorEffect="non-scaling-stroke"
+              strokeWidth={1}
+              className="stroke-border/40"
+            />
+          );
+        }
 
         if (state === "active") {
           return (
@@ -204,11 +226,20 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
           );
         }
 
-        // No transition class: idle and done both render this same static
-        // line, but as a *different* element than the active <g> above (key
-        // stays sys.id either way, but the tag itself changes), so React
-        // unmounts/remounts rather than restyles in place — a transition
-        // here would never fire.
+        // Only "done" reaches here now (idle and active both returned
+        // above). No transition class: this renders as a *different*
+        // element than the active <g> above (same key, different tag), so
+        // React unmounts/remounts rather than restyles in place — a
+        // transition here would never fire.
+        //
+        // Signal & Depth PR-4 — this used to render the identical neutral
+        // stroke-border an untouched cable would use, so a completed
+        // connection carried no visual credit at all once its pulse
+        // animation finished. Tinting it with the same success color
+        // SystemNode already uses for its own done state ties the two
+        // together — "this connection succeeded," not just "this line
+        // exists." (PR-5 gave idle its own faint line above, distinct from
+        // both this and the untouched-null case that no longer exists.)
         return (
           <line
             key={sys.id}
@@ -218,7 +249,7 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
             y2={sys.y}
             vectorEffect="non-scaling-stroke"
             strokeWidth={1}
-            className="stroke-border"
+            className="stroke-success/35"
           />
         );
       })}
@@ -278,10 +309,16 @@ function SystemNode({
   );
 }
 
+// Signal & Depth PR-4 — rounded-md read as a generic chat bubble, not a
+// real one. hero.tsx's own ProductDemo already established the tail-corner
+// shape (rounded-2xl, tightened on the corner nearest the sender) for this
+// exact page's other conversation UI — matching it here is conversation
+// realism AND principle 5's "one motif, echoed" rather than two different
+// bubble languages on the same page.
 function CustomerBubble({ text }: { text: string }) {
   return (
     <div className="animate-fade-in flex justify-start">
-      <div className="max-w-[85%] rounded-md bg-muted px-3 py-2 text-sm">{text}</div>
+      <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm">{text}</div>
     </div>
   );
 }
@@ -289,7 +326,7 @@ function CustomerBubble({ text }: { text: string }) {
 function ReplyBubble({ text }: { text: string }) {
   return (
     <div className="animate-fade-in flex justify-end">
-      <div className="max-w-[85%] rounded-md bg-secondary px-3 py-2 text-sm text-secondary-foreground">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-secondary px-3 py-2 text-sm text-secondary-foreground">
         {text}
       </div>
     </div>
@@ -374,8 +411,15 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
             <CustomerBubble text={scenario.customerMessage} />
             <div className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
               <Cables status={DONE_STATUS} />
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                <AIAvatar name="HIRA" size="xl" state="success" />
+              {/* Same static hub glow as the animated branch below, at its
+                  "success" end state — the reduced-motion render is a
+                  single resolved frame, so this needs no transition here. */}
+              <div className="absolute left-1/2 top-1/2 isolate -translate-x-1/2 -translate-y-1/2">
+                <div aria-hidden="true" className="absolute left-1/2 top-1/2 -z-10 size-20 -translate-x-1/2 -translate-y-1/2 rounded-full bg-success/15 blur-xl" />
+                {/* Same elevated dais as the animated branch below. */}
+                <div className="rounded-2xl bg-card p-1.5 shadow-e2 ring-1 ring-border/50">
+                  <AIAvatar name="HIRA" size="xl" state="success" />
+                </div>
               </div>
               {SYSTEMS.map((sys) => (
                 <SystemNode key={sys.id} sys={sys} status="done" settled statusTextVisible />
@@ -405,13 +449,47 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
 
         <div aria-hidden="true" className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
           <Cables status={status} />
+          {/* Signal & Depth PR-4 — HIRA Core prominence: a tight, static
+              glow directly behind the hub, distinct from AtmosphereBackground's
+              much larger ambient blur behind the whole phone. Colored by the
+              same `hubState` already computed above for AIAvatar's own state
+              prop — no new state, just reusing the existing derived value —
+              so the glow itself becomes another (very quiet) instance of
+              principle 1: it only carries color once something is actually
+              happening. `isolate` matters here: this wrapper is `absolute`
+              with no z-index of its own, so without it the child's `-z-10`
+              would escape to the *aspect-square canvas's* stacking context
+              and paint behind the SVG cables too, not just behind the
+              avatar — the same class of bug final-cta.tsx's isolate fix
+              addressed earlier this sprint.
+              Signal & Depth PR-5 — the avatar alone (56px, same size as
+              before) wasn't visually distinct enough from the satellite
+              icons in kind, only in size. A dais (a card-elevated plate
+              around it, shadow-e2) gives the hub its own layer of depth the
+              satellites don't have — "the brain sits above the board," not
+              just "the brain is a bigger dot." AIAvatar itself is
+              untouched; this is a wrapper, not a modification to the
+              shared component. */}
           <div
             className={cn(
-              "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
+              "absolute left-1/2 top-1/2 isolate -translate-x-1/2 -translate-y-1/2",
               settled && "animate-signature-settle",
             )}
           >
-            <AIAvatar name="HIRA" size="xl" state={hubState} />
+            <div
+              aria-hidden="true"
+              className={cn(
+                "absolute left-1/2 top-1/2 -z-10 size-20 -translate-x-1/2 -translate-y-1/2 rounded-full blur-xl transition-colors duration-[var(--motion-slow)]",
+                hubState === "success"
+                  ? "bg-success/15"
+                  : hubState === "working"
+                    ? "bg-primary/10"
+                    : "bg-transparent",
+              )}
+            />
+            <div className="rounded-2xl bg-card p-1.5 shadow-e2 ring-1 ring-border/50">
+              <AIAvatar name="HIRA" size="xl" state={hubState} />
+            </div>
           </div>
           {SYSTEMS.map((sys) => (
             <SystemNode
@@ -474,7 +552,18 @@ function ScenarioSelector({
           />
           <Badge
             variant={scenarioId === id ? "default" : "outline"}
-            className="gap-1.5 px-3 py-1 text-sm peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background"
+            className={cn(
+              "gap-1.5 px-3 py-1 text-sm peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+              // Signal & Depth PR-7 — unselected chips had no hover feedback
+              // at all beyond the label's own cursor:pointer, unlike every
+              // other clickable control in this app (Button, Card
+              // interactive both pair hover with a visible state change).
+              // Reuses Button's own outline-variant hover language
+              // (hover:bg-accent hover:text-accent-foreground) rather than
+              // inventing a new one. The selected chip is left alone — it's
+              // already the active state, nothing new to hint at on hover.
+              scenarioId !== id && "hover:bg-accent hover:text-accent-foreground",
+            )}
           >
             <span aria-hidden="true">{SCENARIO_EMOJI[id]}</span>
             {SCENARIOS[id].chipLabel}

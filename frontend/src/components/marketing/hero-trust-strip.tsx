@@ -28,10 +28,19 @@ export function HeroTrustStrip() {
         <span className="text-[0.6875rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           Built for
         </span>
+        {/* Signal & Depth PR-8 — each row is items-start, not items-center,
+            for the same reason as hero.tsx's Assisted-Mode line: at 360px
+            the two-column grid leaves "Professional Services" too little
+            room, it wraps, and items-center then centred the briefcase icon
+            in the gutter between its two lines. Verified against real
+            device-emulated renders: this wraps at 360 only — 390, 430, 768
+            and landscape all keep it on one line, where items-start +
+            mt-0.5 is pixel-identical to items-center (20px line-height,
+            16px icon → a 2px offset either way). */}
         <ul className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-8 sm:gap-y-3">
           {INDUSTRIES.map((industry) => (
-            <li key={industry.label} className="flex items-center justify-center gap-2 sm:justify-start">
-              <industry.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <li key={industry.label} className="flex items-start justify-center gap-2 sm:justify-start">
+              <industry.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               <span className="text-sm text-muted-foreground">{industry.label}</span>
             </li>
           ))}

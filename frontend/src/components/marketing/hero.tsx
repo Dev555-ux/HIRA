@@ -392,7 +392,13 @@ function ComposedDemo({ reducedMotion, ...props }: React.ComponentProps<typeof P
       initial={{ opacity: 0, y: 24, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ ...springIn, delay: 0.2 }}
-      className="mx-auto max-w-md lg:mx-0"
+      // Signal & Depth PR-1 — max-w-md capped the card well short of the
+      // wider lg:col-span-7 track above, so the grid change alone only
+      // repositioned it, it didn't grow it. lg:max-w-lg lets it actually
+      // fill more of its new column. GlassCard/ProductDemo's internal
+      // measurements are all relative (percentage bubble widths, min-h),
+      // so they scale with this instead of overflowing.
+      className="mx-auto max-w-md lg:mx-0 lg:max-w-lg"
     >
       <ProductDemo reducedMotion={reducedMotion} {...props} />
       <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
@@ -417,10 +423,32 @@ function ComposedDemo({ reducedMotion, ...props }: React.ComponentProps<typeof P
 // glow is entirely why that background isn't plain --background anymore.
 // 0.05 (4.37:1) and 0.03 (4.46:1) still fell short; 0.02 passes (verified
 // by rebuilding and re-running Lighthouse at each step, not calculated).
+//
+// Signal & Depth PR-3 — one centered blob read as decoration with nowhere
+// in particular to come from. Two layers instead, each with a distinct job
+// (principle 9, "atmosphere as art-directed light, not a single flat
+// blur"), still static (no keyframes), still aria-hidden/pointer-events-
+// none, still zero raster assets:
+//   1. Ambient wash — a near-invisible neutral tonal shift top-to-
+//      transparent (foreground/[0.015], within DESIGN-MOTION-001 §4.3's
+//      "≤3% lightness, never brand color" rule for general depth), giving
+//      the whole section a faint sense of light without color.
+//   2. Product-anchored glow — the one warm (brand) accent, deliberately
+//      moved off dead-center and anchored behind where the demo now sits
+//      (col-span-7, PR-1) rather than the section's midpoint, so the light
+//      reads as coming from the product instead of floating independently
+//      of it. This is the Signal-band exception (same reasoning as
+//      final-cta.tsx's glow) — not a violation of §4.3's general rule.
+// Re-verified via a real Lighthouse run after this change, same eyebrow-
+// contrast concern as PR-10 above: still passes clean (see PR-3 delivery
+// notes) — the glow's brand-colored layer moved further from the eyebrow's
+// position, not closer, so if anything this is safer than before, not
+// riskier — verified rather than assumed regardless.
 function HeroAtmosphere() {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-      <div className="absolute left-1/2 top-0 h-[42rem] w-[64rem] -translate-x-1/2 -translate-y-1/3 rounded-full bg-brand/[0.02] blur-3xl" />
+      <div className="absolute inset-0 bg-gradient-to-b from-foreground/[0.015] to-transparent" />
+      <div className="absolute right-0 top-1/2 h-[36rem] w-[36rem] -translate-y-1/2 translate-x-1/4 rounded-full bg-brand/[0.025] blur-3xl" />
     </div>
   );
 }
@@ -434,13 +462,19 @@ export function Hero() {
 
   return (
     <MotionConfig reducedMotion={reducedMotion ? "always" : "never"}>
-      <section className="relative mx-auto flex max-w-7xl flex-col px-4 py-20 sm:px-6 sm:py-28 lg:grid lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-20 lg:py-40 xl:gap-24">
+      {/* Signal & Depth PR-1 — grid-cols-[1fr_1.05fr] gave the copy column
+          and the demo near-equal weight (~49/51). Principle 6 ("space
+          allocation is a hierarchy signal"): the demo is the proof, so it
+          gets the larger share — a 5/7 split, not a coin-flip. Below lg
+          this is still a plain flex column; nothing here changes below
+          that breakpoint. */}
+      <section className="relative mx-auto flex max-w-7xl flex-col px-4 py-20 sm:px-6 sm:py-28 lg:grid lg:grid-cols-12 lg:items-center lg:gap-20 lg:py-40 xl:gap-24">
         <HeroAtmosphere />
         <motion.div
           variants={staggerContainer}
           initial="hidden"
           animate="show"
-          className="mt-12 text-center lg:order-1 lg:mt-0 lg:text-left"
+          className="mt-12 text-center lg:order-1 lg:col-span-5 lg:mt-0 lg:text-left"
         >
           <motion.div
             variants={fadeUp}
@@ -456,8 +490,17 @@ export function Hero() {
             variants={fadeUp}
             className="mt-9 text-balance text-5xl font-black leading-tight tracking-tighter sm:text-6xl lg:max-w-xl xl:text-7xl"
           >
-            Never miss another{" "}
-            {/* text-foreground (not text-brand) on the resolved wash — WCAG
+            Never miss another customer{" "}
+            {/* Signal & Depth PR-2 — one deliberate accent word, not a
+                two-word block: "customer message" as a single highlighted
+                span read as a highlighted phrase, not a precise signal.
+                "message" alone is the one word the whole product turns on —
+                the thing that arrives, gets answered, and (via `resolved`)
+                is the one word that lights up brand-colored the moment the
+                demo actually finishes answering it. Still the same
+                state-tied mechanism, just naming a single word instead of
+                two.
+                text-foreground (not text-brand) on the resolved wash — WCAG
                 AA audit measured brand-on-brand/15 at ~2.8:1, under the 3:1
                 floor for large text even at this size. Foreground on the
                 same tint passes at ~15:1; the tint alone still carries the
@@ -468,7 +511,7 @@ export function Hero() {
                 resolved ? "bg-brand/15 text-foreground" : "bg-muted text-foreground",
               )}
             >
-              customer message
+              message
             </mark>
             .
           </motion.h1>
@@ -497,23 +540,38 @@ export function Hero() {
                 </Link>
               </Button>
             </motion.div>
+            {/* Signal & Depth PR-7 — no focus-visible treatment before
+                this; same gap as the header nav links, same fix
+                (focus-visible:focus-ring, the app's existing opt-in
+                utility). */}
             <a
               href="#how-it-works"
-              className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
+              className="rounded-sm text-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:focus-ring"
             >
               See how it works
             </a>
           </motion.div>
+          {/* Signal & Depth PR-8 — items-start, not items-center: this line
+              wraps to two lines at every phone width (verified at 360/390/
+              430 via real device-emulated renders), and items-center then
+              parked the checkmark in the gutter *between* the two lines,
+              reading as a stray mark rather than a marker on the sentence.
+              items-start + mt-0.5 aligns it to the first line's cap height
+              and is pixel-identical wherever the text does not wrap:
+              text-sm's line-height is 20px and the icon is 16px, so
+              items-center's implicit 2px offset and mt-0.5's explicit 2px
+              are the same number — desktop, tablet and landscape are
+              untouched by construction, not just by intent. */}
           <motion.p
             variants={fadeUp}
-            className="mt-10 flex items-center justify-center gap-2 text-sm text-muted-foreground lg:justify-start"
+            className="mt-10 flex items-start justify-center gap-2 text-sm text-muted-foreground lg:justify-start"
           >
-            <CheckCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
+            <CheckCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
             Starts in Assisted Mode — you approve every reply until you trust it
           </motion.p>
         </motion.div>
 
-        <div className="lg:order-2">
+        <div className="lg:order-2 lg:col-span-7">
           <ComposedDemo reducedMotion={reducedMotion} onResolved={handleResolved} onReset={handleReset} />
         </div>
       </section>

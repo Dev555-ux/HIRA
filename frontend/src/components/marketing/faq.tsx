@@ -41,7 +41,15 @@ export const FAQS = [
 
 export function Faq() {
   return (
-    <section id="faq" className="scroll-mt-16 py-20 sm:py-28">
+    // Signal & Depth PR-6 — the only section boundary on the page that was
+    // neither a documented hard color-cut (Solution/AiEmployees/FinalCta,
+    // each with their own comment explaining why a hairline would double-
+    // mark the seam) nor had the standard border-t six other sections use
+    // (HeroTrustStrip, SignatureDemo, Journey, Problem, Features,
+    // HowItWorks). HowItWorks ends on bg-secondary/40; Faq starts on plain
+    // background — a real but subtle shift with nothing marking it. border-t
+    // matches the established pattern; no other property changed.
+    <section id="faq" className="scroll-mt-16 border-t py-20 sm:py-28">
       <Reveal className="mx-auto max-w-2xl px-4 sm:px-6">
         <SectionHeader title="Frequently asked questions" />
         {/* V4 "Signal & Quiet": no more per-row cards — a plain hairline-divided
@@ -57,7 +65,13 @@ export function Faq() {
         <div className="mt-12 divide-y divide-border border-t">
           {FAQS.map((faq) => (
             <details key={faq.question} className="group py-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold marker:content-none">
+              {/* Signal & Depth PR-7 — <summary> is natively focusable but
+                  had no custom focus-visible treatment, only the browser
+                  default outline (a different color from every other
+                  focusable control on the page). focus-visible:focus-ring
+                  is the app's existing opt-in utility for exactly this
+                  case, already used across the dashboard. */}
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-sm text-sm font-semibold marker:content-none focus-visible:focus-ring">
                 {faq.question}
                 <span
                   aria-hidden="true"

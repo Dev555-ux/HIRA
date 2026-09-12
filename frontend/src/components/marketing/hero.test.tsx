@@ -24,7 +24,10 @@ function advance(ms: number) {
 }
 
 function markElement() {
-  return screen.getByText("customer message").closest("mark");
+  // Signal & Depth PR-2 narrowed the marked headline text from "customer
+  // message" to the single accent word "message" — same mark, same
+  // resolved-state mechanism, just naming what it actually wraps now.
+  return screen.getByText("message").closest("mark");
 }
 
 function playPauseButton() {
