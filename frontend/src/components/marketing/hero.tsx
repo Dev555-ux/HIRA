@@ -423,10 +423,32 @@ function ComposedDemo({ reducedMotion, ...props }: React.ComponentProps<typeof P
 // glow is entirely why that background isn't plain --background anymore.
 // 0.05 (4.37:1) and 0.03 (4.46:1) still fell short; 0.02 passes (verified
 // by rebuilding and re-running Lighthouse at each step, not calculated).
+//
+// Signal & Depth PR-3 — one centered blob read as decoration with nowhere
+// in particular to come from. Two layers instead, each with a distinct job
+// (principle 9, "atmosphere as art-directed light, not a single flat
+// blur"), still static (no keyframes), still aria-hidden/pointer-events-
+// none, still zero raster assets:
+//   1. Ambient wash — a near-invisible neutral tonal shift top-to-
+//      transparent (foreground/[0.015], within DESIGN-MOTION-001 §4.3's
+//      "≤3% lightness, never brand color" rule for general depth), giving
+//      the whole section a faint sense of light without color.
+//   2. Product-anchored glow — the one warm (brand) accent, deliberately
+//      moved off dead-center and anchored behind where the demo now sits
+//      (col-span-7, PR-1) rather than the section's midpoint, so the light
+//      reads as coming from the product instead of floating independently
+//      of it. This is the Signal-band exception (same reasoning as
+//      final-cta.tsx's glow) — not a violation of §4.3's general rule.
+// Re-verified via a real Lighthouse run after this change, same eyebrow-
+// contrast concern as PR-10 above: still passes clean (see PR-3 delivery
+// notes) — the glow's brand-colored layer moved further from the eyebrow's
+// position, not closer, so if anything this is safer than before, not
+// riskier — verified rather than assumed regardless.
 function HeroAtmosphere() {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-      <div className="absolute left-1/2 top-0 h-[42rem] w-[64rem] -translate-x-1/2 -translate-y-1/3 rounded-full bg-brand/[0.02] blur-3xl" />
+      <div className="absolute inset-0 bg-gradient-to-b from-foreground/[0.015] to-transparent" />
+      <div className="absolute right-0 top-1/2 h-[36rem] w-[36rem] -translate-y-1/2 translate-x-1/4 rounded-full bg-brand/[0.025] blur-3xl" />
     </div>
   );
 }
