@@ -408,10 +408,19 @@ function ComposedDemo({ reducedMotion, ...props }: React.ComponentProps<typeof P
 // scroll/mouse coupling, so "respect reduced motion" holds by having
 // nothing to reduce. pointer-events-none keeps it fully inert. Pure CSS —
 // no image asset, so nothing here can affect LCP.
+//
+// Sprint 66 PR-10 — opacity 0.07 -> 0.02, a real bug this glow introduced:
+// a production Lighthouse run flagged the "Founder Beta" eyebrow text
+// (text-muted-foreground) at 4.27:1 against this glow's warm-tinted
+// background, under the 4.5:1 AA floor — confirmed by rebuilding at
+// bg-brand/0 (glow fully off), where the same audit passes clean, so this
+// glow is entirely why that background isn't plain --background anymore.
+// 0.05 (4.37:1) and 0.03 (4.46:1) still fell short; 0.02 passes (verified
+// by rebuilding and re-running Lighthouse at each step, not calculated).
 function HeroAtmosphere() {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-      <div className="absolute left-1/2 top-0 h-[42rem] w-[64rem] -translate-x-1/2 -translate-y-1/3 rounded-full bg-brand/[0.07] blur-3xl" />
+      <div className="absolute left-1/2 top-0 h-[42rem] w-[64rem] -translate-x-1/2 -translate-y-1/3 rounded-full bg-brand/[0.02] blur-3xl" />
     </div>
   );
 }

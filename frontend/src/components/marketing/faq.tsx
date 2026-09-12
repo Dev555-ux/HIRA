@@ -61,7 +61,7 @@ export function Faq() {
                 {faq.question}
                 <span
                   aria-hidden="true"
-                  className="shrink-0 text-lg leading-none text-muted-foreground transition-transform group-open:rotate-45"
+                  className="shrink-0 text-lg leading-none text-muted-foreground transition-transform duration-[var(--motion-fast)] group-open:rotate-45"
                 >
                   +
                 </span>

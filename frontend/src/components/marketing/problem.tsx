@@ -44,9 +44,14 @@ export function Problem() {
           title="WhatsApp is where your customers already are — and where they expect a fast reply"
           className="mx-auto max-w-2xl"
         />
-        <div className="mt-16 grid gap-x-8 gap-y-12 sm:grid-cols-3">
+        {/* Sprint 66 PR-10 — <ul>/<li>, not bare <div>s: matches the
+            semantic-list convention Journey/HeroTrustStrip/Features already
+            use. Zero visual change — Tailwind's preflight already zeroes
+            list-style/margin on every <ul> here (see Journey's own
+            unnumbered <ol>). */}
+        <ul className="mt-16 grid gap-x-8 gap-y-12 sm:grid-cols-3">
           {PROBLEMS.map((problem) => (
-            <div key={problem.title}>
+            <li key={problem.title}>
               <div className="flex size-10 items-center justify-center rounded-full border border-border">
                 <problem.icon className="size-4 text-muted-foreground" aria-hidden="true" />
               </div>
@@ -54,9 +59,9 @@ export function Problem() {
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                 {problem.description}
               </p>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       </Reveal>
     </section>
   );
