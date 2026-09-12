@@ -183,7 +183,29 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
     <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-hidden="true">
       {SYSTEMS.map((sys) => {
         const state = status[sys.id];
-        if (state === "idle") return null;
+
+        // Signal & Depth PR-5 — previously null: the very first frame (and
+        // every idle system before its own beat fires) showed a floating
+        // icon with no visible relationship to the hub at all. A faint,
+        // static baseline (no animation, matching the same near-invisible
+        // treatment idle gets everywhere else in this file) shows the
+        // topology at rest — "these four are connected to HIRA" reads
+        // before a single beat has run, exactly what the graph should
+        // communicate before anyone reads the copy.
+        if (state === "idle") {
+          return (
+            <line
+              key={sys.id}
+              x1={HUB.x}
+              y1={HUB.y}
+              x2={sys.x}
+              y2={sys.y}
+              vectorEffect="non-scaling-stroke"
+              strokeWidth={1}
+              className="stroke-border/40"
+            />
+          );
+        }
 
         if (state === "active") {
           return (
@@ -204,20 +226,20 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
           );
         }
 
-        // No transition class: idle and done both render this same static
-        // line, but as a *different* element than the active <g> above (key
-        // stays sys.id either way, but the tag itself changes), so React
-        // unmounts/remounts rather than restyles in place — a transition
-        // here would never fire.
+        // Only "done" reaches here now (idle and active both returned
+        // above). No transition class: this renders as a *different*
+        // element than the active <g> above (same key, different tag), so
+        // React unmounts/remounts rather than restyles in place — a
+        // transition here would never fire.
         //
-        // Signal & Depth PR-4 — this branch is only ever reached for
-        // state === "done" (idle already returned null above); it used to
-        // render the identical neutral stroke-border a totally untouched
-        // cable would use, so a completed connection carried no visual
-        // credit at all once its pulse animation finished. Tinting it with
-        // the same success color SystemNode already uses for its own done
-        // state ties the two together — "this connection succeeded," not
-        // just "this line exists."
+        // Signal & Depth PR-4 — this used to render the identical neutral
+        // stroke-border an untouched cable would use, so a completed
+        // connection carried no visual credit at all once its pulse
+        // animation finished. Tinting it with the same success color
+        // SystemNode already uses for its own done state ties the two
+        // together — "this connection succeeded," not just "this line
+        // exists." (PR-5 gave idle its own faint line above, distinct from
+        // both this and the untouched-null case that no longer exists.)
         return (
           <line
             key={sys.id}
@@ -394,7 +416,10 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
                   single resolved frame, so this needs no transition here. */}
               <div className="absolute left-1/2 top-1/2 isolate -translate-x-1/2 -translate-y-1/2">
                 <div aria-hidden="true" className="absolute left-1/2 top-1/2 -z-10 size-20 -translate-x-1/2 -translate-y-1/2 rounded-full bg-success/15 blur-xl" />
-                <AIAvatar name="HIRA" size="xl" state="success" />
+                {/* Same elevated dais as the animated branch below. */}
+                <div className="rounded-2xl bg-card p-1.5 shadow-e2 ring-1 ring-border/50">
+                  <AIAvatar name="HIRA" size="xl" state="success" />
+                </div>
               </div>
               {SYSTEMS.map((sys) => (
                 <SystemNode key={sys.id} sys={sys} status="done" settled statusTextVisible />
@@ -436,7 +461,15 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
               would escape to the *aspect-square canvas's* stacking context
               and paint behind the SVG cables too, not just behind the
               avatar — the same class of bug final-cta.tsx's isolate fix
-              addressed earlier this sprint. */}
+              addressed earlier this sprint.
+              Signal & Depth PR-5 — the avatar alone (56px, same size as
+              before) wasn't visually distinct enough from the satellite
+              icons in kind, only in size. A dais (a card-elevated plate
+              around it, shadow-e2) gives the hub its own layer of depth the
+              satellites don't have — "the brain sits above the board," not
+              just "the brain is a bigger dot." AIAvatar itself is
+              untouched; this is a wrapper, not a modification to the
+              shared component. */}
           <div
             className={cn(
               "absolute left-1/2 top-1/2 isolate -translate-x-1/2 -translate-y-1/2",
@@ -454,7 +487,9 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
                     : "bg-transparent",
               )}
             />
-            <AIAvatar name="HIRA" size="xl" state={hubState} />
+            <div className="rounded-2xl bg-card p-1.5 shadow-e2 ring-1 ring-border/50">
+              <AIAvatar name="HIRA" size="xl" state={hubState} />
+            </div>
           </div>
           {SYSTEMS.map((sys) => (
             <SystemNode
