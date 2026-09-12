@@ -468,8 +468,17 @@ export function Hero() {
             variants={fadeUp}
             className="mt-9 text-balance text-5xl font-black leading-tight tracking-tighter sm:text-6xl lg:max-w-xl xl:text-7xl"
           >
-            Never miss another{" "}
-            {/* text-foreground (not text-brand) on the resolved wash — WCAG
+            Never miss another customer{" "}
+            {/* Signal & Depth PR-2 — one deliberate accent word, not a
+                two-word block: "customer message" as a single highlighted
+                span read as a highlighted phrase, not a precise signal.
+                "message" alone is the one word the whole product turns on —
+                the thing that arrives, gets answered, and (via `resolved`)
+                is the one word that lights up brand-colored the moment the
+                demo actually finishes answering it. Still the same
+                state-tied mechanism, just naming a single word instead of
+                two.
+                text-foreground (not text-brand) on the resolved wash — WCAG
                 AA audit measured brand-on-brand/15 at ~2.8:1, under the 3:1
                 floor for large text even at this size. Foreground on the
                 same tint passes at ~15:1; the tint alone still carries the
@@ -480,7 +489,7 @@ export function Hero() {
                 resolved ? "bg-brand/15 text-foreground" : "bg-muted text-foreground",
               )}
             >
-              customer message
+              message
             </mark>
             .
           </motion.h1>
