@@ -3,6 +3,7 @@
 import { BookOpen, Calendar, UserCheck, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
+import { PhoneFrame } from "@/components/marketing/phone-frame";
 import { AIAvatar } from "@/components/ui/ai-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -465,7 +466,7 @@ function ScenarioSelector({
   onChange: (id: ScenarioId) => void;
 }) {
   return (
-    <fieldset className="mb-8 flex flex-wrap justify-center gap-2">
+    <fieldset className="mb-10 flex flex-wrap justify-center gap-2">
       <legend className="sr-only">Choose a demo scenario</legend>
       {SCENARIO_ORDER.map((id) => (
         <label key={id} className="cursor-pointer">
@@ -490,6 +491,20 @@ function ScenarioSelector({
   );
 }
 
+// Sprint 66 PR-4 — one static atmospheric layer behind the phone: a
+// blurred, aria-hidden glow, sized and positioned with plain CSS. No
+// keyframes, no transform on scroll/mouse, so "respect reduced motion" is
+// satisfied by having nothing to reduce in the first place, not by a media
+// query working around an animation. pointer-events-none keeps it fully
+// inert — it can never intercept a click meant for the selector or demo.
+function AtmosphereBackground() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      <div className="absolute left-1/2 top-1/2 h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/5 blur-3xl" />
+    </div>
+  );
+}
+
 // Section-level wrapper: a narrower container than before (max-w-2xl, not
 // max-w-6xl) — the radial layout is inherently more compact/vertical than
 // the old wide horizontal flow, so a wide section around it just reads as
@@ -499,10 +514,13 @@ export function SignatureDemo() {
   const [scenarioId, setScenarioId] = useState<ScenarioId>(DEFAULT_SCENARIO_ID);
 
   return (
-    <section className="border-t py-24 sm:py-32">
-      <div className="mx-auto max-w-2xl px-4 sm:px-6">
+    <section className="relative border-t py-24 sm:py-32">
+      <AtmosphereBackground />
+      <div className="relative mx-auto max-w-2xl px-4 sm:px-6">
         <ScenarioSelector scenarioId={scenarioId} onChange={setScenarioId} />
-        <DemoWidget key={scenarioId} scenarioId={scenarioId} />
+        <PhoneFrame>
+          <DemoWidget key={scenarioId} scenarioId={scenarioId} />
+        </PhoneFrame>
       </div>
     </section>
   );
