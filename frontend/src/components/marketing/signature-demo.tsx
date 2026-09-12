@@ -552,7 +552,18 @@ function ScenarioSelector({
           />
           <Badge
             variant={scenarioId === id ? "default" : "outline"}
-            className="gap-1.5 px-3 py-1 text-sm peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background"
+            className={cn(
+              "gap-1.5 px-3 py-1 text-sm peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+              // Signal & Depth PR-7 — unselected chips had no hover feedback
+              // at all beyond the label's own cursor:pointer, unlike every
+              // other clickable control in this app (Button, Card
+              // interactive both pair hover with a visible state change).
+              // Reuses Button's own outline-variant hover language
+              // (hover:bg-accent hover:text-accent-foreground) rather than
+              // inventing a new one. The selected chip is left alone — it's
+              // already the active state, nothing new to hint at on hover.
+              scenarioId !== id && "hover:bg-accent hover:text-accent-foreground",
+            )}
           >
             <span aria-hidden="true">{SCENARIO_EMOJI[id]}</span>
             {SCENARIOS[id].chipLabel}

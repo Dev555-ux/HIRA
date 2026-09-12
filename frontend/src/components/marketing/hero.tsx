@@ -540,9 +540,13 @@ export function Hero() {
                 </Link>
               </Button>
             </motion.div>
+            {/* Signal & Depth PR-7 — no focus-visible treatment before
+                this; same gap as the header nav links, same fix
+                (focus-visible:focus-ring, the app's existing opt-in
+                utility). */}
             <a
               href="#how-it-works"
-              className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
+              className="rounded-sm text-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:focus-ring"
             >
               See how it works
             </a>

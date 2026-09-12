@@ -65,7 +65,13 @@ export function Faq() {
         <div className="mt-12 divide-y divide-border border-t">
           {FAQS.map((faq) => (
             <details key={faq.question} className="group py-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold marker:content-none">
+              {/* Signal & Depth PR-7 — <summary> is natively focusable but
+                  had no custom focus-visible treatment, only the browser
+                  default outline (a different color from every other
+                  focusable control on the page). focus-visible:focus-ring
+                  is the app's existing opt-in utility for exactly this
+                  case, already used across the dashboard. */}
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-sm text-sm font-semibold marker:content-none focus-visible:focus-ring">
                 {faq.question}
                 <span
                   aria-hidden="true"

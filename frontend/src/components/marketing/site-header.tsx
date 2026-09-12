@@ -38,7 +38,13 @@ export function SiteHeader() {
             <a
               key={link.href}
               href={link.href}
-              className="text-sm font-medium text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:text-foreground"
+              // Signal & Depth PR-7 — no keyboard focus treatment at all
+              // before this; a Tab landed here with only the browser's
+              // default outline, inconsistent with every button on the
+              // page. focus-visible:focus-ring is the app's own existing
+              // opt-in utility (already used across the dashboard), not a
+              // new pattern invented for this fix.
+              className="rounded-sm text-sm font-medium text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:text-foreground focus-visible:focus-ring"
             >
               {link.label}
             </a>
