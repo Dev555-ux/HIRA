@@ -76,33 +76,32 @@ export function Features() {
     <section id="features" className="scroll-mt-16 border-t py-20 sm:py-28">
       <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHeader title="Everything the front desk does, minus the wait" className="mx-auto max-w-2xl" />
-        <div className="mt-16 grid gap-4 sm:mt-20 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+        {/* Sprint 66 PR-9 — <ul>/<li>, not a bare grid of <div>s: a real set
+            of items, matching the list convention Journey and HeroTrustStrip
+            already use for their own multi-item content. No visual change —
+            Tailwind's preflight already zeroes list-style/margin on every
+            <ul>/<ol> in this app (see Journey's own unnumbered <ol>). */}
+        <ul className="mt-16 grid gap-4 sm:mt-20 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
           {FEATURES.map((feature, index) => {
             const large = LARGE_FEATURE_INDICES.has(index);
             return (
-              <Card
-                key={feature.title}
-                interactive
-                className={cn(
-                  "flex flex-col gap-3",
-                  large ? "p-6 sm:p-8" : "p-5 sm:p-6",
-                  LARGE_SPAN_CLASS_NAME[index],
-                )}
-              >
-                <feature.icon
-                  className={cn("shrink-0 text-muted-foreground", large ? "size-6" : "size-5")}
-                  aria-hidden="true"
-                />
-                <h3 className={cn("font-semibold tracking-tight", large ? "text-xl" : "text-lg")}>
-                  {feature.title}
-                </h3>
-                <p className={cn("leading-relaxed text-muted-foreground", large ? "text-base" : "text-sm")}>
-                  {feature.description}
-                </p>
-              </Card>
+              <li key={feature.title} className={LARGE_SPAN_CLASS_NAME[index]}>
+                <Card interactive className={cn("flex h-full flex-col gap-3", large ? "p-6 sm:p-8" : "p-5 sm:p-6")}>
+                  <feature.icon
+                    className={cn("shrink-0 text-muted-foreground", large ? "size-6" : "size-5")}
+                    aria-hidden="true"
+                  />
+                  <h3 className={cn("font-semibold tracking-tight", large ? "text-xl" : "text-lg")}>
+                    {feature.title}
+                  </h3>
+                  <p className={cn("leading-relaxed text-muted-foreground", large ? "text-base" : "text-sm")}>
+                    {feature.description}
+                  </p>
+                </Card>
+              </li>
             );
           })}
-        </div>
+        </ul>
       </Reveal>
     </section>
   );

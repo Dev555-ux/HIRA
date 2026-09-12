@@ -8,6 +8,7 @@ import { AIAvatar } from "@/components/ui/ai-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useInView } from "@/hooks/use-in-view";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
 // V5.1 "Orchestration Hub": rebuilt from a sparse six-node row into a
@@ -173,18 +174,6 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
 // (below) opens on.
 export const DEFAULT_SCENARIO_ID: ScenarioId = "cleaning";
 
-function useReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(query.matches);
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
-
 // Cables radiate from the hub outward — HIRA reaching into each system,
 // not systems reporting in independently. Same two-line technique as
 // before (a dim continuous base + a bright travelling dash on top) so the
@@ -215,6 +204,11 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
           );
         }
 
+        // No transition class: idle and done both render this same static
+        // line, but as a *different* element than the active <g> above (key
+        // stays sys.id either way, but the tag itself changes), so React
+        // unmounts/remounts rather than restyles in place — a transition
+        // here would never fire.
         return (
           <line
             key={sys.id}
@@ -224,7 +218,7 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
             y2={sys.y}
             vectorEffect="non-scaling-stroke"
             strokeWidth={1}
-            className="stroke-border transition-colors duration-700"
+            className="stroke-border"
           />
         );
       })}
@@ -254,7 +248,7 @@ function SystemNode({
     >
       <span
         className={cn(
-          "flex size-8 items-center justify-center rounded-full border bg-card transition-all duration-500 [&_svg]:size-4",
+          "flex size-8 items-center justify-center rounded-full border bg-card transition-all duration-[var(--motion-slow)] [&_svg]:size-4",
           status === "idle" && "border-border/50 text-muted-foreground/40",
           status === "active" && "scale-110 border-primary bg-primary/10 text-primary",
           status === "done" && !settled && "border-success bg-success/10 text-success",
@@ -265,7 +259,7 @@ function SystemNode({
       </span>
       <span
         className={cn(
-          "text-[11px] font-medium uppercase tracking-wide transition-colors duration-500",
+          "text-[11px] font-medium uppercase tracking-wide transition-colors duration-[var(--motion-slow)]",
           status === "idle" ? "text-muted-foreground/35" : "text-muted-foreground",
         )}
       >
@@ -273,7 +267,7 @@ function SystemNode({
       </span>
       <span
         className={cn(
-          "block text-[10px] leading-tight transition-opacity duration-500",
+          "block text-[10px] leading-tight transition-opacity duration-[var(--motion-slow)]",
           showStatus ? "opacity-100" : "opacity-0",
           status === "done" ? "text-success" : "text-muted-foreground/70",
         )}

@@ -13,9 +13,10 @@ import { SiteHeader } from "@/components/marketing/site-header";
 import { Solution } from "@/components/marketing/solution";
 import { Trust } from "@/components/marketing/trust";
 
-// Hero states the problem and SignatureDemo proves the fix immediately after
-// — a visitor sees the promise and its evidence within the first two
-// sections, before Problem makes the deeper case for anyone not yet sold.
+// Hero states the problem, HeroTrustStrip answers who it's for, and
+// SignatureDemo proves the fix — a visitor sees the promise, the audience,
+// and the evidence within the first three sections, before Problem makes
+// the deeper case for anyone not yet sold.
 //
 // Vertical-padding scale for every section below. V4 "Signal & Quiet" split
 // the old three-tier scale into five, on purpose — deliberate hierarchy

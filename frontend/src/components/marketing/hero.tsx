@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ThinkingIndicator } from "@/components/ui/working-indicator";
 import { useInView } from "@/hooks/use-in-view";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
 // HIRA V6.1 — "Premium Proof, quieter": same one-real-workflow thesis as V6,
@@ -67,18 +68,6 @@ const DEMO_SUMMARY =
   `"${CUSTOMER_MESSAGE}" HIRA checks technician availability, the calendar, and the service ` +
   `area, assigns a technician, then replies: "${HIRA_REPLY_LINES.join(" ")}" Appointment ` +
   `confirmed — nothing left for the owner to do, and HIRA only escalates if it ever needs a human.`;
-
-function useReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(query.matches);
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
 
 // The house entrance curve (--ease-out-quart) as a bezier framer-motion can
 // consume directly, for the handful of non-spring transitions below.
