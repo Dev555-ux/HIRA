@@ -392,7 +392,13 @@ function ComposedDemo({ reducedMotion, ...props }: React.ComponentProps<typeof P
       initial={{ opacity: 0, y: 24, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ ...springIn, delay: 0.2 }}
-      className="mx-auto max-w-md lg:mx-0"
+      // Signal & Depth PR-1 — max-w-md capped the card well short of the
+      // wider lg:col-span-7 track above, so the grid change alone only
+      // repositioned it, it didn't grow it. lg:max-w-lg lets it actually
+      // fill more of its new column. GlassCard/ProductDemo's internal
+      // measurements are all relative (percentage bubble widths, min-h),
+      // so they scale with this instead of overflowing.
+      className="mx-auto max-w-md lg:mx-0 lg:max-w-lg"
     >
       <ProductDemo reducedMotion={reducedMotion} {...props} />
       <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
@@ -434,13 +440,19 @@ export function Hero() {
 
   return (
     <MotionConfig reducedMotion={reducedMotion ? "always" : "never"}>
-      <section className="relative mx-auto flex max-w-7xl flex-col px-4 py-20 sm:px-6 sm:py-28 lg:grid lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-20 lg:py-40 xl:gap-24">
+      {/* Signal & Depth PR-1 — grid-cols-[1fr_1.05fr] gave the copy column
+          and the demo near-equal weight (~49/51). Principle 6 ("space
+          allocation is a hierarchy signal"): the demo is the proof, so it
+          gets the larger share — a 5/7 split, not a coin-flip. Below lg
+          this is still a plain flex column; nothing here changes below
+          that breakpoint. */}
+      <section className="relative mx-auto flex max-w-7xl flex-col px-4 py-20 sm:px-6 sm:py-28 lg:grid lg:grid-cols-12 lg:items-center lg:gap-20 lg:py-40 xl:gap-24">
         <HeroAtmosphere />
         <motion.div
           variants={staggerContainer}
           initial="hidden"
           animate="show"
-          className="mt-12 text-center lg:order-1 lg:mt-0 lg:text-left"
+          className="mt-12 text-center lg:order-1 lg:col-span-5 lg:mt-0 lg:text-left"
         >
           <motion.div
             variants={fadeUp}
@@ -513,7 +525,7 @@ export function Hero() {
           </motion.p>
         </motion.div>
 
-        <div className="lg:order-2">
+        <div className="lg:order-2 lg:col-span-7">
           <ComposedDemo reducedMotion={reducedMotion} onResolved={handleResolved} onReset={handleReset} />
         </div>
       </section>
