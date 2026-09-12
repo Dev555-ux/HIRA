@@ -551,11 +551,22 @@ export function Hero() {
               See how it works
             </a>
           </motion.div>
+          {/* Signal & Depth PR-8 — items-start, not items-center: this line
+              wraps to two lines at every phone width (verified at 360/390/
+              430 via real device-emulated renders), and items-center then
+              parked the checkmark in the gutter *between* the two lines,
+              reading as a stray mark rather than a marker on the sentence.
+              items-start + mt-0.5 aligns it to the first line's cap height
+              and is pixel-identical wherever the text does not wrap:
+              text-sm's line-height is 20px and the icon is 16px, so
+              items-center's implicit 2px offset and mt-0.5's explicit 2px
+              are the same number — desktop, tablet and landscape are
+              untouched by construction, not just by intent. */}
           <motion.p
             variants={fadeUp}
-            className="mt-10 flex items-center justify-center gap-2 text-sm text-muted-foreground lg:justify-start"
+            className="mt-10 flex items-start justify-center gap-2 text-sm text-muted-foreground lg:justify-start"
           >
-            <CheckCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
+            <CheckCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
             Starts in Assisted Mode — you approve every reply until you trust it
           </motion.p>
         </motion.div>
