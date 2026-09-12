@@ -16,7 +16,17 @@ import type { ReactNode } from "react";
 export function PhoneFrame({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto w-full max-w-md rounded-[2.75rem] border border-border/60 bg-gradient-to-b from-muted/70 to-muted/30 p-2.5 shadow-e3 sm:p-3">
-      <div className="overflow-hidden rounded-[2.1rem] bg-background">
+      <div className="relative overflow-hidden rounded-[2.1rem] bg-background">
+        {/* Signal & Depth PR-4 — a static diagonal sheen across the glass:
+            the one "reflections/glass treatment" cue a real screen has that
+            a flat rectangle doesn't. Purely decorative (aria-hidden,
+            pointer-events-none), no keyframes, low enough opacity it never
+            affects legibility of the bubbles/icons underneath — verified
+            via Lighthouse's contrast audit, not assumed. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-br from-foreground/[0.04] via-transparent to-transparent"
+        />
         <div aria-hidden="true" className="flex flex-col items-center gap-2 px-4 pt-3">
           {/* Speaker cutout */}
           <div className="h-1.5 w-12 rounded-full bg-foreground/15" />

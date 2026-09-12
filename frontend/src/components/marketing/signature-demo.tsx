@@ -209,6 +209,15 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
         // stays sys.id either way, but the tag itself changes), so React
         // unmounts/remounts rather than restyles in place — a transition
         // here would never fire.
+        //
+        // Signal & Depth PR-4 — this branch is only ever reached for
+        // state === "done" (idle already returned null above); it used to
+        // render the identical neutral stroke-border a totally untouched
+        // cable would use, so a completed connection carried no visual
+        // credit at all once its pulse animation finished. Tinting it with
+        // the same success color SystemNode already uses for its own done
+        // state ties the two together — "this connection succeeded," not
+        // just "this line exists."
         return (
           <line
             key={sys.id}
@@ -218,7 +227,7 @@ function Cables({ status }: { status: Record<SystemId, SystemStatus> }) {
             y2={sys.y}
             vectorEffect="non-scaling-stroke"
             strokeWidth={1}
-            className="stroke-border"
+            className="stroke-success/35"
           />
         );
       })}
@@ -278,10 +287,16 @@ function SystemNode({
   );
 }
 
+// Signal & Depth PR-4 — rounded-md read as a generic chat bubble, not a
+// real one. hero.tsx's own ProductDemo already established the tail-corner
+// shape (rounded-2xl, tightened on the corner nearest the sender) for this
+// exact page's other conversation UI — matching it here is conversation
+// realism AND principle 5's "one motif, echoed" rather than two different
+// bubble languages on the same page.
 function CustomerBubble({ text }: { text: string }) {
   return (
     <div className="animate-fade-in flex justify-start">
-      <div className="max-w-[85%] rounded-md bg-muted px-3 py-2 text-sm">{text}</div>
+      <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm">{text}</div>
     </div>
   );
 }
@@ -289,7 +304,7 @@ function CustomerBubble({ text }: { text: string }) {
 function ReplyBubble({ text }: { text: string }) {
   return (
     <div className="animate-fade-in flex justify-end">
-      <div className="max-w-[85%] rounded-md bg-secondary px-3 py-2 text-sm text-secondary-foreground">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-secondary px-3 py-2 text-sm text-secondary-foreground">
         {text}
       </div>
     </div>
@@ -374,7 +389,11 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
             <CustomerBubble text={scenario.customerMessage} />
             <div className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
               <Cables status={DONE_STATUS} />
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+              {/* Same static hub glow as the animated branch below, at its
+                  "success" end state — the reduced-motion render is a
+                  single resolved frame, so this needs no transition here. */}
+              <div className="absolute left-1/2 top-1/2 isolate -translate-x-1/2 -translate-y-1/2">
+                <div aria-hidden="true" className="absolute left-1/2 top-1/2 -z-10 size-20 -translate-x-1/2 -translate-y-1/2 rounded-full bg-success/15 blur-xl" />
                 <AIAvatar name="HIRA" size="xl" state="success" />
               </div>
               {SYSTEMS.map((sys) => (
@@ -405,12 +424,36 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
 
         <div aria-hidden="true" className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
           <Cables status={status} />
+          {/* Signal & Depth PR-4 — HIRA Core prominence: a tight, static
+              glow directly behind the hub, distinct from AtmosphereBackground's
+              much larger ambient blur behind the whole phone. Colored by the
+              same `hubState` already computed above for AIAvatar's own state
+              prop — no new state, just reusing the existing derived value —
+              so the glow itself becomes another (very quiet) instance of
+              principle 1: it only carries color once something is actually
+              happening. `isolate` matters here: this wrapper is `absolute`
+              with no z-index of its own, so without it the child's `-z-10`
+              would escape to the *aspect-square canvas's* stacking context
+              and paint behind the SVG cables too, not just behind the
+              avatar — the same class of bug final-cta.tsx's isolate fix
+              addressed earlier this sprint. */}
           <div
             className={cn(
-              "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
+              "absolute left-1/2 top-1/2 isolate -translate-x-1/2 -translate-y-1/2",
               settled && "animate-signature-settle",
             )}
           >
+            <div
+              aria-hidden="true"
+              className={cn(
+                "absolute left-1/2 top-1/2 -z-10 size-20 -translate-x-1/2 -translate-y-1/2 rounded-full blur-xl transition-colors duration-[var(--motion-slow)]",
+                hubState === "success"
+                  ? "bg-success/15"
+                  : hubState === "working"
+                    ? "bg-primary/10"
+                    : "bg-transparent",
+              )}
+            />
             <AIAvatar name="HIRA" size="xl" state={hubState} />
           </div>
           {SYSTEMS.map((sys) => (
