@@ -29,6 +29,14 @@ describe("MarketingPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("answers who HIRA is built for right below the hero", () => {
+    render(<MarketingPage />);
+
+    expect(screen.getByText("Built for")).toBeInTheDocument();
+    expect(screen.getByText("Dental Clinics")).toBeInTheDocument();
+    expect(screen.getByText("Professional Services")).toBeInTheDocument();
+  });
+
   it("shows a lightweight trust checklist of things HIRA does today", () => {
     render(<MarketingPage />);
 

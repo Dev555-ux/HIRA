@@ -3,6 +3,7 @@ import { Faq } from "@/components/marketing/faq";
 import { Features } from "@/components/marketing/features";
 import { FinalCta } from "@/components/marketing/final-cta";
 import { Hero } from "@/components/marketing/hero";
+import { HeroTrustStrip } from "@/components/marketing/hero-trust-strip";
 import { HowItWorks } from "@/components/marketing/how-it-works";
 import { Journey } from "@/components/marketing/journey";
 import { Problem } from "@/components/marketing/problem";
@@ -21,7 +22,8 @@ import { Trust } from "@/components/marketing/trust";
 // means sections no longer share one weight:
 //
 //   Quiet footnote           py-6 sm:py-8              — Trust only
-//   Compact band              py-10 sm:py-12            — AiEmployees only
+//   Compact band              py-10 sm:py-12            — AiEmployees,
+//                                                          HeroTrustStrip
 //   Standard section          py-20 sm:py-28            — Journey, Problem,
 //                                                          Features, How It
 //                                                          Works, FAQ
@@ -50,6 +52,7 @@ export function MarketingPage() {
       <SiteHeader />
       <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
         <Hero />
+        <HeroTrustStrip />
         <SignatureDemo />
         <Trust />
         <Journey />
