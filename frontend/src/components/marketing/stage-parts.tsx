@@ -75,7 +75,7 @@ export function ReplyBubble({ text, time }: { text: string; time: string }) {
       {/* bg-brand/20 + text-foreground, not the brand/brand-foreground pair:
           at 20% the fill is a tint over the screen, so the readable pairing
           is against the screen's own foreground. Measured, not assumed. */}
-      <div className="max-w-[86%] rounded-2xl rounded-br-md bg-brand/20 px-3 py-2 shadow-e1 ring-1 ring-brand/25">
+      <div className="max-w-[86%] rounded-2xl rounded-br-md bg-brand/[0.26] px-3 py-2 shadow-e1 ring-1 ring-brand/30">
         <p className="text-[13px] leading-snug text-foreground">{text}</p>
         <Meta time={time} ticks />
       </div>
@@ -199,7 +199,7 @@ function Connectors({ status }: { status: Record<string, SystemStatus> }) {
                 d={d}
                 fill="none"
                 vectorEffect="non-scaling-stroke"
-                strokeWidth={1.5}
+                strokeWidth={state === "active" ? 2 : 1.5}
                 className={state === "done" ? "stroke-success/60" : "stroke-brand"}
                 strokeDasharray={state === "active" ? "6 10" : undefined}
                 style={state === "active" ? { animation: "cable-flow 1.1s linear infinite" } : undefined}
@@ -240,10 +240,17 @@ export function SystemRow({
         // sheen and refraction edge still read; only the transparency is
         // dialled back to where state survives.
         "glass flex items-center gap-3 rounded-2xl border px-3 [--glass-fill:color-mix(in_srgb,var(--card)_92%,transparent)]!",
-        "transition-[border-color,background-color] duration-[var(--motion-slow)]",
-        status === "idle" && "border-[color:var(--glass-border)]",
-        status === "active" && "border-brand/80 bg-brand/[0.08]",
-        status === "done" && "border-success/70 bg-success/[0.07]",
+        // PR-3 — the focal moment. Four rows carrying equal weight gave the
+        // eye nowhere to land: state was legible but flat, so a visitor had
+        // to read all four to find the one doing work. The row that is
+        // *currently working* now physically lifts — elevation and a hair of
+        // scale, not a new colour or a new element — so attention tracks the
+        // work down the list on its own. Idle and done stay flat by design;
+        // the lift is the signal, and a signal that is always on is not one.
+        "transition-[border-color,background-color,box-shadow,transform] duration-[var(--motion-slow)] ease-[var(--ease-out-quart)]",
+        status === "idle" && "border-[color:var(--glass-border)] opacity-80",
+        status === "active" && "z-10 scale-[1.025] border-brand/80 bg-brand/[0.08] shadow-e4",
+        status === "done" && "border-success/70 bg-success/[0.07] shadow-e1",
       )}
     >
       <span

@@ -77,12 +77,18 @@ const DONE_STATUS: Record<SystemId, SystemStatus> = {
   crm: "done",
 };
 
+// PR-3 — two flags added (`followUp`, `confirm`), nothing else about the
+// beat model changed. The thread was two messages, which cannot fill a phone
+// screen no matter how the device is proportioned; the sparseness was a
+// content problem wearing a layout problem's clothes.
 type Beat = {
   hold: number;
   message?: boolean;
   systems?: Partial<Record<SystemId, SystemStatus>>;
   settled?: boolean;
   reply?: boolean;
+  followUp?: boolean;
+  confirm?: boolean;
   closing?: boolean;
 };
 
@@ -100,6 +106,13 @@ export type Scenario = {
   chipLabel: string;
   customerMessage: string;
   replyMessage: string;
+  // PR-3 — the closing exchange. Every real booking ends with the customer
+  // acknowledging and the business confirming the follow-through, and its
+  // absence was most of why the screen read as a mockup. The confirmations
+  // restate capabilities the page already claims (Calendar books, HIRA
+  // reminds) rather than introducing new ones.
+  followUpMessage: string;
+  confirmMessage: string;
   beats: Beat[];
 };
 
@@ -119,8 +132,10 @@ const CLEANING_BEATS: Beat[] = [
   { hold: 700, systems: { calendar: "done" } },
   { hold: 400, systems: { team: "done" } },
   { hold: 700, settled: true }, // Scene 5 — the signature moment: HIRA settles, then a quiet pause
-  { hold: 2200, reply: true }, // Scene 6 — the reply
-  { hold: 3200, closing: true }, // Scene 7 — "One message. Four business systems. Zero manual work."
+  { hold: 1600, reply: true }, // Scene 6 — the reply
+  { hold: 1300, followUp: true }, // Scene 7 — the customer acknowledges
+  { hold: 2400, confirm: true }, // Scene 8 — HIRA confirms the follow-through
+  { hold: 3200, closing: true }, // Scene 9 — "One message. Four business systems. Zero manual work."
   { hold: 600 }, // hold before the loop resets
 ];
 
@@ -140,7 +155,9 @@ const PRICING_BEATS: Beat[] = [
   { hold: 700, systems: { knowledge: "done" } },
   { hold: 500, systems: { crm: "done" } },
   { hold: 700, settled: true },
-  { hold: 2200, reply: true },
+  { hold: 1600, reply: true },
+  { hold: 1300, followUp: true },
+  { hold: 2400, confirm: true },
   { hold: 3200, closing: true },
   { hold: 600 },
 ];
@@ -156,7 +173,9 @@ const ESCALATION_BEATS: Beat[] = [
   { hold: 700, systems: { crm: "done" } },
   { hold: 500, systems: { team: "done" } },
   { hold: 700, settled: true },
-  { hold: 2200, reply: true },
+  { hold: 1600, reply: true },
+  { hold: 1300, followUp: true },
+  { hold: 2400, confirm: true },
   { hold: 3200, closing: true },
   { hold: 600 },
 ];
@@ -167,6 +186,8 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     chipLabel: "Cleaning",
     customerMessage: "Do you have availability for a cleaning this Thursday?",
     replyMessage: "Thursday at 10:00 AM works — you're all set!",
+    followUpMessage: "Perfect, thank you!",
+    confirmMessage: "Calendar invite sent. I'll remind you an hour before.",
     beats: CLEANING_BEATS,
   },
   dental: {
@@ -174,6 +195,8 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     chipLabel: "Dental",
     customerMessage: "Can I book a consultation with Dr. Martinez tomorrow afternoon?",
     replyMessage: "Dr. Martinez has an opening tomorrow at 3:30 PM — you're all set!",
+    followUpMessage: "That works, thanks!",
+    confirmMessage: "Booked. I'll send a reminder the morning of.",
     beats: DENTAL_BEATS,
   },
   pricing: {
@@ -182,6 +205,8 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     customerMessage: "What do your plans include, and is there human escalation?",
     replyMessage:
       "Every plan includes human escalation, grounded in what you've told HIRA — no generic guessing.",
+    followUpMessage: "Can someone walk me through it?",
+    confirmMessage: "Of course — I've asked the team to reach out today.",
     beats: PRICING_BEATS,
   },
   escalation: {
@@ -189,6 +214,8 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     chipLabel: "Escalation",
     customerMessage: "I need to speak with your team about an urgent issue.",
     replyMessage: "I've flagged this to your team with the full conversation — they'll take it from here.",
+    followUpMessage: "Thank you, that's a relief.",
+    confirmMessage: "They've seen it and someone is picking it up now.",
     beats: ESCALATION_BEATS,
   },
 };
@@ -229,6 +256,8 @@ const FLOW_COLUMN = "w-full max-w-[420px] lg:min-w-0 lg:max-w-[500px] lg:flex-1"
 // status-bar time so the device reads as internally consistent.
 const MSG_TIME = "9:41";
 const REPLY_TIME = "9:42";
+const FOLLOW_UP_TIME = "9:42";
+const CONFIRM_TIME = "9:43";
 
 // Sprint 66 PR-3 — `key={scenarioId}` at the call site (see Hero, which
 // owns the selector) remounts this whole widget on scenario change: every
@@ -253,6 +282,8 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
   const [status, setStatus] = useState<Record<SystemId, SystemStatus>>(IDLE_STATUS);
   const [settled, setSettled] = useState(false);
   const [replyVisible, setReplyVisible] = useState(false);
+  const [followUpVisible, setFollowUpVisible] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
   const [closingVisible, setClosingVisible] = useState(false);
   const [paused, setPaused] = useState(false);
   const [tabHidden, setTabHidden] = useState(false);
@@ -272,6 +303,8 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
         setStatus(IDLE_STATUS);
         setSettled(false);
         setReplyVisible(false);
+        setFollowUpVisible(false);
+        setConfirmVisible(false);
         setClosingVisible(false);
         setBeatIndex(0);
         return;
@@ -281,6 +314,8 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
       if (beat.systems) setStatus((prev) => ({ ...prev, ...beat.systems }));
       if (beat.settled) setSettled(true);
       if (beat.reply) setReplyVisible(true);
+      if (beat.followUp) setFollowUpVisible(true);
+      if (beat.confirm) setConfirmVisible(true);
       if (beat.closing) setClosingVisible(true);
       setBeatIndex(nextIndex);
     }, scenario.beats[beatIndex].hold);
@@ -293,6 +328,10 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
   // is busy — the phone and the graph narrating the same instant is what
   // makes them one demonstration rather than two.
   const typing = anyActive && !replyVisible && !closingVisible;
+  // HIRA composes again between the customer's thanks and the confirmation —
+  // the same cue in the same place, so the second exchange behaves like the
+  // first rather than appearing instantly.
+  const typingConfirm = followUpVisible && !confirmVisible && !closingVisible;
 
   const summary =
     `Demo: a customer messages HIRA asking, "${scenario.customerMessage}" HIRA coordinates four ` +
@@ -335,6 +374,8 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
           <>
             <CustomerBubble text={scenario.customerMessage} time={MSG_TIME} />
             <ReplyBubble text={scenario.replyMessage} time={REPLY_TIME} />
+            <CustomerBubble text={scenario.followUpMessage} time={FOLLOW_UP_TIME} />
+            <ReplyBubble text={scenario.confirmMessage} time={CONFIRM_TIME} />
           </>,
         )}
         <div aria-hidden="true" className={FLOW_COLUMN}>
@@ -369,6 +410,13 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
           {typing && <TypingBubble />}
           {replyVisible && !closingVisible && (
             <ReplyBubble text={scenario.replyMessage} time={REPLY_TIME} />
+          )}
+          {followUpVisible && !closingVisible && (
+            <CustomerBubble text={scenario.followUpMessage} time={FOLLOW_UP_TIME} />
+          )}
+          {typingConfirm && <TypingBubble />}
+          {confirmVisible && !closingVisible && (
+            <ReplyBubble text={scenario.confirmMessage} time={CONFIRM_TIME} />
           )}
           {closingVisible && <ClosingLine />}
         </>,

@@ -61,7 +61,11 @@ function statusLineFor(label: string) {
 }
 
 // Mirrors BEATS' hold values in signature-demo.tsx exactly, in order.
-const HOLDS_MS = [1400, 500, 300, 700, 300, 500, 200, 400, 300, 700, 400, 700, 2200, 3200, 600];
+// Mirrors CLEANING_BEATS' hold values in signature-demo.tsx exactly, in
+// order. PR-3 added two beats — the customer's acknowledgement and HIRA's
+// confirmation — between the reply and the closing line, and shortened the
+// reply's own hold now that something follows it.
+const HOLDS_MS = [1400, 500, 300, 700, 300, 500, 200, 400, 300, 700, 400, 700, 1600, 1300, 2400, 3200, 600];
 
 function advance(ms: number) {
   act(() => vi.advanceTimersByTime(ms));
@@ -174,14 +178,20 @@ describe("SignatureDemo", () => {
     advance(HOLDS_MS[11]); // -> reply beat
     expect(screen.getByText(/thursday at 10:00 am works/i)).toBeInTheDocument();
 
-    advance(HOLDS_MS[12]); // -> closing beat
+    advance(HOLDS_MS[12]); // -> the customer's acknowledgement
+    expect(screen.getByText(/perfect, thank you/i)).toBeInTheDocument();
+
+    advance(HOLDS_MS[13]); // -> HIRA's confirmation
+    expect(screen.getByText(/calendar invite sent/i)).toBeInTheDocument();
+
+    advance(HOLDS_MS[14]); // -> closing beat
     expect(screen.getByText(/this is hira/i)).toBeInTheDocument();
     expect(
       screen.getByText(/one message\. four business systems\. zero manual work\./i),
     ).toBeInTheDocument();
 
-    advance(HOLDS_MS[13]); // closing still holding
-    advance(HOLDS_MS[14]); // wraps past the end, resets
+    advance(HOLDS_MS[15]); // closing still holding
+    advance(HOLDS_MS[16]); // wraps past the end, resets
     expect(screen.queryByText(/this is hira/i)).toBeNull();
     expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
     expect(indicatorFor("Knowledge")).toHaveClass("border-border");
@@ -198,13 +208,15 @@ describe("SignatureDemo", () => {
       advance(HOLDS_MS[11]); // -> reply beat
       expect(screen.getByText(/thursday at 10:00 am works/i)).toBeInTheDocument();
 
-      advance(HOLDS_MS[12]); // -> closing beat
+      advance(HOLDS_MS[12]); // -> acknowledgement
+      advance(HOLDS_MS[13]); // -> confirmation
+      advance(HOLDS_MS[14]); // -> closing beat
       expect(screen.getByText(/this is hira/i)).toBeInTheDocument();
       // The reply bubble is replaced by the closing overlay, not stacked on it.
       expect(screen.queryByText(/thursday at 10:00 am works/i)).toBeNull();
 
-      advance(HOLDS_MS[13]); // closing still holding
-      advance(HOLDS_MS[14]); // wraps past the end, resets to idle
+      advance(HOLDS_MS[15]); // closing still holding
+      advance(HOLDS_MS[16]); // wraps past the end, resets to idle
       expect(screen.queryByText(/this is hira/i)).toBeNull();
       expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
     };
@@ -380,11 +392,15 @@ describe("ScenarioSelector (Sprint 66 PR-3)", () => {
       advance(holds[7]); // -> reply beat
       expect(screen.getByText(/i've flagged this to your team/i)).toBeInTheDocument();
 
-      advance(holds[8]); // -> closing beat
+      advance(holds[8]); // -> the customer's acknowledgement
+      advance(holds[9]); // -> HIRA's confirmation
+      expect(screen.getByText(/someone is picking it up now/i)).toBeInTheDocument();
+
+      advance(holds[10]); // -> closing beat
       expect(screen.getByText(/this is hira/i)).toBeInTheDocument();
 
-      advance(holds[9]); // closing still holding
-      advance(holds[10]); // wraps past the end, resets to idle
+      advance(holds[11]); // closing still holding
+      advance(holds[12]); // wraps past the end, resets to idle
       expect(screen.queryByText(/this is hira/i)).toBeNull();
       expect(screen.queryByText(/speak with your team/i)).toBeNull();
     };

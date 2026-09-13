@@ -71,8 +71,17 @@ const NAV_LINKS = [
 // renders as translucent grey over the light body behind it.
 export function SiteHeader() {
   return (
-    <header className="glass dark sticky top-0 z-30 text-foreground [--glass-fill-strong:var(--background)]! [--glass-fill:var(--background)]! [backdrop-filter:none]">
-      <div className="mx-auto flex h-[4.5rem] max-w-[1420px] items-center justify-between px-4 sm:px-6 lg:px-8">
+    <header className="glass dark sticky top-0 z-30 px-4 text-foreground sm:px-6 lg:px-8 [--glass-fill-strong:var(--background)]! [--glass-fill:var(--background)]! [backdrop-filter:none]">
+      {/* PR-3 — the gutter moved OUT of the max-width box, onto the header
+          itself, so this nests exactly as the hero does: padding on the
+          outer element, max-width on the inner. PR-1 matched the two
+          containers' classes but not their nesting, and above 1420px the
+          difference resolves — the header padded inward from a centred
+          1420px box while the hero's box was already inset by its own
+          padding. At 1440 that put the logo 10px right of the eyebrow and
+          the nav CTA 10px left of the graph. Same edges now, at every
+          width. */}
+      <div className="mx-auto flex h-[4.5rem] w-full max-w-[1420px] items-center justify-between">
         <Link
           href="/"
           className="flex items-center gap-2.5 rounded-sm text-[1.0625rem] font-semibold tracking-tight focus-visible:focus-ring"
