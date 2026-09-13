@@ -18,21 +18,27 @@ describe("MarketingPage", () => {
     expect(screen.getByText(/founder beta/i)).toBeInTheDocument();
   });
 
-  it("proves the product with the Mission Control signature demo below the hero", () => {
+  it("proves the product with the Mission Control signature demo inside the hero", () => {
     render(<MarketingPage />);
 
     // The demo opens idle by design (see signature-demo.test.tsx for the
     // full script) — here we only confirm the accessible entry point for
     // the demo exists on the page, without needing fake timers.
+    // Cinematic rebuild — this used to sit in its own section below the
+    // hero; it is now the hero's right-hand stage. Same accessible entry
+    // point either way, which is exactly why this assertion still holds.
     expect(
       screen.getByRole("group", { name: /four.*systems/i }),
     ).toBeInTheDocument();
   });
 
-  it("answers who HIRA is built for right below the hero", () => {
+  it("answers who HIRA is built for without leaving the opening screen", () => {
     render(<MarketingPage />);
 
-    expect(screen.getByText("Built for")).toBeInTheDocument();
+    // Cinematic rebuild — was a standalone "Built for" strip below the
+    // hero; now trust pills inside the hero's copy rail, so the audience
+    // is answered before the visitor scrolls at all.
+    expect(screen.getByText(/trusted by modern businesses/i)).toBeInTheDocument();
     expect(screen.getByText("Dental Clinics")).toBeInTheDocument();
     expect(screen.getByText("Professional Services")).toBeInTheDocument();
   });
