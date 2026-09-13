@@ -1,8 +1,30 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScenarioId } from "./signature-demo";
-import { DEFAULT_SCENARIO_ID, SCENARIOS, SignatureDemo } from "./signature-demo";
+import {
+  DEFAULT_SCENARIO_ID,
+  OrchestrationStage,
+  SCENARIOS,
+  ScenarioSelector,
+} from "./signature-demo";
+
+// Cinematic rebuild — the <SignatureDemo> section (selector + phone +
+// graph, with the selector owning scenario state and `key` remounting the
+// widget on change) no longer exists: hero.tsx composes those two exported
+// pieces directly, in exactly this shape. This harness is that composition,
+// so every behavioural test below still drives the same unit it always did
+// — including the scenario-switch remount, which is the `key` prop here.
+function SignatureDemo() {
+  const [scenarioId, setScenarioId] = useState<ScenarioId>(DEFAULT_SCENARIO_ID);
+  return (
+    <>
+      <ScenarioSelector scenarioId={scenarioId} onChange={setScenarioId} />
+      <OrchestrationStage key={scenarioId} scenarioId={scenarioId} />
+    </>
+  );
+}
 
 function setDocumentHidden(hidden: boolean) {
   Object.defineProperty(document, "hidden", { value: hidden, configurable: true });

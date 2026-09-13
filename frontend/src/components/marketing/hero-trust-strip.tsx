@@ -15,37 +15,42 @@ const INDUSTRIES = [
   { icon: Briefcase, label: "Professional Services" },
 ];
 
-// A real <ul> (semantic list, not a styled row of <div>s) — screen readers
-// announce "list, 6 items." Icons are aria-hidden; the label text alone
-// carries the content. border-t (not border-b) matches every other
-// section's own convention of owning its top divider — SignatureDemo right
-// below already opens with border-t, so this needs no bottom rule of its
-// own to avoid a doubled line between them.
-export function HeroTrustStrip() {
+// Cinematic rebuild — this was a full-width <section> of its own directly
+// below the hero ("Built for", icon + label pairs, no chrome). It is now a
+// block inside the hero's copy rail, styled as the reference's enclosed
+// pills. Two things deliberately did NOT come across from the reference:
+// its pills use backdrop-filter: blur(8px), which buys nothing over an
+// opaque background and costs a compositing layer per pill; and its labels
+// are hardcoded white on a dark-only page, where these stay on tokens so
+// the pills work in both themes.
+//
+// Still a real <ul> (semantic list, not a styled row of <div>s) — screen
+// readers announce "list, 6 items." Icons are aria-hidden; the label text
+// alone carries the content.
+export function HeroTrustPills() {
   return (
-    <section className="border-t py-10 sm:py-12">
-      <Reveal className="mx-auto max-w-4xl px-4 text-center sm:px-6">
-        <span className="text-[0.6875rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Built for
-        </span>
-        {/* Signal & Depth PR-8 — each row is items-start, not items-center,
-            for the same reason as hero.tsx's Assisted-Mode line: at 360px
-            the two-column grid leaves "Professional Services" too little
-            room, it wraps, and items-center then centred the briefcase icon
-            in the gutter between its two lines. Verified against real
-            device-emulated renders: this wraps at 360 only — 390, 430, 768
-            and landscape all keep it on one line, where items-start +
-            mt-0.5 is pixel-identical to items-center (20px line-height,
-            16px icon → a 2px offset either way). */}
-        <ul className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-8 sm:gap-y-3">
-          {INDUSTRIES.map((industry) => (
-            <li key={industry.label} className="flex items-start justify-center gap-2 sm:justify-start">
-              <industry.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <span className="text-sm text-muted-foreground">{industry.label}</span>
-            </li>
-          ))}
-        </ul>
-      </Reveal>
-    </section>
+    <Reveal>
+      <span className="text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+        Trusted by modern businesses
+      </span>
+      {/* items-center is safe here in a way it was not in the old
+          full-width section: each label now sits in its own shrink-wrapped
+          pill rather than a two-column grid cell, so "Professional
+          Services" can no longer wrap mid-pill and strand the icon in the
+          gutter between two lines — which is exactly what PR-8's
+          items-start + mt-0.5 was working around. The pill wraps as a unit
+          instead. */}
+      <ul className="mt-2.5 flex flex-wrap justify-center gap-2 lg:justify-start">
+        {INDUSTRIES.map((industry) => (
+          <li
+            key={industry.label}
+            className="flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-3 py-1"
+          >
+            <industry.icon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="text-xs font-medium text-muted-foreground">{industry.label}</span>
+          </li>
+        ))}
+      </ul>
+    </Reveal>
   );
 }

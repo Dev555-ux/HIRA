@@ -6,7 +6,6 @@ import type { LucideIcon } from "lucide-react";
 import { PhoneFrame } from "@/components/marketing/phone-frame";
 import { AIAvatar } from "@/components/ui/ai-avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { useInView } from "@/hooks/use-in-view";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
@@ -335,21 +334,35 @@ function ReplyBubble({ text }: { text: string }) {
 
 function ClosingLine() {
   return (
-    <div className="animate-fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 bg-card px-6 text-center">
+    <div className="animate-fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-6 text-center">
       <p className="text-sm text-muted-foreground">One message. Four business systems. Zero manual work.</p>
       <p className="text-2xl font-semibold tracking-tight">This is HIRA.</p>
     </div>
   );
 }
 
-// Sprint 66 PR-3 — `key={scenarioId}` at the call site (see SignatureDemo
-// below) remounts this whole widget on scenario change: every useState
-// here reinitializes to its default and every effect's cleanup runs before
-// the new instance's effects fire. That's the entire reset-and-restart
-// mechanism — no manual "reset on scenario change" effect needed, no risk
-// of a stale timer reading the new scenario's (possibly shorter) beats
-// array. The engine below is otherwise byte-for-byte what PR-2 shipped.
-function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
+// Cinematic rebuild — the three class strings the animated and
+// reduced-motion branches both render into, hoisted so the two can never
+// drift apart. The stage stacks on phones and goes side-by-side at lg,
+// which is also where the hero's own 460px copy rail engages.
+const STAGE_LAYOUT =
+  "flex w-full flex-col items-center gap-10 lg:min-h-[580px] lg:flex-row lg:items-center lg:justify-center lg:gap-8";
+const PHONE_COLUMN = "w-full max-w-[280px] shrink-0 lg:max-w-[284px]";
+// min-h keeps the phone a constant height across every beat — without it
+// the frame grows as the reply arrives and the whole stage jumps. Bubbles
+// sit at the bottom, the way a real conversation fills a screen upward.
+const PHONE_SCREEN = "relative flex min-h-[300px] flex-col justify-end gap-3";
+const CANVAS_COLUMN = "relative aspect-square w-full max-w-[340px] shrink-0 sm:max-w-[380px] lg:max-w-[480px]";
+
+// Sprint 66 PR-3 — `key={scenarioId}` at the call site (see Hero, which
+// owns the selector) remounts this whole widget on scenario change: every
+// useState here reinitializes to its default and every effect's cleanup
+// runs before the new instance's effects fire. That's the entire
+// reset-and-restart mechanism — no manual "reset on scenario change"
+// effect needed, no risk of a stale timer reading the new scenario's
+// (possibly shorter) beats array. The engine below is otherwise
+// byte-for-byte what PR-2 shipped.
+export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
   const reducedMotion = useReducedMotion();
   // DESIGN-MOTION-001 §7.3: at rest until scrolled into view, then alive;
   // pauses again if scrolled away.
@@ -405,29 +418,31 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
 
   if (reducedMotion) {
     return (
-      <div className="mx-auto w-full max-w-md">
-        <Card role="img" aria-label={summary} className="space-y-4 overflow-hidden p-6 sm:p-8">
-          <div aria-hidden="true" className="space-y-4">
-            <CustomerBubble text={scenario.customerMessage} />
-            <div className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
-              <Cables status={DONE_STATUS} />
-              {/* Same static hub glow as the animated branch below, at its
-                  "success" end state — the reduced-motion render is a
-                  single resolved frame, so this needs no transition here. */}
-              <div className="absolute left-1/2 top-1/2 isolate -translate-x-1/2 -translate-y-1/2">
-                <div aria-hidden="true" className="absolute left-1/2 top-1/2 -z-10 size-20 -translate-x-1/2 -translate-y-1/2 rounded-full bg-success/15 blur-xl" />
-                {/* Same elevated dais as the animated branch below. */}
-                <div className="rounded-2xl bg-card p-1.5 shadow-e2 ring-1 ring-border/50">
-                  <AIAvatar name="HIRA" size="xl" state="success" />
-                </div>
-              </div>
-              {SYSTEMS.map((sys) => (
-                <SystemNode key={sys.id} sys={sys} status="done" settled statusTextVisible />
-              ))}
+      <div role="img" aria-label={summary} className={STAGE_LAYOUT}>
+        <div aria-hidden="true" className={PHONE_COLUMN}>
+          <PhoneFrame>
+            <div className={PHONE_SCREEN}>
+              <CustomerBubble text={scenario.customerMessage} />
+              <ReplyBubble text={scenario.replyMessage} />
             </div>
-            <ReplyBubble text={scenario.replyMessage} />
+          </PhoneFrame>
+        </div>
+        <div aria-hidden="true" className={CANVAS_COLUMN}>
+          <Cables status={DONE_STATUS} />
+          {/* Same static hub glow as the animated branch below, at its
+              "success" end state — the reduced-motion render is a
+              single resolved frame, so this needs no transition here. */}
+          <div className="absolute left-1/2 top-1/2 isolate -translate-x-1/2 -translate-y-1/2">
+            <div aria-hidden="true" className="absolute left-1/2 top-1/2 -z-10 size-20 -translate-x-1/2 -translate-y-1/2 rounded-full bg-success/15 blur-xl" />
+            {/* Same elevated dais as the animated branch below. */}
+            <div className="rounded-2xl bg-card p-1.5 shadow-e2 ring-1 ring-border/50">
+              <AIAvatar name="HIRA" size="xl" state="success" />
+            </div>
           </div>
-        </Card>
+          {SYSTEMS.map((sys) => (
+            <SystemNode key={sys.id} sys={sys} status="done" settled statusTextVisible />
+          ))}
+        </div>
       </div>
     );
   }
@@ -438,17 +453,34 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
       role="group"
       aria-label={`${summary} Animation pauses while hovered or focused.`}
       tabIndex={0}
-      className="mx-auto w-full max-w-md rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      className={cn(
+        STAGE_LAYOUT,
+        "rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+      )}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
     >
-      <Card className="relative space-y-4 overflow-hidden p-6 sm:p-8">
-        {messageVisible && !closingVisible && <CustomerBubble text={scenario.customerMessage} />}
+      {/* Cinematic rebuild — the conversation and the orchestration graph
+          were previously stacked inside one narrow Card (bubble, graph,
+          reply), which is what kept the graph boxed at 280–320px. The
+          reference hero stages them side by side: the phone plays the
+          conversation, the network runs beside it at full size. Same
+          engine, same beats, same `status` object driving both halves —
+          only the arrangement changed. */}
+      <div aria-hidden="true" className={PHONE_COLUMN}>
+        <PhoneFrame>
+          <div className={PHONE_SCREEN}>
+            {messageVisible && !closingVisible && <CustomerBubble text={scenario.customerMessage} />}
+            {replyVisible && !closingVisible && <ReplyBubble text={scenario.replyMessage} />}
+            {closingVisible && <ClosingLine />}
+          </div>
+        </PhoneFrame>
+      </div>
 
-        <div aria-hidden="true" className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[320px]">
-          <Cables status={status} />
+      <div aria-hidden="true" className={CANVAS_COLUMN}>
+        <Cables status={status} />
           {/* Signal & Depth PR-4 — HIRA Core prominence: a tight, static
               glow directly behind the hub, distinct from AtmosphereBackground's
               much larger ambient blur behind the whole phone. Colored by the
@@ -491,20 +523,16 @@ function DemoWidget({ scenarioId }: { scenarioId: ScenarioId }) {
               <AIAvatar name="HIRA" size="xl" state={hubState} />
             </div>
           </div>
-          {SYSTEMS.map((sys) => (
-            <SystemNode
-              key={sys.id}
-              sys={sys}
-              status={status[sys.id]}
-              settled={settled}
-              statusTextVisible={!settled}
-            />
-          ))}
-        </div>
-
-        {replyVisible && !closingVisible && <ReplyBubble text={scenario.replyMessage} />}
-        {closingVisible && <ClosingLine />}
-      </Card>
+        {SYSTEMS.map((sys) => (
+          <SystemNode
+            key={sys.id}
+            sys={sys}
+            status={status[sys.id]}
+            settled={settled}
+            statusTextVisible={!settled}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -530,15 +558,17 @@ const SCENARIO_EMOJI: Record<ScenarioId, string> = {
 // pill/chip primitive, already on --motion-fast) instead of hand-styling
 // a new chip — its focus-visible ring matches the ring already used on the
 // demo widget itself below.
-function ScenarioSelector({
+export function ScenarioSelector({
   scenarioId,
   onChange,
+  className,
 }: {
   scenarioId: ScenarioId;
   onChange: (id: ScenarioId) => void;
+  className?: string;
 }) {
   return (
-    <fieldset className="mb-10 flex flex-wrap justify-center gap-2">
+    <fieldset className={cn("flex flex-wrap justify-center gap-2", className)}>
       <legend className="sr-only">Choose a demo scenario</legend>
       {SCENARIO_ORDER.map((id) => (
         <label key={id} className="cursor-pointer">
@@ -574,37 +604,9 @@ function ScenarioSelector({
   );
 }
 
-// Sprint 66 PR-4 — one static atmospheric layer behind the phone: a
-// blurred, aria-hidden glow, sized and positioned with plain CSS. No
-// keyframes, no transform on scroll/mouse, so "respect reduced motion" is
-// satisfied by having nothing to reduce in the first place, not by a media
-// query working around an animation. pointer-events-none keeps it fully
-// inert — it can never intercept a click meant for the selector or demo.
-function AtmosphereBackground() {
-  return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-      <div className="absolute left-1/2 top-1/2 h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/5 blur-3xl" />
-    </div>
-  );
-}
-
-// Section-level wrapper: a narrower container than before (max-w-2xl, not
-// max-w-6xl) — the radial layout is inherently more compact/vertical than
-// the old wide horizontal flow, so a wide section around it just reads as
-// empty space. Same quiet industrial framing (a single top rule, generous
-// vertical padding) as every other section boundary on the page.
-export function SignatureDemo() {
-  const [scenarioId, setScenarioId] = useState<ScenarioId>(DEFAULT_SCENARIO_ID);
-
-  return (
-    <section className="relative border-t py-24 sm:py-32">
-      <AtmosphereBackground />
-      <div className="relative mx-auto max-w-2xl px-4 sm:px-6">
-        <ScenarioSelector scenarioId={scenarioId} onChange={setScenarioId} />
-        <PhoneFrame>
-          <DemoWidget key={scenarioId} scenarioId={scenarioId} />
-        </PhoneFrame>
-      </div>
-    </section>
-  );
-}
+// Cinematic rebuild — the standalone SignatureDemo <section> and its own
+// atmosphere layer are both gone. The demo is no longer a thing you scroll
+// to below the fold; it *is* the hero's right-hand stage, and the hero owns
+// the single atmosphere layer for the whole opening screen. What used to
+// live here (selector + phone + graph) is now exported piecewise above and
+// composed by hero.tsx.
