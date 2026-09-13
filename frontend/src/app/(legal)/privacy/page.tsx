@@ -200,7 +200,7 @@ export default function PrivacyPolicyPage() {
         </div>
       </LegalSection>
 
-      <LegalSection title="AI Processing">
+      <LegalSection id="ai-processing" title="AI Processing">
         <p>
           When {PRODUCT_NAME} answers a customer message, it sends the relevant conversation, the
           matching knowledge-base content, and relevant business context (such as the
