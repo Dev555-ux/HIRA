@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
 import { LegalSection } from "@/components/legal/legal-section";
-import { ENTITY_NAME, LEGAL_LAST_UPDATED, PRODUCT_NAME, SITE_URL, SUPPORT_EMAIL } from "@/lib/legal";
+import { ENTITY_NAME, LEGAL_LAST_UPDATED, PRODUCT_NAME, SUPPORT_EMAIL } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
 
 const TITLE = "Privacy Policy";
-const DESCRIPTION = `How ${ENTITY_NAME} collects, uses, and protects data in ${PRODUCT_NAME}, including Google user data.`;
+const DESCRIPTION = `How ${ENTITY_NAME} collects, uses, shares, and protects data in ${PRODUCT_NAME} — including WhatsApp and Instagram conversations, AI processing, and Google Calendar data.`;
 
-export const metadata: Metadata = {
-  metadataBase: new URL(SITE_URL),
-  title: TITLE,
-  description: DESCRIPTION,
-  alternates: { canonical: "/privacy" },
-};
+export const metadata: Metadata = pageMetadata({ title: TITLE, description: DESCRIPTION, path: "/privacy" });
 
 export default function PrivacyPolicyPage() {
   return (
