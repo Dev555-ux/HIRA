@@ -46,9 +46,18 @@ function mockReducedMotion(matches: boolean) {
   })) as typeof window.matchMedia;
 }
 
+// PR-2 — the system's state indicator moved from a free-floating node on a
+// radial canvas to the icon tile inside its row. Same thing being asserted
+// (this system's visual state), read from where it now lives.
 function indicatorFor(label: string) {
-  const labelEl = screen.getByText(label);
-  return labelEl.parentElement?.querySelector("span");
+  return screen.getByText(label).closest("li")?.querySelector("span");
+}
+
+// The status line beneath the label: the system's standing role while idle,
+// its live text while working, its outcome once done.
+function statusLineFor(label: string) {
+  const ps = screen.getByText(label).closest("li")?.querySelectorAll("p");
+  return ps?.[1];
 }
 
 // Mirrors BEATS' hold values in signature-demo.tsx exactly, in order.
@@ -69,7 +78,7 @@ describe("SignatureDemo", () => {
     expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
     expect(screen.queryByText(/thursday at 10:00 am works/i)).toBeNull();
     expect(screen.queryByText(/this is hira/i)).toBeNull();
-    expect(indicatorFor("Knowledge")).toHaveClass("border-border/50");
+    expect(indicatorFor("Knowledge")).toHaveClass("border-border");
   });
 
   it("exposes one accessible label instead of narrating four systems to screen readers", () => {
@@ -87,12 +96,12 @@ describe("SignatureDemo", () => {
     render(<SignatureDemo />);
 
     for (const ms of HOLDS_MS.slice(0, 3)) advance(ms); // -> Knowledge active
-    expect(indicatorFor("Knowledge")).toHaveClass("border-primary");
-    expect(screen.getByText("Searching…")).toHaveClass("opacity-100");
+    expect(indicatorFor("Knowledge")).toHaveClass("border-brand/75");
+    expect(statusLineFor("Knowledge")).toHaveTextContent("Searching…");
 
     advance(HOLDS_MS[3]); // -> CRM active, while Knowledge is still active
-    expect(indicatorFor("Knowledge")).toHaveClass("border-primary");
-    expect(indicatorFor("CRM")).toHaveClass("border-primary");
+    expect(indicatorFor("Knowledge")).toHaveClass("border-brand/75");
+    expect(indicatorFor("CRM")).toHaveClass("border-brand/75");
 
     vi.useRealTimers();
   });
@@ -101,11 +110,15 @@ describe("SignatureDemo", () => {
     vi.useFakeTimers();
     const { container } = render(<SignatureDemo />);
 
+    // PR-2 — the connectors are cubic paths keyed by data-system rather than
+    // straight lines identified by their end coordinates. The behaviour under
+    // test is unchanged: an active system's cable carries a travelling dash,
+    // and loses it the moment that system finishes.
     const knowledgePulse = () =>
-      container.querySelector("svg line.animate-signature-pulse[x2='50'][y2='12']");
+      container.querySelector('svg g[data-system="knowledge"] path[stroke-dasharray]');
 
     for (const ms of HOLDS_MS.slice(0, 3)) advance(ms); // -> Knowledge active
-    expect(knowledgePulse()).toHaveAttribute("stroke-dasharray", "8 92");
+    expect(knowledgePulse()).toHaveClass("stroke-brand");
 
     advance(HOLDS_MS[3]); // -> CRM active
     advance(HOLDS_MS[4]); // -> Knowledge done
@@ -119,13 +132,13 @@ describe("SignatureDemo", () => {
     render(<SignatureDemo />);
 
     for (const ms of HOLDS_MS.slice(0, 5)) advance(ms); // -> Knowledge done
-    expect(screen.getByText("→ Verified")).toHaveClass("opacity-100");
+    expect(statusLineFor("Knowledge")).toHaveTextContent("Verified");
 
     for (const ms of HOLDS_MS.slice(5, 7)) advance(ms); // -> CRM done
-    expect(screen.getByText("→ Customer found")).toHaveClass("opacity-100");
+    expect(statusLineFor("CRM")).toHaveTextContent("Customer found");
 
     for (const ms of HOLDS_MS.slice(7, 10)) advance(ms); // -> Team done
-    expect(screen.getByText("→ Team notified")).toHaveClass("opacity-100");
+    expect(statusLineFor("Team")).toHaveTextContent("Team notified");
 
     vi.useRealTimers();
   });
@@ -136,13 +149,17 @@ describe("SignatureDemo", () => {
 
     for (const ms of HOLDS_MS.slice(0, 10)) advance(ms); // -> Team done (last one)
 
-    expect(screen.getByText("→ Thu · 10:00 AM")).toHaveClass("opacity-100");
+    expect(statusLineFor("Calendar")).toHaveTextContent("Thu · 10:00 AM");
 
     advance(HOLDS_MS[10]); // the settle beat itself
+    // PR-2 — settling no longer dims the systems to a neutral "spent" grey,
+    // and no longer fades their outcomes away. Both were compensating for a
+    // radial canvas where four lit nodes competed with the hub; in a row list
+    // the hub is distinct by position, so the outcomes stay legible instead.
     for (const label of ["Knowledge", "CRM", "Calendar", "Team"]) {
-      expect(indicatorFor(label)).toHaveClass("border-foreground/40");
+      expect(indicatorFor(label)).toHaveClass("border-success/70");
     }
-    expect(screen.getByText("→ Thu · 10:00 AM")).toHaveClass("opacity-0");
+    expect(statusLineFor("Calendar")).toHaveTextContent("Thu · 10:00 AM");
 
     vi.useRealTimers();
   });
@@ -167,7 +184,7 @@ describe("SignatureDemo", () => {
     advance(HOLDS_MS[14]); // wraps past the end, resets
     expect(screen.queryByText(/this is hira/i)).toBeNull();
     expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
-    expect(indicatorFor("Knowledge")).toHaveClass("border-border/50");
+    expect(indicatorFor("Knowledge")).toHaveClass("border-border");
 
     vi.useRealTimers();
   });
@@ -260,7 +277,7 @@ describe("SignatureDemo", () => {
     expect(screen.getByRole("img", { name: /four.*systems/i })).toBeInTheDocument();
     expect(screen.getByText(/do you have availability for a cleaning/i)).toBeInTheDocument();
     expect(screen.getByText(/thursday at 10:00 am works/i)).toBeInTheDocument();
-    expect(screen.getByText("→ Team notified")).toHaveClass("opacity-100");
+    expect(statusLineFor("Team")).toHaveTextContent("Team notified");
   });
 
   afterEach(() => {

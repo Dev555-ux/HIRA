@@ -460,14 +460,14 @@
 @utility hero-key-light {
   background:
     radial-gradient(
-      62rem 46rem at 70% 62%,
+      62rem 46rem at 62% 72%,
       color-mix(in srgb, var(--brand) var(--hero-key-core), transparent) 0%,
       color-mix(in srgb, var(--brand) var(--hero-key-mid), transparent) 28%,
       color-mix(in srgb, var(--brand) var(--hero-key-tail), transparent) 50%,
       transparent 74%
     ),
     radial-gradient(
-      26rem 20rem at 76% 70%,
+      26rem 20rem at 66% 80%,
       color-mix(in srgb, var(--brand) var(--hero-key-inner), transparent) 0%,
       transparent 66%
     );
@@ -752,6 +752,29 @@
    coverage visual (a ring behind the donut, low-opacity, never on the data
    itself). Reuses --motion-ambient rather than a new duration; collapses
    under the reduced-motion guard below like every other animation here. */
+/* PR-2 — the two motions the hero stage adds, both tied to a state that is
+   actually changing rather than running for decoration. `cable-flow` only
+   renders while a system is "active"; `typing-dot` only while HIRA is
+   composing. Neither loops once the demo settles. */
+@keyframes cable-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
 @keyframes ambient-pulse {
   0%,
   100% {
