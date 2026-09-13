@@ -345,14 +345,35 @@ function ClosingLine() {
 // reduced-motion branches both render into, hoisted so the two can never
 // drift apart. The stage stacks on phones and goes side-by-side at lg,
 // which is also where the hero's own 460px copy rail engages.
+// Refinement pass (PR-1, stage *balance* only — no phone, chat or graph
+// redesign; that is PR-2). Two numbers, both about composition:
+//
+//   justify-center → justify-between. The stage's content measured ~780px
+//   inside a ~940px track, and centring split the 160px of slack into two
+//   equal gutters — one of which sat between the copy rail and the phone as
+//   dead space, the single widest area of nothing on the page. Spreading to
+//   the track's edges spends that slack *between* phone and graph, where it
+//   reads as the distance the orchestration crosses.
+//
+//   Phone 284 → 344px at lg. It is the product, and it was the smallest
+//   thing in its own stage — narrower than the graph canvas beside it. The
+//   reference's device is the largest object in the frame by a clear margin;
+//   this does not go that far, but it stops the phone losing to its own
+//   diagram.
 const STAGE_LAYOUT =
-  "flex w-full flex-col items-center gap-10 lg:min-h-[580px] lg:flex-row lg:items-center lg:justify-center lg:gap-8";
-const PHONE_COLUMN = "w-full max-w-[280px] shrink-0 lg:max-w-[284px]";
+  "flex w-full flex-col items-center gap-10 lg:min-h-[580px] lg:flex-row lg:items-center lg:justify-between lg:gap-6";
+const PHONE_COLUMN = "w-full max-w-[280px] shrink-0 lg:max-w-[344px]";
 // min-h keeps the phone a constant height across every beat — without it
 // the frame grows as the reply arrives and the whole stage jumps. Bubbles
 // sit at the bottom, the way a real conversation fills a screen upward.
 const PHONE_SCREEN = "relative flex min-h-[300px] flex-col justify-end gap-3";
-const CANVAS_COLUMN = "relative aspect-square w-full max-w-[340px] shrink-0 sm:max-w-[380px] lg:max-w-[480px]";
+// lg:mr-12 — the graph's node labels are `w-24 -translate-x-1/2` anchored at
+// the canvas's 0%/100% edges, so each one extends ~48px *past* the box that
+// sizes them. Centred in a loose track that overhang had slack to spill into;
+// once the stage spreads to the track's edges it does not, and CALENDAR
+// clipped against the viewport. The margin is that overhang, reserved.
+const CANVAS_COLUMN =
+  "relative aspect-square w-full max-w-[340px] shrink-0 sm:max-w-[380px] lg:mr-12 lg:max-w-[440px]";
 
 // Sprint 66 PR-3 — `key={scenarioId}` at the call site (see Hero, which
 // owns the selector) remounts this whole widget on scenario change: every
@@ -592,7 +613,15 @@ export function ScenarioSelector({
               // (hover:bg-accent hover:text-accent-foreground) rather than
               // inventing a new one. The selected chip is left alone — it's
               // already the active state, nothing new to hint at on hover.
-              scenarioId !== id && "hover:bg-accent hover:text-accent-foreground",
+              // Liquid Glass PR-1 — the material goes on the *unselected*
+              // chips only. Glass is a deferring surface; the selected chip
+              // is the one piece of state this control exists to show, so
+              // it stays the solid default Badge and gains contrast from
+              // the others receding. hover:bg-accent still wins over the
+              // glass fill (later in the cascade), so PR-7's hover
+              // affordance is unchanged.
+              scenarioId !== id &&
+                "glass border-[color:var(--glass-border)] hover:bg-accent hover:text-accent-foreground",
             )}
           >
             <span aria-hidden="true">{SCENARIO_EMOJI[id]}</span>
