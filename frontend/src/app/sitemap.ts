@@ -7,7 +7,8 @@ import { LEGAL_LAST_UPDATED, SITE_URL } from "@/lib/legal";
 // `new Date()` on every request would have. changefreq/priority are omitted
 // because Google ignores both.
 export default function sitemap(): MetadataRoute.Sitemap {
-  const legalUpdated = new Date(LEGAL_LAST_UPDATED);
+  // "UTC" pins the calendar date; otherwise it shifts a day on non-UTC hosts.
+  const legalUpdated = new Date(`${LEGAL_LAST_UPDATED} UTC`);
   return [
     { url: SITE_URL },
     { url: `${SITE_URL}/privacy`, lastModified: legalUpdated },
