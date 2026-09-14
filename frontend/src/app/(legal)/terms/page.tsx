@@ -6,19 +6,14 @@ import {
   GOVERNING_LAW,
   LEGAL_LAST_UPDATED,
   PRODUCT_NAME,
-  SITE_URL,
   SUPPORT_EMAIL,
 } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
 
 const TITLE = "Terms of Service";
-const DESCRIPTION = `The terms that govern using ${PRODUCT_NAME}, provided by ${ENTITY_NAME}.`;
+const DESCRIPTION = `The terms for using ${PRODUCT_NAME} by ${ENTITY_NAME}: acceptable use, customer responsibilities, billing, AI-generated content, liability, and account termination.`;
 
-export const metadata: Metadata = {
-  metadataBase: new URL(SITE_URL),
-  title: TITLE,
-  description: DESCRIPTION,
-  alternates: { canonical: "/terms" },
-};
+export const metadata: Metadata = pageMetadata({ title: TITLE, description: DESCRIPTION, path: "/terms" });
 
 export default function TermsOfServicePage() {
   return (

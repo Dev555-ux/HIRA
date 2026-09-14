@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
 import { LegalSection } from "@/components/legal/legal-section";
-import { ENTITY_NAME, PRODUCT_NAME, SITE_URL, SUPPORT_EMAIL } from "@/lib/legal";
+import { ENTITY_NAME, PRODUCT_NAME, SUPPORT_EMAIL } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
 
 const TITLE = "Company Information";
-const DESCRIPTION = `Who builds ${PRODUCT_NAME}.`;
+const DESCRIPTION = `${ENTITY_NAME} is the independent software project building ${PRODUCT_NAME}, an AI employee that answers customers on WhatsApp, books appointments, and tracks leads.`;
 
-export const metadata: Metadata = {
-  metadataBase: new URL(SITE_URL),
-  title: TITLE,
-  description: DESCRIPTION,
-  alternates: { canonical: "/company" },
-};
+export const metadata: Metadata = pageMetadata({ title: TITLE, description: DESCRIPTION, path: "/company" });
 
 export default function CompanyPage() {
   return (

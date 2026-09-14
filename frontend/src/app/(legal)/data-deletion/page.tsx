@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
 import { LegalSection } from "@/components/legal/legal-section";
-import { ENTITY_NAME, LEGAL_LAST_UPDATED, PRODUCT_NAME, SITE_URL, SUPPORT_EMAIL } from "@/lib/legal";
+import { ENTITY_NAME, LEGAL_LAST_UPDATED, PRODUCT_NAME, SUPPORT_EMAIL } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
 
 const TITLE = "Data Deletion";
-const DESCRIPTION = `How to request deletion of your data from ${PRODUCT_NAME}.`;
+const DESCRIPTION = `How businesses and their customers request data deletion from ${PRODUCT_NAME}: what to email, how requests are verified, what gets deleted, and how long it takes.`;
 
-export const metadata: Metadata = {
-  metadataBase: new URL(SITE_URL),
-  title: TITLE,
-  description: DESCRIPTION,
-  alternates: { canonical: "/data-deletion" },
-};
+export const metadata: Metadata = pageMetadata({ title: TITLE, description: DESCRIPTION, path: "/data-deletion" });
 
 export default function DataDeletionPage() {
   return (

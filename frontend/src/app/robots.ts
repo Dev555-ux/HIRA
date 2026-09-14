@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
-
-const SITE_URL = "https://stoneveil.in";
+import { SITE_URL } from "@/lib/legal";
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -12,8 +11,10 @@ export default function robots(): MetadataRoute.Robots {
         // indexing, and it isn't public content anyway.
         disallow: [
           "/dashboard",
+          "/dashboard-v2",
           "/inbox",
           "/pending",
+          "/escalations",
           "/knowledge-base",
           "/demo",
           "/customers",
@@ -22,7 +23,9 @@ export default function robots(): MetadataRoute.Robots {
           "/calendar",
           "/analytics",
           "/settings",
+          "/connect-whatsapp",
           "/onboarding",
+          "/ops",
         ],
       },
     ],

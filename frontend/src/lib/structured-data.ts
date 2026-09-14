@@ -5,12 +5,14 @@ import { ENTITY_NAME, PRODUCT_NAME, SITE_URL } from "@/lib/legal";
 // state as fact regardless of product specifics. Deliberately no
 // `legalName`/`sameAs`: Stoneveil isn't incorporated yet and has no official
 // social profiles, and schema.org fields should never assert what isn't true.
+// `logo` is app/icon.png (192px; Google needs at least 112px).
 export function buildOrganizationSchema() {
   return {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: ENTITY_NAME,
     url: SITE_URL,
+    logo: `${SITE_URL}/icon.png`,
   };
 }
 

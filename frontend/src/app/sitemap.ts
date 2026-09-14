@@ -1,23 +1,20 @@
 import type { MetadataRoute } from "next";
-
-const SITE_URL = "https://stoneveil.in";
+import { LEGAL_LAST_UPDATED, SITE_URL } from "@/lib/legal";
 
 // Only public pages belong in a sitemap — everything else in this app sits
-// behind authentication. The legal/company pages ((legal) route group) are
-// public and worth indexing, unlike the dashboard.
+// behind authentication. lastModified is only given where a real date exists:
+// Google ignores lastmod site-wide once it proves unreliable, which the old
+// `new Date()` on every request would have. changefreq/priority are omitted
+// because Google ignores both.
 export default function sitemap(): MetadataRoute.Sitemap {
+  // "UTC" pins the calendar date; otherwise it shifts a day on non-UTC hosts.
+  const legalUpdated = new Date(`${LEGAL_LAST_UPDATED} UTC`);
   return [
-    {
-      url: SITE_URL,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 1,
-    },
-    ...["/privacy", "/terms", "/data-deletion", "/contact", "/company"].map((path) => ({
-      url: `${SITE_URL}${path}`,
-      lastModified: new Date(),
-      changeFrequency: "yearly" as const,
-      priority: 0.3,
-    })),
+    { url: SITE_URL },
+    { url: `${SITE_URL}/privacy`, lastModified: legalUpdated },
+    { url: `${SITE_URL}/terms`, lastModified: legalUpdated },
+    { url: `${SITE_URL}/data-deletion`, lastModified: legalUpdated },
+    { url: `${SITE_URL}/contact` },
+    { url: `${SITE_URL}/company` },
   ];
 }

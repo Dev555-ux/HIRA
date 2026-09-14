@@ -1,5 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { authEnabled } from "@/lib/config";
 
 // Default-deny: only "/", "/sign-in", "/sign-up", the legal pages Google's
@@ -24,15 +24,26 @@ const isPublicRoute = createRouteMatcher([
   "/opengraph-image",
 ]);
 
+// Signed-in visitors (and everyone in mock/dev mode) skip the marketing
+// homepage for the dashboard. This lives here rather than in app/page.tsx so
+// the homepage has no request-time API calls and is prerendered statically —
+// a dynamic page gets its <title>/description/canonical streamed into <body>
+// instead of <head>, and is never CDN-cached.
+const toDashboard = (req: NextRequest) => NextResponse.redirect(new URL("/dashboard", req.url));
+
 // Real Clerk middleware when configured; a pass-through in dev/mock mode.
 // The config guard (lib/config) prevents mock mode in production.
 export default authEnabled
   ? clerkMiddleware(async (auth, req) => {
+      if (req.nextUrl.pathname === "/") {
+        const { userId } = await auth();
+        if (userId) return toDashboard(req);
+      }
       if (!isPublicRoute(req)) {
         await auth.protect();
       }
     })
-  : () => NextResponse.next();
+  : (req: NextRequest) => (req.nextUrl.pathname === "/" ? toDashboard(req) : NextResponse.next());
 
 export const config = {
   matcher: ["/((?!_next|.*\\..*).*)"],
