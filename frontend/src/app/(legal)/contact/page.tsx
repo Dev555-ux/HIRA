@@ -3,17 +3,13 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ENTITY_NAME, PRODUCT_NAME, SITE_URL, SUPPORT_EMAIL } from "@/lib/legal";
+import { ENTITY_NAME, PRODUCT_NAME, SUPPORT_EMAIL } from "@/lib/legal";
+import { pageMetadata } from "@/lib/seo";
 
 const TITLE = "Contact";
-const DESCRIPTION = `Get in touch with ${ENTITY_NAME} about ${PRODUCT_NAME}.`;
+const DESCRIPTION = `Contact the ${ENTITY_NAME} team behind ${PRODUCT_NAME} at ${SUPPORT_EMAIL} — one address for product questions, support, privacy and data requests, and business inquiries.`;
 
-export const metadata: Metadata = {
-  metadataBase: new URL(SITE_URL),
-  title: TITLE,
-  description: DESCRIPTION,
-  alternates: { canonical: "/contact" },
-};
+export const metadata: Metadata = pageMetadata({ title: TITLE, description: DESCRIPTION, path: "/contact" });
 
 export default function ContactPage() {
   return (

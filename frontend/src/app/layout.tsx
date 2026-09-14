@@ -9,7 +9,9 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://stoneveil.in"),
-  title: "HIRA Dashboard",
+  // The default is what every authenticated (dashboard) page shows; public
+  // pages set their own title, which the template brands.
+  title: { default: "HIRA Dashboard", template: "%s | HIRA" },
   description: "Manage your AI employee's conversations, bookings, and leads.",
   robots: {
     index: true,
