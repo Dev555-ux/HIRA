@@ -39,7 +39,7 @@ const PROBLEMS = [
 export function Problem() {
   return (
     <section className="border-t bg-secondary/40 py-20 sm:py-28">
-      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <SectionHeader
           title="WhatsApp is where your customers already are — and where they expect a fast reply"
           className="mx-auto max-w-2xl"
@@ -52,10 +52,10 @@ export function Problem() {
         <ul className="mt-16 grid gap-x-8 gap-y-12 sm:grid-cols-3">
           {PROBLEMS.map((problem) => (
             <li key={problem.title}>
-              <div className="flex size-10 items-center justify-center rounded-full border border-border">
+              <div className="glass-flat flex size-10 items-center justify-center rounded-xl border border-[color:var(--glass-border)]">
                 <problem.icon className="size-4 text-muted-foreground" aria-hidden="true" />
               </div>
-              <h3 className="mt-5 text-lg font-semibold tracking-tight">{problem.title}</h3>
+              <h3 className="mt-5 text-lg font-semibold tracking-tight sm:min-h-[3.3rem]">{problem.title}</h3>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                 {problem.description}
               </p>

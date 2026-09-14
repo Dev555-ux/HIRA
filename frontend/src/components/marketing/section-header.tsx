@@ -22,9 +22,21 @@ export function SectionHeader({
 }) {
   return (
     <div className={cn("text-center", className)}>
-      <h2 className="type-display-lg text-balance">{title}</h2>
+      {/* Phase 2 — two optical corrections, applied here once so every
+          section inherits them rather than each drifting on its own.
+          tracking: type-display-lg sets --tracking-tight (-0.02em), which is
+          a body-copy value. At 44px the hero's headline runs -0.045em, and a
+          section heading sitting two tiers below it should be tightened in
+          the same direction or the page reads as two typographers.
+          measure + leading: the description was text-lg with default leading
+          and no measure of its own, so it ran the full width of whatever
+          container it was handed — up to ~1150px in Journey. Matched to the
+          hero's body copy (17px / 1.6) and capped at 60ch. */}
+      <h2 className="type-display-lg text-balance tracking-[-0.035em]">{title}</h2>
       {description ? (
-        <p className="mt-4 text-lg text-muted-foreground">{description}</p>
+        <p className="mx-auto mt-4 max-w-[60ch] text-pretty text-[1.0625rem] leading-[1.6] text-muted-foreground">
+          {description}
+        </p>
       ) : null}
     </div>
   );

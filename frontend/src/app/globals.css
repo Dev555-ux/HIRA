@@ -448,6 +448,20 @@
   }
 }
 
+/* The same material, minus the sampling. Glass is only honest where
+   something passes behind it; on the flat sections below the hero there is
+   nothing to refract, so `glass` there would spend a compositing layer per
+   element — eight of them across Journey and Problem alone — to blur a solid
+   colour. This keeps what actually reads as the material (the fill, the
+   three-stop refraction edge, the specular sheen) and drops the filter.
+   Rule of thumb for this codebase: `glass` inside the hero, `glass-flat`
+   everywhere below it. */
+@utility glass-flat {
+  background-color: var(--glass-fill-strong);
+  background-image: var(--glass-sheen);
+  box-shadow: var(--glass-edge);
+}
+
 /* The hero's key light. A gradient, not a blurred box: `blur-3xl` on a solid
    circle gives a gaussian falloff that always reads as a generic bloom,
    because every bloom made that way has the same curve. Explicit radial

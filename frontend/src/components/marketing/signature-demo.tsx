@@ -431,12 +431,14 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
   );
 }
 const SCENARIO_ORDER: ScenarioId[] = ["cleaning", "dental", "pricing", "escalation"];
-const SCENARIO_EMOJI: Record<ScenarioId, string> = {
-  cleaning: "🧹",
-  dental: "🦷",
-  pricing: "💰",
-  escalation: "🚨",
-};
+// Phase 2 — the emoji are gone. 🧹🦷💰🚨 were the least enterprise thing on
+// the page: they render as a different typeface at a different weight in a
+// different colour on every platform, so they were also the one element whose
+// appearance the design system did not control. Nothing replaces them — not
+// lucide glyphs either, since four icons in a row of four short words is
+// decoration competing with the label. The chips now carry their own weight
+// through type and the glass material, which is what the rest of the page
+// does.
 
 // Native <input type="radio"> chips, not a hand-rolled role="radiogroup":
 // a real radio group gets correct roving-tabindex, arrow-key navigation,
@@ -472,7 +474,7 @@ export function ScenarioSelector({
           <Badge
             variant={scenarioId === id ? "default" : "outline"}
             className={cn(
-              "gap-1.5 px-3 py-1 text-sm peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+              "px-3.5 py-1.5 text-[0.8125rem] font-medium tracking-[0.01em] peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
               // Signal & Depth PR-7 — unselected chips had no hover feedback
               // at all beyond the label's own cursor:pointer, unlike every
               // other clickable control in this app (Button, Card
@@ -492,7 +494,6 @@ export function ScenarioSelector({
                 "glass border-[color:var(--glass-border)] hover:bg-accent hover:text-accent-foreground",
             )}
           >
-            <span aria-hidden="true">{SCENARIO_EMOJI[id]}</span>
             {SCENARIOS[id].chipLabel}
           </Badge>
         </label>

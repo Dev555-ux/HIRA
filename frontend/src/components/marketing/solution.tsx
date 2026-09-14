@@ -29,8 +29,14 @@ import { Reveal } from "@/components/marketing/reveal";
 // even in grayscale, not just in color.
 export function Solution() {
   return (
-    <section className="bg-primary py-24 text-primary-foreground sm:py-32 lg:py-40">
-      <Reveal className="mx-auto max-w-4xl px-4 text-center sm:px-6">
+    // Phase 2 — `relative isolate` + grain, matching FinalCta (which already
+    // carried its own atmosphere) and the hero. The grain is the whole
+    // treatment: no key light, because this band is a statement rather than a
+    // scene, and a second lit surface would compete with the hero for being
+    // the page's one lighting event.
+    <section className="relative isolate overflow-hidden bg-primary py-24 text-primary-foreground sm:py-32 lg:py-40">
+      <div aria-hidden="true" className="hero-grain pointer-events-none absolute inset-0" />
+      <Reveal className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary-foreground/50">
           The thesis
         </p>

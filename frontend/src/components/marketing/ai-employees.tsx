@@ -30,11 +30,11 @@ export function AiEmployees() {
 
   return (
     <section className="py-10 sm:py-12">
-      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <h2 className="sr-only">AI employees, not just automations</h2>
         <Card
           interactive
-          className="mx-auto flex max-w-3xl flex-col items-center gap-4 p-6 text-center sm:flex-row sm:gap-6 sm:text-left"
+          className="glass-flat mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-2xl border border-[color:var(--glass-border)] p-6 text-center sm:flex-row sm:gap-6 sm:text-left"
           onMouseEnter={() => setHovering(true)}
           onMouseLeave={() => setHovering(false)}
           onFocus={() => setHovering(true)}
