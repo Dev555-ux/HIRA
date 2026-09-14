@@ -1,6 +1,9 @@
 "use client";
 
+import { animate, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { Check, Paperclip, Mic } from "lucide-react";
+import { useCallback, useRef } from "react";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import type * as React from "react";
 import type { LucideIcon } from "lucide-react";
 import { AIAvatar } from "@/components/ui/ai-avatar";
@@ -105,15 +108,17 @@ export function TypingBubble() {
 
 // A composer bar. Inert by design — it is scenery inside an aria-hidden
 // stage, so it is a <div>, never a real input a keyboard could land in.
-export function Composer() {
+export function Composer({ style }: { style?: React.CSSProperties }) {
   return (
-    <div className="flex items-center gap-2 px-3.5 pt-2.5">
+    // Second-closest layer to the glass after the island, so it travels
+    // further than the thread behind it.
+    <motion.div style={style} className="relative z-10 flex items-center gap-2 px-3.5 pt-2.5">
       <Paperclip className="size-4 shrink-0 text-muted-foreground/70" aria-hidden="true" />
       <div className="glass flex h-8 flex-1 items-center rounded-full border border-[color:var(--glass-border)] px-3">
         <span className="text-[12px] text-muted-foreground/70">Message</span>
       </div>
       <Mic className="size-4 shrink-0 text-muted-foreground/70" aria-hidden="true" />
-    </div>
+    </motion.div>
   );
 }
 
@@ -288,11 +293,17 @@ export function FlowGraph({
   status,
   hubState,
   settled,
+  engaged = false,
   children,
 }: {
   status: Record<string, SystemStatus>;
   hubState: "idle" | "working" | "success";
   settled: boolean;
+  // True while the pointer is over the device. The graph brightens its
+  // connectors and lifts the hub by a hair — enough that the two halves read
+  // as one object responding, not as two separate hover targets, and far too
+  // little to compete with the device that is actually moving.
+  engaged?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -308,7 +319,16 @@ export function FlowGraph({
       className="relative flex w-full flex-col items-center gap-5 lg:block lg:h-[var(--flow-h)]"
       style={{ "--flow-h": `${FLOW_H}px` } as React.CSSProperties}
     >
-      <div className="hidden lg:block">
+      <div
+        className={cn(
+          // Refinement — 80->100 was a 25% jump in the graph's weight at the
+          // exact moment the phone starts moving, which made the two compete.
+          // 88->100 is still felt as the scene waking up without pulling the
+          // eye off the device that is actually doing something.
+          "hidden transition-opacity duration-[var(--motion-slow)] ease-[var(--ease-out-quart)] lg:block",
+          engaged ? "opacity-100" : "opacity-[0.88]",
+        )}
+      >
         <Connectors status={status} />
       </div>
 
@@ -328,7 +348,16 @@ export function FlowGraph({
             hubState === "success" ? "bg-success/20" : hubState === "working" ? "bg-brand/25" : "bg-transparent",
           )}
         />
-        <div className="glass rounded-2xl border border-[color:var(--glass-border)] p-2 shadow-e3">
+        <div
+          className={cn(
+            // Refinement — the hub's lift is gone. Two objects rising at once
+            // reads as the page zooming; only the phone should move. The hub
+            // keeps a shadow change alone, which registers as the scene
+            // responding without a second thing in motion.
+            "glass rounded-2xl border border-[color:var(--glass-border)] p-2 transition-[box-shadow] duration-[var(--motion-slow)] ease-[var(--ease-out-quart)]",
+            engaged ? "shadow-e4" : "shadow-e3",
+          )}
+        >
           <AIAvatar name="HIRA" size="xl" state={hubState} />
         </div>
         <p className="mt-2 text-center text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
@@ -342,6 +371,257 @@ export function FlowGraph({
       >
         {children}
       </ul>
+    </div>
+  );
+}
+
+// ── Device interaction ─────────────────────────────────────────────────────
+
+// v0.69 — the phone tilts toward the cursor, lifts, and its glass catches a
+// moving highlight. Everything here is transform/opacity only, driven by
+// framer-motion springs off two motion values, so it never touches layout and
+// never re-renders React on pointer move — the whole interaction runs on the
+// compositor.
+//
+// Restraint is the brief: 7 degrees of rotation, 10px of lift. Apple's own
+// product pages sit around this; double it and the device reads as a toy. The
+// springs are deliberately low-stiffness and high-damping — the device should
+// feel heavy and settle, not snap or bounce. No overshoot at all: `bounce: 0`
+// is what separates "physical" from "gaming UI".
+// v0.69 refinement. Every number here came down.
+//
+// 7deg -> 4.5deg, and perspective 1400 -> 2200. Those two work together: a
+// short perspective exaggerates foreshortening, so the near edge swells and
+// the device reads as a plane being wobbled rather than an object being
+// turned. A longer perspective with less rotation is what a real object seen
+// from a normal distance actually does.
+//
+// The spring is softer and heavier (150/26/0.9 -> 105/30/1.15). The old one
+// arrived slightly ahead of the cursor, which is exactly what reads as
+// "following the mouse"; a heavier mass lags the pointer a little, and the
+// lag is what makes it feel like a physical thing you are turning rather
+// than a thing that is chasing you. Still zero overshoot.
+const TILT_DEG = 4.5;
+const LIFT_PX = 8;
+const SETTLE = { stiffness: 105, damping: 30, mass: 1.15 } as const;
+
+// The motion-driven pieces of hardware the shell hands to PhoneFrame. Typed
+// as CSSProperties because each value is a MotionValue that framer resolves
+// at paint; PhoneFrame never reads them, it only spreads them onto the right
+// layer.
+export type DeviceChrome = {
+  railL: React.CSSProperties;
+  railR: React.CSSProperties;
+  glassEdge: React.CSSProperties;
+  island: React.CSSProperties;
+  composer: React.CSSProperties;
+  thread: React.CSSProperties;
+  bg: React.CSSProperties;
+};
+
+export function DeviceShell({
+  children,
+  onEngagedChange,
+}: {
+  children: (glare: React.ReactNode, chrome?: DeviceChrome) => React.ReactNode;
+  onEngagedChange?: (engaged: boolean) => void;
+}) {
+  const reducedMotion = useReducedMotion();
+  const ref = useRef<HTMLDivElement>(null);
+  // -0.5..0.5 on each axis, relative to the device's own box.
+  const px = useMotionValue(0);
+  const py = useMotionValue(0);
+  const engaged = useMotionValue(0);
+
+  const sx = useSpring(px, SETTLE);
+  const sy = useSpring(py, SETTLE);
+  const sEngaged = useSpring(engaged, SETTLE);
+
+  // Tilt is inverted on X: pushing the cursor down should tip the *top* of
+  // the device away, the way a hinged object behaves.
+  const rotateY = useTransform(sx, [-0.5, 0.5], [-TILT_DEG, TILT_DEG]);
+  const rotateX = useTransform(sy, [-0.5, 0.5], [TILT_DEG, -TILT_DEG]);
+  const lift = useTransform(sEngaged, [0, 1], [0, -LIFT_PX]);
+  const scale = useTransform(sEngaged, [0, 1], [1, 1.01]);
+  // Screen depth. One flat parallax plane was the giveaway that the UI was
+  // painted on rather than sitting under glass. Four layers now move by
+  // different amounts, and the ordering is the physical one: layers nearer
+  // the viewer travel further. The island is a cutout in the cover glass, so
+  // it is the closest thing to the surface and moves most; the chat
+  // background is the deepest and barely moves at all.
+  //
+  // The whole range is 0.6px to 3px. Beyond ~3px the layers visibly slide
+  // against each other and the illusion inverts into "the UI is loose inside
+  // the frame", which is worse than no parallax.
+  // Written out rather than generated in a loop: these are hooks, and a
+  // helper that calls useTransform is a rules-of-hooks violation waiting for
+  // the first conditional.
+  const islandX = useTransform(sx, [-0.5, 0.5], [3, -3]);
+  const islandY = useTransform(sy, [-0.5, 0.5], [3, -3]);
+  const composerX = useTransform(sx, [-0.5, 0.5], [2, -2]);
+  const composerY = useTransform(sy, [-0.5, 0.5], [2, -2]);
+  const threadX = useTransform(sx, [-0.5, 0.5], [1.4, -1.4]);
+  const threadY = useTransform(sy, [-0.5, 0.5], [1.4, -1.4]);
+  const bgX = useTransform(sx, [-0.5, 0.5], [0.6, -0.6]);
+  const bgY = useTransform(sy, [-0.5, 0.5], [0.6, -0.6]);
+
+  // Per-rail lighting. A single --rail-light brightened both sides together,
+  // which is not what metal does: the rail turning toward the light picks up
+  // the highlight while the opposite one rolls away into shadow. Driven off
+  // the same sx that drives rotateY so the two can never disagree. The range
+  // is deliberately tiny — this should be felt at the edge of vision, not
+  // seen.
+  const railL = useTransform(sx, [-0.5, 0, 0.5], [0.15, 0.5, 1]);
+  const railR = useTransform(sx, [-0.5, 0, 0.5], [1, 0.5, 0.15]);
+  // The glass's own cut edge, catching light as the panel turns. Polished,
+  // not glowing: this rides the rotation, never the hover state, so it
+  // behaves like an optical property rather than a highlight that switches
+  // on.
+  const edgeAngle = useTransform(sx, [-0.5, 0.5], [115, 65]);
+  const edgeLight = useTransform(
+    [edgeAngle, sEngaged],
+    ([a, e]) =>
+      `linear-gradient(${a}deg, rgb(255 255 255 / ${0.05 + 0.05 * (e as number)}) 0%, transparent 18%, transparent 82%, rgb(255 255 255 / ${0.02 + 0.03 * (e as number)}) 100%)`,
+  );
+  // The shadow deepens and spreads as the device rises — a lift with a
+  // constant shadow reads as the whole scene scaling, not as an object
+  // leaving the surface.
+  // Two shadows, not one. A real object resting on a surface has a tight,
+  // dark contact shadow directly beneath it AND a wide soft ambient one; as
+  // it lifts, the contact shadow fades and spreads while the ambient one
+  // deepens. Animating only the ambient shadow is why the old lift read as
+  // the whole scene scaling instead of an object leaving the surface.
+  const ambOpacity = useTransform(sEngaged, [0, 1], [0.42, 0.62]);
+  const ambBlur = useTransform(sEngaged, [0, 1], [40, 68]);
+  const ambY = useTransform(sEngaged, [0, 1], [20, 36]);
+  const contactOpacity = useTransform(sEngaged, [0, 1], [0.5, 0.26]);
+  const contactBlur = useTransform(sEngaged, [0, 1], [10, 22]);
+  const boxShadow = useTransform(
+    [ambY, ambBlur, ambOpacity, contactBlur, contactOpacity],
+    ([y, b, o, cb, co]) =>
+      `0 ${y}px ${b}px -12px rgb(0 0 0 / ${o}), 0 6px ${cb}px -8px rgb(0 0 0 / ${co})`,
+  );
+
+  // The highlight sweeps opposite the tilt, which is what a reflection does:
+  // the glass turns toward the light, so the bright band slides the other way.
+  // Glare travel more than halved: 160% of the device width -> 60%. This was
+  // the single most artificial thing in the interaction. A highlight that
+  // crosses the entire face reads as a spotlight being dragged; a real
+  // reflection of a fixed light source barely moves as you turn an object a
+  // few degrees. It also no longer fades fully to zero at rest — glass is
+  // never matte, and a highlight that appears out of nothing announces the
+  // hover instead of rewarding it.
+  const glareX = useTransform(sx, [-0.5, 0.5], ["78%", "18%"]);
+  const glareY = useTransform(sy, [-0.5, 0.5], ["72%", "22%"]);
+  const glareOpacity = useTransform(sEngaged, [0, 1], [0.35, 1]);
+  // Edge lighting strengthens as the device turns into the light.
+  const railLight = useTransform(sEngaged, [0, 1], [0, 1]);
+
+  const handleMove = useCallback(
+    (e: React.MouseEvent) => {
+      const el = ref.current;
+      if (!el || reducedMotion) return;
+      const r = el.getBoundingClientRect();
+      px.set((e.clientX - r.left) / r.width - 0.5);
+      py.set((e.clientY - r.top) / r.height - 0.5);
+    },
+    [px, py, reducedMotion],
+  );
+
+  const setEngaged = useCallback(
+    (on: boolean) => {
+      if (reducedMotion) return;
+      engaged.set(on ? 1 : 0);
+      if (on) {
+        // Entering is immediate: the raw value is set directly by pointer
+        // move and the display spring does the smoothing.
+        onEngagedChange?.(true);
+        return;
+      }
+      // Leaving is not. Snapping the raw target to 0 made the device stop
+      // being pushed the instant the cursor left, and the spring pulled it
+      // straight home — correct, but weightless. Animating the raw target
+      // home on its own soft spring, *underneath* the display spring, means
+      // the device keeps travelling briefly in the direction it was already
+      // going before it settles. Two springs in series, so momentum carries
+      // and there is still no overshoot past centre: neither spring has any
+      // bounce.
+      const exit = { type: "spring", stiffness: 42, damping: 19, mass: 1.1 } as const;
+      animate(px, 0, exit);
+      animate(py, 0, exit);
+      onEngagedChange?.(false);
+    },
+    [engaged, px, py, reducedMotion, onEngagedChange],
+  );
+
+  // prefers-reduced-motion gets the device with no interaction at all — not a
+  // slower tilt. The request is less motion, and a 3D rotation is exactly the
+  // vestibular trigger the media query exists to suppress.
+  // Reduced motion loses the rotation, not the reflection. The brief is that
+  // the glass always has a highlight — a surface that is matte at rest and
+  // glossy on hover is not glass, and someone who asked for less motion has
+  // not asked for a different material.
+  if (reducedMotion) {
+    return (
+      <>
+        {children(
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-20 bg-[radial-gradient(70%_55%_at_48%_47%,rgb(255_255_255/0.07),rgb(255_255_255/0.02)_45%,transparent_72%)]"
+          />,
+          undefined,
+        )}
+      </>
+    );
+  }
+
+  const glare = (
+    <motion.div
+      aria-hidden="true"
+      // The cast is needed because framer's style prop types the CSS custom
+      // properties as plain strings; --gx/--gy are MotionValues so the
+      // gradient's centre animates on the compositor instead of re-rendering.
+      style={
+        { opacity: glareOpacity, "--gx": glareX, "--gy": glareY } as unknown as React.CSSProperties
+      }
+      className="pointer-events-none absolute inset-0 z-20 bg-[radial-gradient(70%_55%_at_var(--gx)_var(--gy),rgb(255_255_255/0.10),rgb(255_255_255/0.03)_45%,transparent_72%)]"
+    />
+  );
+
+  return (
+    // The perspective lives on the wrapper and the transform on the child:
+    // putting both on one element makes the rotation flat and lifeless.
+    <div style={{ perspective: 2200 }} className="w-full">
+      <motion.div
+        ref={ref}
+        // Mouse events, not pointer events. The tilt is a hover affordance
+        // and hover does not exist on touch — pointer events would fire on a
+        // tap and leave the device rotated with no way to un-rotate it.
+        onMouseMove={handleMove}
+        onMouseEnter={() => setEngaged(true)}
+        onMouseLeave={() => setEngaged(false)}
+        style={{
+          rotateX,
+          rotateY,
+          y: lift,
+          scale,
+          boxShadow,
+          transformStyle: "preserve-3d",
+          borderRadius: "3.4rem",
+          ["--rail-light" as string]: railLight,
+        }}
+        className="will-change-transform"
+      >
+        {children(glare, {
+          railL: { opacity: railL },
+          railR: { opacity: railR },
+          glassEdge: { backgroundImage: edgeLight },
+          island: { x: islandX, y: islandY },
+          composer: { x: composerX, y: composerY },
+          thread: { x: threadX, y: threadY },
+          bg: { x: bgX, y: bgY },
+        } as unknown as DeviceChrome)}
+      </motion.div>
     </div>
   );
 }

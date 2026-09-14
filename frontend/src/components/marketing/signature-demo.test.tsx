@@ -229,7 +229,12 @@ describe("SignatureDemo", () => {
     vi.useRealTimers();
   });
 
-  it("pauses on hover and resumes when the mouse leaves", () => {
+  // v0.69 inverted this deliberately. Hover used to pause so a reader could
+  // study the loop; the device is now the page's interactive object, and
+  // freezing the thing someone just reached for is the opposite of the
+  // intent. The test is kept, pointed at the new contract, rather than
+  // deleted — the behaviour is still load-bearing, it just changed.
+  it("keeps playing on hover — the device is interactive, not frozen", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
     const group = screen.getByRole("group", { name: /four.*systems/i });
@@ -237,9 +242,26 @@ describe("SignatureDemo", () => {
     fireEvent.mouseEnter(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
+    expect(screen.getByText(/do you have availability for a cleaning/i)).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  // The pause mechanism moves to keyboard focus rather than disappearing.
+  // This demo auto-plays and loops indefinitely, which is exactly what WCAG
+  // 2.2.2 (Pause, Stop, Hide) requires a mechanism for, and focus-to-pause is
+  // now the only one the page has — so it is worth a test of its own.
+  it("pauses on keyboard focus and resumes on blur (WCAG 2.2.2 mechanism)", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+    const group = screen.getByRole("group", { name: /four.*systems/i });
+
+    fireEvent.focus(group);
+    advance(HOLDS_MS[0]);
+    advance(HOLDS_MS[1]);
     expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
 
-    fireEvent.mouseLeave(group);
+    fireEvent.blur(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
     expect(screen.getByText(/do you have availability for a cleaning/i)).toBeInTheDocument();

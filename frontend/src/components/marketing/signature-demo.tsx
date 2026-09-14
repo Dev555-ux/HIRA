@@ -7,6 +7,7 @@ import { PhoneFrame } from "@/components/marketing/phone-frame";
 import {
   ChatHeader,
   ClosingLine,
+  DeviceShell,
   Composer,
   CustomerBubble,
   DateDivider,
@@ -286,6 +287,9 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [closingVisible, setClosingVisible] = useState(false);
   const [paused, setPaused] = useState(false);
+  // v0.69 — the pointer is over the device. Drives the graph's own reaction so
+  // the two halves respond as one object, not two hover targets.
+  const [engaged, setEngaged] = useState(false);
   const [tabHidden, setTabHidden] = useState(false);
 
   useEffect(() => {
@@ -356,14 +360,18 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
 
   const phone = (children: React.ReactNode) => (
     <div aria-hidden="true" className={PHONE_COLUMN}>
-      <PhoneFrame time={MSG_TIME}>
-        <ChatHeader name="Priya" presence="online" />
-        <div className={PHONE_SCREEN}>
-          <DateDivider label="Today" />
-          <div className={PHONE_THREAD}>{children}</div>
-        </div>
-        <Composer />
-      </PhoneFrame>
+      <DeviceShell onEngagedChange={setEngaged}>
+        {(glare, chrome) => (
+          <PhoneFrame time={MSG_TIME} glare={glare} chrome={chrome}>
+            <ChatHeader name="Priya" presence="online" />
+            <div className={PHONE_SCREEN}>
+              <DateDivider label="Today" />
+              <div className={PHONE_THREAD}>{children}</div>
+            </div>
+            <Composer style={chrome?.composer} />
+          </PhoneFrame>
+        )}
+      </DeviceShell>
     </div>
   );
 
@@ -397,8 +405,16 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
         STAGE_LAYOUT,
         "rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
       )}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
+      // v0.69 — hover no longer pauses. It used to, so that a reader could
+      // stop the loop and study it; but the device is now the page's
+      // interactive object, and freezing the thing someone just reached for
+      // is the opposite of it coming alive.
+      //
+      // Focus keeps the pause. That matters beyond preference: the demo
+      // auto-plays and loops indefinitely, which is exactly what WCAG 2.2.2
+      // (Pause, Stop, Hide) requires a mechanism for, and focus-to-pause was
+      // the only mechanism this page had. Moving it to keyboard-only keeps
+      // the obligation met while freeing the pointer for the interaction.
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
     >
@@ -423,7 +439,7 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
       )}
 
       <div aria-hidden="true" className={FLOW_COLUMN}>
-        <FlowGraph status={status} hubState={hubState} settled={settled}>
+        <FlowGraph status={status} hubState={hubState} settled={settled} engaged={engaged}>
           {rows(false)}
         </FlowGraph>
       </div>

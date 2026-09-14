@@ -1,40 +1,36 @@
+"use client";
+
+import { motion } from "framer-motion";
 import type { ReactNode } from "react";
+import type { DeviceChrome } from "@/components/marketing/stage-parts";
 
-// PR-2 — presentation only. Still no state, no effects, no animation: a
-// static device around whatever it's given.
+// v0.69 — hardware pass. The PR-2 device read as "a phone" at a glance and
+// fell apart on inspection: one flat body gradient, no side hardware, a
+// cutout with nothing in it, and a bezel that shared an edge with the frame.
+// Real hardware reads as real because of four things, and this adds all four.
 //
-// What changed from the Sprint 66 version: that frame was a rounded
-// rectangle with a speaker slot and two grey dots, and at any size it read
-// as a placeholder rather than a phone. Three things make a device read as
-// real, and none of them is detail for its own sake:
+//   1. A metal band, not a fill. A machined rail is brightest where it curves
+//      away at the extreme left and right edges and darkest across the flat
+//      of the side. That is a three-stop horizontal gradient, and it is the
+//      single biggest tell — a flat grey body always looks like a drawing.
+//   2. Nested radii. Body, rail, bezel and display each have their own corner
+//      radius, decreasing inward. Sharing one radius across all four is what
+//      makes a device look like a rounded rectangle with a picture in it.
+//   3. Side hardware. Volume pair and an action button on the left, power on
+//      the right, standing slightly proud of the rail with their own metal
+//      gradient. Nobody looks at them directly; their absence is what gets
+//      noticed.
+//   4. Specular edges. A bright inset hairline along the top of the rail and
+//      a dimmer one along the bottom — the light the rail catches, which is
+//      the same treatment the glass material uses for the same reason.
 //
-//   1. Proportion. A phone is ~19.5:9, not a squarish card. The aspect ratio
-//      is now enforced on the screen so the frame cannot drift as content
-//      changes height — which is also what stops the stage jumping between
-//      beats.
-//   2. A layered edge. Real hardware has an outer body, a bright chamfer
-//      catching light, and a black bezel before the display starts. Three
-//      1px-ish layers, not one border.
-//   3. The cutout and status bar. A camera housing and a signal/battery
-//      readout are the two things the eye checks without being asked.
-//
-// Deliberately generic hardware: no manufacturer's exact island geometry,
-// corner radius or icon set is reproduced, and the status glyphs are drawn
-// as plain bars rather than any platform's. All chrome is aria-hidden — the
-// conversation inside carries the meaning, and assistive tech reaches
-// straight through to it.
-//
-// Colours come from tokens, so inside the hero's dark scope the device reads
-// as dark hardware and in a light context as light hardware, with no
-// per-theme branch here.
+// Deliberately generic: no manufacturer's exact island geometry, button
+// placement, corner radius or icon set is reproduced. All chrome is
+// aria-hidden; the conversation inside carries the meaning.
 
-// A carrier/wifi/battery readout drawn as geometry rather than icons: the
-// point is the *silhouette* the eye recognises, and plain bars carry that
-// without reproducing any platform's icon set.
 function StatusGlyphs() {
   return (
-    <div className="flex items-center gap-1.5 text-foreground/70">
-      {/* Signal — four ascending bars */}
+    <div className="flex items-center gap-1.5 text-foreground/75">
       <svg width="17" height="11" viewBox="0 0 17 11" fill="none" aria-hidden="true">
         {[0, 1, 2, 3].map((i) => (
           <rect
@@ -49,13 +45,11 @@ function StatusGlyphs() {
           />
         ))}
       </svg>
-      {/* Wifi — three arcs */}
       <svg width="15" height="11" viewBox="0 0 15 11" fill="none" aria-hidden="true">
         <path d="M1 4.1a9.4 9.4 0 0 1 13 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         <path d="M3.6 6.7a5.7 5.7 0 0 1 7.8 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         <circle cx="7.5" cy="9.4" r="1.2" fill="currentColor" />
       </svg>
-      {/* Battery */}
       <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true">
         <rect x="0.6" y="0.6" width="21" height="10.8" rx="3" stroke="currentColor" strokeWidth="1.1" opacity="0.45" />
         <rect x="2.2" y="2.2" width="15" height="7.6" rx="1.8" fill="currentColor" />
@@ -65,56 +59,149 @@ function StatusGlyphs() {
   );
 }
 
-export function PhoneFrame({ children, time = "9:41" }: { children: ReactNode; time?: string }) {
+// A machined button: proud of the rail, lit on its outer face.
+function SideButton({ className }: { className: string }) {
   return (
-    // Outer body. The gradient is the light falling down the metal; the ring
-    // is the chamfer. shadow-e5 (not e3) because the device is now the
-    // heaviest object on the stage and has to sit above the graph beside it.
-    <div className="relative mx-auto w-full max-w-[360px] rounded-[3.2rem] bg-gradient-to-b from-foreground/[0.14] to-foreground/[0.06] p-[3px] shadow-e5 ring-1 ring-inset ring-foreground/15">
-      {/* Bezel — the black band between body and display. Its own layer so
-          the display's corner radius nests inside the body's rather than
-          sharing one edge, which is the tell that separates a device from a
-          rounded rectangle. */}
-      <div className="rounded-[3.05rem] bg-[oklch(0.14_0.006_60)] p-[9px]">
-        {/* 9:16, not a literal 9:19.5. A real handset's proportions left
-            ~500px of empty screen above a two-message thread, and a hero is
-            not improved by an accurate void. This is still unmistakably a
-            phone and it lets the conversation fill the glass. */}
-        <div className="relative isolate aspect-[9/16] overflow-hidden rounded-[2.5rem] bg-background">
-          {/* Screen sheen — a single diagonal highlight across the glass.
-              pointer-events-none and above the content, low enough not to
-              touch legibility (verified by the contrast pass, not assumed). */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-br from-foreground/[0.05] via-transparent to-transparent"
-          />
+    <span
+      aria-hidden="true"
+      className={`absolute rounded-[2px] bg-[linear-gradient(180deg,oklch(0.55_0.01_70),oklch(0.38_0.008_70)_45%,oklch(0.3_0.006_70))] shadow-[0_1px_2px_rgb(0_0_0/0.45)] ${className}`}
+    />
+  );
+}
 
-          {/* Camera housing. A pill, floating over the content the way a
-              real cutout does, with a faint lens. */}
-          <div
-            aria-hidden="true"
-            className="absolute left-1/2 top-2.5 z-20 flex h-[26px] w-[86px] -translate-x-1/2 items-center justify-end rounded-full bg-[oklch(0.12_0.006_60)] pr-2.5"
-          >
-            <span className="size-[7px] rounded-full bg-foreground/20 ring-1 ring-foreground/10" />
+export function PhoneFrame({
+  children,
+  time = "9:41",
+  glare,
+  chrome,
+}: {
+  children: ReactNode;
+  time?: string;
+  // Rendered above the screen content. The parent owns it because it tracks
+  // the pointer, and this component is deliberately stateless.
+  glare?: ReactNode;
+  // Per-layer motion from DeviceShell: two rail lights, the glass edge, and
+  // four display layers at different depths. Undefined under reduced motion,
+  // where every layer simply stays put.
+  chrome?: DeviceChrome;
+}) {
+  return (
+    <div className="relative mx-auto w-full max-w-[350px]">
+      {/* Side hardware sits behind the body so only the proud edge shows. */}
+      {/* Refinement — proportions. The first pass drew buttons too long and
+          too thick, which is what made them read as tabs stuck on the side.
+          Real hardware: a short action button, a volume pair of equal length
+          below it with a clear gap, and a longer power button set lower on
+          the opposite side. 2.5px of visible thickness, not 3. */}
+      <SideButton className="-left-[2px] top-[15.5%] h-[26px] w-[2.5px]" />
+      <SideButton className="-left-[2px] top-[24%] h-[46px] w-[2.5px]" />
+      <SideButton className="-left-[2px] top-[36%] h-[46px] w-[2.5px]" />
+      <SideButton className="-right-[2px] top-[27%] h-[64px] w-[2.5px]" />
+
+      {/* The rail. Bright at both extremes where the metal curves away,
+          darkest across the flat of the side. */}
+      <div className="relative rounded-[3.4rem] bg-[linear-gradient(90deg,oklch(0.62_0.012_70),oklch(0.34_0.008_70)_12%,oklch(0.28_0.006_70)_50%,oklch(0.34_0.008_70)_88%,oklch(0.62_0.012_70))] p-[3.5px] shadow-[0_2px_1px_rgb(255_255_255/0.12)_inset,0_-2px_1px_rgb(0_0_0/0.5)_inset]">
+        {/* Refinement — the environment reflected in the rail. Polished metal
+            does not just have edge highlights; it mirrors the room, which on
+            a vertical rail shows as a brighter band around the horizon line
+            and darker toward the ends. --rail-light is driven by the hover
+            state, so the metal brightens as the device turns into the light.
+            Pure decoration, inert to pointer and assistive tech. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded-[3.4rem] bg-[linear-gradient(180deg,transparent,rgb(255_255_255/0.06)_18%,transparent_34%,transparent_62%,rgb(255_255_255/0.04)_78%,transparent)]"
+        />
+        {/* Micro-polish — the two rails light independently. The one turning
+            toward the light picks up its highlight while the far one rolls
+            away. Two narrow overlays rather than one gradient because the
+            two sides have to animate against each other, which a single
+            gradient's stops cannot do. Very low alpha on purpose: at rest
+            both sit at half strength, so the hover reads as the highlight
+            sliding across the metal rather than switching on. */}
+        <motion.div
+          aria-hidden="true"
+          style={chrome?.railL}
+          className="pointer-events-none absolute inset-y-8 left-0 w-[7px] rounded-l-[3.4rem] bg-[linear-gradient(90deg,rgb(255_255_255/0.16),transparent)]"
+        />
+        <motion.div
+          aria-hidden="true"
+          style={chrome?.railR}
+          className="pointer-events-none absolute inset-y-8 right-0 w-[7px] rounded-r-[3.4rem] bg-[linear-gradient(270deg,rgb(255_255_255/0.16),transparent)]"
+        />
+
+        {/* Bezel — its own layer so the display's radius nests inside the
+            rail's rather than sharing one edge. */}
+        <div className="rounded-[3.2rem] bg-[oklch(0.11_0.004_60)] p-[8px]">
+          <div className="relative isolate aspect-[9/16] overflow-hidden rounded-[2.7rem] bg-background shadow-[inset_0_1px_3px_rgb(0_0_0/0.6),inset_0_0_0_1px_rgb(255_255_255/0.045)]">
+            {/* Glass thickness. A cover glass is a few millimetres deep, and
+                what sells that is the bright hairline caught on its top cut
+                edge with shadow pooling just under it. Without this the
+                display looks printed onto the bezel rather than sunk beneath
+                glass — the difference between a photograph and a render. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 z-40 rounded-[2.7rem] shadow-[inset_0_1.5px_0_rgb(255_255_255/0.10),inset_0_-1px_0_rgb(255_255_255/0.04)]"
+            />
+            {/* The cut edge catching light as the panel turns. Driven by the
+                rotation, not the hover state, so it behaves like an optical
+                property of the glass rather than a highlight that switches on
+                when a cursor arrives. */}
+            <motion.div
+              aria-hidden="true"
+              style={chrome?.glassEdge}
+              className="pointer-events-none absolute inset-0 z-40 rounded-[2.7rem]"
+            />
+            {/* Deepest layer — the chat ground. Moves least of anything on
+                the display, which is what makes the layers above it read as
+                floating over it. */}
+            <motion.div
+              aria-hidden="true"
+              style={chrome?.bg}
+              className="pointer-events-none absolute inset-[-4px] z-0 bg-background"
+            />
+            {/* Static sheen. The pointer-tracked glare is layered over this
+                by the parent; this is the part that is always there. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-br from-foreground/[0.045] via-transparent to-transparent"
+            />
+            {glare}
+
+            {/* Cutout, with an actual lens and a speaker slot in it. */}
+            <motion.div
+              aria-hidden="true"
+              style={chrome?.island}
+              // Refinement — proportions. 88x27 was too small and too round
+              // relative to the display; the cutout is ~32% of screen width
+              // and noticeably wider than it is tall. The lens also shrinks:
+              // at 8px it read as a decorative dot, and the catchlight is
+              // what makes it a lens, not the size.
+              className="absolute left-1/2 top-[10px] z-30 flex h-[30px] w-[106px] -translate-x-1/2 items-center justify-between rounded-full bg-[oklch(0.07_0.003_60)] px-3 shadow-[0_0_0_1px_rgb(255_255_255/0.035),inset_0_1px_1px_rgb(0_0_0/0.8)]"
+            >
+              {/* Earpiece slot — recessed, not a painted line. */}
+              <span className="h-[3.5px] w-[22px] rounded-full bg-[oklch(0.04_0_0)] shadow-[inset_0_0.5px_0.5px_rgb(255_255_255/0.07)]" />
+              <span className="relative size-[7px] rounded-full bg-[oklch(0.14_0.012_250)] ring-[0.5px] ring-foreground/[0.16]">
+                <span className="absolute left-[1px] top-[1px] size-[2px] rounded-full bg-foreground/35" />
+              </span>
+            </motion.div>
+
+            <div
+              aria-hidden="true"
+              className="absolute inset-x-0 top-0 z-10 flex h-[46px] items-center justify-between px-7 text-[13px] font-semibold tabular-nums text-foreground/85"
+            >
+              <span>{time}</span>
+              <StatusGlyphs />
+            </div>
+
+            <motion.div style={chrome?.thread} className="relative z-10 flex h-full flex-col pb-6 pt-[46px]">
+              {children}
+            </motion.div>
+
+            <div
+              aria-hidden="true"
+              className="absolute bottom-2 left-1/2 z-20 h-[5px] w-[34%] -translate-x-1/2 rounded-full bg-foreground/25"
+            />
           </div>
-
-          {/* Status bar — sits level with the cutout, split around it. */}
-          <div
-            aria-hidden="true"
-            className="absolute inset-x-0 top-0 z-10 flex h-[46px] items-center justify-between px-6 text-[13px] font-semibold tabular-nums text-foreground/80"
-          >
-            <span>{time}</span>
-            <StatusGlyphs />
-          </div>
-
-          {/* Content sits below the status bar and above the home indicator. */}
-          <div className="flex h-full flex-col pb-6 pt-[46px]">{children}</div>
-
-          {/* Home indicator */}
-          <div
-            aria-hidden="true"
-            className="absolute bottom-2 left-1/2 z-20 h-[5px] w-[36%] -translate-x-1/2 rounded-full bg-foreground/25"
-          />
         </div>
       </div>
     </div>
