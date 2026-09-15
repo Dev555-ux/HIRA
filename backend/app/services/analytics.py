@@ -29,7 +29,12 @@ from app.models import (
     Message,
     WhatsAppCredential,
 )
-from app.services.execution_traces import get_result_messages, get_trace, list_traces, resolve_outcome  # noqa: F401  (re-exported for founder_ops.py's trace endpoints)
+from app.services.execution_traces import (  # noqa: F401  (re-exported for founder_ops.py's trace endpoints)
+    get_result_messages,
+    get_trace,
+    list_traces,
+    resolve_outcome,
+)
 
 # Rough estimate for the "human work saved" AI Impact figure — not a
 # measured benchmark. ponytail: revisit if a real time-and-motion number
@@ -43,7 +48,9 @@ def iso(value: datetime | None) -> str | None:
 
 
 def conversation_counts(db: Session, business_id: uuid.UUID | None = None) -> dict[uuid.UUID, int]:
-    stmt = select(Conversation.business_id, func.count().label("n")).group_by(Conversation.business_id)
+    stmt = select(Conversation.business_id, func.count().label("n")).group_by(
+        Conversation.business_id
+    )
     if business_id is not None:
         stmt = stmt.where(Conversation.business_id == business_id)
     return {row.business_id: row.n for row in db.execute(stmt).all()}
@@ -62,8 +69,12 @@ def message_stats(
         func.count()
         .filter(Message.status == "failed", Message.created_at >= recent_failure_cutoff)
         .label("recent_failed_responses"),
-        func.max(Message.created_at).filter(Message.direction == "inbound").label("last_inbound_at"),
-        func.max(Message.created_at).filter(Message.direction == "outbound").label("last_outbound_at"),
+        func.max(Message.created_at)
+        .filter(Message.direction == "inbound")
+        .label("last_inbound_at"),
+        func.max(Message.created_at)
+        .filter(Message.direction == "outbound")
+        .label("last_outbound_at"),
         func.max(Message.created_at).label("last_activity_at"),
     ).group_by(Message.business_id)
     if business_id is not None:
@@ -120,7 +131,9 @@ def response_time_seconds_by_business(
     return {row.business_id: float(row.avg_seconds) for row in rows if row.avg_seconds is not None}
 
 
-def overall_response_time_seconds(db: Session, business_id: uuid.UUID | None = None) -> float | None:
+def overall_response_time_seconds(
+    db: Session, business_id: uuid.UUID | None = None
+) -> float | None:
     """Same computation as `response_time_seconds_by_business`, but ungrouped
     — a genuine average across every qualifying turn (platform-wide, or for
     one business), not an average-of-per-business-averages (which would
@@ -320,22 +333,40 @@ def trends(db: Session, business_id: uuid.UUID, *, since: datetime, until: datet
     a single grouped query), each gap-filled to a full day-by-day series."""
     return {
         "conversations": fill_daily(
-            daily_counts(db, Conversation, Conversation.created_at, business_id=business_id, since=since, until=until),
+            daily_counts(
+                db,
+                Conversation,
+                Conversation.created_at,
+                business_id=business_id,
+                since=since,
+                until=until,
+            ),
             since,
             until,
         ),
         "messages": fill_daily(
-            daily_counts(db, Message, Message.created_at, business_id=business_id, since=since, until=until),
+            daily_counts(
+                db, Message, Message.created_at, business_id=business_id, since=since, until=until
+            ),
             since,
             until,
         ),
         "leads": fill_daily(
-            daily_counts(db, Lead, Lead.created_at, business_id=business_id, since=since, until=until),
+            daily_counts(
+                db, Lead, Lead.created_at, business_id=business_id, since=since, until=until
+            ),
             since,
             until,
         ),
         "appointments": fill_daily(
-            daily_counts(db, Appointment, Appointment.created_at, business_id=business_id, since=since, until=until),
+            daily_counts(
+                db,
+                Appointment,
+                Appointment.created_at,
+                business_id=business_id,
+                since=since,
+                until=until,
+            ),
             since,
             until,
         ),
@@ -348,8 +379,12 @@ def ai_impact(db: Session, business_id: uuid.UUID, *, since: datetime, until: da
     engineering terms."""
 
     def count(model, *filters) -> int:
-        stmt = select(func.count()).select_from(model).where(
-            model.business_id == business_id, model.created_at.between(since, until), *filters
+        stmt = (
+            select(func.count())
+            .select_from(model)
+            .where(
+                model.business_id == business_id, model.created_at.between(since, until), *filters
+            )
         )
         return db.scalar(stmt) or 0
 

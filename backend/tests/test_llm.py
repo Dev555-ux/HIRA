@@ -133,7 +133,9 @@ def _unrelated_400_error():
 
 def test_groq_retries_and_recovers_from_a_tool_use_failed_400():
     provider = GroqProvider(api_key="test-key", model="llama-3.3-70b-versatile", max_attempts=3)
-    client = _FakeGroqClient([_tool_use_failed_error(), _FakeCompletionResponse("We have a slot at 3pm.")])
+    client = _FakeGroqClient(
+        [_tool_use_failed_error(), _FakeCompletionResponse("We have a slot at 3pm.")]
+    )
     provider._client = client
 
     resp = provider.generate(system="s", messages=[ChatMessage(role="user", content="book it")])

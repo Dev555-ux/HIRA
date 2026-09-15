@@ -100,7 +100,9 @@ class OutboxWorker:
     ) -> None:
         self._session_factory = session_factory
         self.worker_id = worker_id or _default_worker_id()
-        self.batch_size = batch_size if batch_size is not None else settings.outbox_worker_batch_size
+        self.batch_size = (
+            batch_size if batch_size is not None else settings.outbox_worker_batch_size
+        )
         self.poll_interval = (
             poll_interval if poll_interval is not None else settings.outbox_worker_poll_interval
         )
@@ -160,8 +162,7 @@ class OutboxWorker:
     def _install_signal_handlers(self) -> None:
         def _handle(signum, _frame):
             logger.info(
-                "Outbox worker received signal=%s, finishing current job then exiting "
-                "worker_id=%s",
+                "Outbox worker received signal=%s, finishing current job then exiting worker_id=%s",
                 signal.Signals(signum).name,
                 self.worker_id,
             )
@@ -218,9 +219,7 @@ class OutboxWorker:
             db.commit()
 
         for job_id in claimed_ids:
-            logger.info(
-                "Outbox job claimed job_id=%s worker_id=%s", job_id, self.worker_id
-            )
+            logger.info("Outbox job claimed job_id=%s worker_id=%s", job_id, self.worker_id)
         return claimed_ids
 
     def _select_and_lock(self, db: Session, now: datetime) -> list[JobOutbox]:
@@ -274,9 +273,7 @@ class OutboxWorker:
             if handler is None:
                 # Unknown task must never crash the worker: record and FAIL it,
                 # then keep going with the rest of the batch.
-                self._mark_failed(
-                    db, job, f"No handler registered for task {job.task_name!r}"
-                )
+                self._mark_failed(db, job, f"No handler registered for task {job.task_name!r}")
                 db.commit()
                 logger.warning(
                     "Outbox job has no handler job_id=%s task=%s -> FAILED worker_id=%s",
@@ -347,8 +344,7 @@ class OutboxWorker:
         if job.attempts >= job.max_attempts:
             job.status = JobStatus.DEAD_LETTER
             logger.error(
-                "Outbox job dead-lettered job_id=%s task=%s attempts=%s/%s worker_id=%s "
-                "error=%s",
+                "Outbox job dead-lettered job_id=%s task=%s attempts=%s/%s worker_id=%s error=%s",
                 job.id,
                 job.task_name,
                 job.attempts,

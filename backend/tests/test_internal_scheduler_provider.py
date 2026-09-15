@@ -126,7 +126,9 @@ def test_create_event_succeeds_for_a_free_slot(db_session, business):
 
     event = provider.create_event(
         calendar_id="internal",
-        draft=CalendarEventDraft(starts_at=slot.starts_at, ends_at=slot.ends_at, summary="Cleaning"),
+        draft=CalendarEventDraft(
+            starts_at=slot.starts_at, ends_at=slot.ends_at, summary="Cleaning"
+        ),
     )
 
     assert event.status == "confirmed"

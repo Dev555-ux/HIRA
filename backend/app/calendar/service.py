@@ -118,7 +118,9 @@ class AppointmentService:
         behaves the same regardless of whether a caller's ISO string
         included an explicit UTC offset.
         """
-        starts = starts_at if starts_at.tzinfo is not None else starts_at.replace(tzinfo=timezone.utc)
+        starts = (
+            starts_at if starts_at.tzinfo is not None else starts_at.replace(tzinfo=timezone.utc)
+        )
         ends = ends_at if ends_at.tzinfo is not None else ends_at.replace(tzinfo=timezone.utc)
 
         if ends <= starts:

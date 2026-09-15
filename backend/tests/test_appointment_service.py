@@ -339,7 +339,11 @@ def test_book_appointment_rejects_a_time_outside_working_hours(db_session):
     }
     provider = MockCalendarProvider()
     service = AppointmentService(
-        db_session, biz.id, provider, calendar_id="primary", timezone="UTC",
+        db_session,
+        biz.id,
+        provider,
+        calendar_id="primary",
+        timezone="UTC",
         working_hours=working_hours,
     )
     # The next Sunday — a day this business is closed, regardless of when

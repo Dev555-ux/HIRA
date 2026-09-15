@@ -149,6 +149,7 @@ def is_unrelated_disclosure(text: str) -> bool:
     why it's scoped this narrowly."""
     return bool(_UNRELATED_DISCLOSURE_RE.search(text.strip()))
 
+
 _KNOWLEDGE_KEYWORDS = (
     "hour",
     "hours",
