@@ -74,7 +74,7 @@ const LARGE_SPAN_CLASS_NAME: Record<number, string> = {
 export function Features() {
   return (
     <section id="features" className="scroll-mt-16 border-t py-20 sm:py-28">
-      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <SectionHeader title="Everything the front desk does, minus the wait" className="mx-auto max-w-2xl" />
         {/* Sprint 66 PR-9 — <ul>/<li>, not a bare grid of <div>s: a real set
             of items, matching the list convention Journey and HeroTrustStrip
@@ -86,7 +86,19 @@ export function Features() {
             const large = LARGE_FEATURE_INDICES.has(index);
             return (
               <li key={feature.title} className={LARGE_SPAN_CLASS_NAME[index]}>
-                <Card interactive className={cn("flex h-full flex-col gap-3", large ? "p-6 sm:p-8" : "p-5 sm:p-6")}>
+                {/* Phase 2 — glass, and a hairline the flat card never had. Card's
+                    own `shadow-e2` on a flat fill was the page's only
+                    elevation language below the hero, where every raised
+                    surface is a bordered translucent one. This is a card, a
+                    surface the brief names as a good glass candidate — not a
+                    large panel or a decorative blur. */}
+                <Card
+                  interactive
+                  className={cn(
+                    "glass-flat flex h-full flex-col gap-3 border border-[color:var(--glass-border)]",
+                    large ? "p-6 sm:p-8" : "p-5 sm:p-6",
+                  )}
+                >
                   <feature.icon
                     className={cn("shrink-0 text-muted-foreground", large ? "size-6" : "size-5")}
                     aria-hidden="true"

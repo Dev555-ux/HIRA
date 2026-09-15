@@ -212,12 +212,78 @@
      (S~80%, L~54%), hue rotated from 229° to 18° — chosen for maximum
      distance from the old blue, from warning's amber (40°), and from
      destructive's red (4°). */
+  /* The page's own surface, declared ONLY here and deliberately never
+     overridden in .dark. Everything else flips with the theme; this one
+     stays light on purpose, so a locally-dark region (the hero) has a way
+     to name the colour of the page it has to hand back to. Without it, a
+     dark section's fade-out resolves --background against its own scope and
+     fades dark into dark. */
+  --surface-page: hsl(30 20% 99%);
+
+  /* Key-light strength, as tokens rather than literals in the gradient,
+     because the right amount is not the same in both themes. On a 99%
+     ground the light is competing with white and has ~4% of range to work
+     in; on a 5% ground it has the whole scale, and the dark --brand is a
+     lighter, more saturated coral to begin with. One set of percentages
+     cannot serve both — at the light values the dark hero's glow all but
+     vanished. */
+  --hero-key-core: 15%;
+  --hero-key-mid: 7%;
+  --hero-key-tail: 2.5%;
+  --hero-key-inner: 14%;
+  --hero-floor-core: 13%;
+  --hero-floor-mid: 4%;
+
   --brand: hsl(18 82% 54%);
   --brand-foreground: hsl(30 20% 98%);
   /* Sprint 94 — the sidebar's active-indicator glow, derived from --brand
      rather than a second hand-picked color so light/dark stay in sync with
      the brand token above automatically. */
   --brand-glow: color-mix(in srgb, var(--brand) 45%, transparent);
+
+  /* Liquid Glass — LIGHT. A material, not a frosted-card style: it is only
+     correct where something meaningful passes behind it (the sticky header's
+     scrolling content, a chip over the hero's lit atmosphere). On an opaque
+     flat surface it costs a compositing layer and buys nothing — see
+     hero-trust-strip.tsx, which rejected blur for exactly that reason before
+     the hero had a lit backdrop to sample.
+
+     Four parts, each doing one job:
+       fill       translucent enough to sample the backdrop, opaque enough
+                  that text on it still clears WCAG AA against --background.
+       blur       depth-of-field. Reuses the existing --blur-backdrop-* ration
+                  rather than inventing a second blur scale.
+       saturate   the part that actually reads as glass on a light theme. A
+                  white highlight is invisible on near-white, so what sells
+                  the material here is the backdrop coming through *enriched*.
+       edge       refraction. A curved glass edge catches light on its top arc
+                  and pools shadow on its bottom — two opposed 1px insets,
+                  not a uniform border. No pseudo-element, no mask, no extra
+                  layer; it is one box-shadow value.
+     Deliberately no rainbow/iridescence: the brand is the only saturated hue
+     on this page and glass does not get to introduce a second. */
+  --glass-fill: color-mix(in srgb, var(--card) 74%, transparent);
+  --glass-fill-strong: color-mix(in srgb, var(--card) 86%, transparent);
+  --glass-saturate: 180%;
+  --glass-border: color-mix(in srgb, var(--foreground) 8%, transparent);
+  /* Refinement pass — the edge was one bright line on top and one faint one
+     below. A real curved edge does more than that: light wraps the top arc,
+     pools slightly at the bottom of the curve where it re-enters, and the
+     body of the glass sits fractionally darker than either. Three stops, one
+     box-shadow, still no extra element. */
+  --glass-edge:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.78),
+    inset 0 -1px 0 0 rgb(255 255 255 / 0.22),
+    inset 0 -2px 3px -2px rgb(34 24 16 / 0.07);
+  /* Internal reflection. A specular fall across the top ~45% of the surface —
+     the single cue that separates "translucent panel" from "piece of glass".
+     Rides as a background-image over the fill, so it costs no layer. */
+  --glass-sheen: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.5) 0%,
+    rgb(255 255 255 / 0.14) 42%,
+    rgb(255 255 255 / 0) 62%
+  );
 }
 
 .dark {
@@ -242,6 +308,37 @@
   --brand: hsl(20 100% 68%);
   --brand-foreground: hsl(20 12% 10%);
   --brand-glow: color-mix(in srgb, var(--brand) 55%, transparent);
+
+  /* See :root. Roughly double the light values — a warm light on a near-
+     black ground has to actually carry the lower third of the frame, which
+     is the job the reference's horizon is doing. */
+  --hero-key-core: 30%;
+  --hero-key-mid: 15%;
+  --hero-key-tail: 5%;
+  --hero-key-inner: 26%;
+  --hero-floor-core: 24%;
+  --hero-floor-mid: 8%;
+
+  /* Liquid Glass — DARK. The roles invert the way the elevation ladder above
+     already inverts: on a near-black canvas the bottom shadow disappears, so
+     the edge is carried almost entirely by the top highlight, and the fill
+     has to be *lighter* than its backdrop rather than whiter-than-white.
+     Saturation boost is dialled back — on dark, blur alone already reads as
+     glass, and 180% here pushes the brand glow toward neon. */
+  --glass-fill: color-mix(in srgb, var(--card) 62%, transparent);
+  --glass-fill-strong: color-mix(in srgb, var(--card) 82%, transparent);
+  --glass-saturate: 140%;
+  --glass-border: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --glass-edge:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.1),
+    inset 0 -1px 0 0 rgb(255 255 255 / 0.04),
+    inset 0 -2px 3px -2px rgb(0 0 0 / 0.35);
+  --glass-sheen: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.07) 0%,
+    rgb(255 255 255 / 0.02) 42%,
+    rgb(255 255 255 / 0) 62%
+  );
 }
 
 @theme inline {
@@ -315,6 +412,115 @@
   --blur-backdrop-sm: 8px;
   --blur-backdrop-md: 12px;
   --blur-backdrop-lg: 16px;
+}
+
+/* The Liquid Glass material. One utility, not a family: radius, padding and
+   elevation stay Tailwind's job at the call site, so the same material can be
+   a full-bleed header bar and a 24px pill without two definitions drifting
+   apart.
+
+   `--glass-fill-strong` is the no-backdrop-filter fallback rather than a
+   second variant: where the filter is unsupported (or disabled), the surface
+   has to stop relying on the backdrop for legibility, so it becomes
+   near-opaque and every text pairing on it keeps the contrast ratio it was
+   audited at.
+
+   No `border` property here on purpose. The refraction that makes this read
+   as a curved physical edge is the opposed inset pair, which every consumer
+   wants; a *hairline* is per-consumer (a pill has a visible outline, a
+   full-bleed header's only on-screen edge is the bottom one the V4 pass
+   deliberately removed). Consumers that want it add
+   `border border-[color:var(--glass-border)]` — one explicit class, rather
+   than a shorthand every full-bleed consumer then has to fight. */
+@utility glass {
+  background-color: var(--glass-fill-strong);
+  background-image: var(--glass-sheen);
+  box-shadow: var(--glass-edge);
+
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    background-color: var(--glass-fill);
+    /* --blur-backdrop-md (12px), not -lg (16px). Refinement pass: at 16px the
+       backdrop behind a 26px-tall pill is smeared past recognition, which
+       reads as fog rather than glass. The material's quality comes from the
+       edge and the sheen; the blur only has to suggest depth. */
+    -webkit-backdrop-filter: blur(var(--blur-backdrop-md)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--blur-backdrop-md)) saturate(var(--glass-saturate));
+  }
+}
+
+/* The same material, minus the sampling. Glass is only honest where
+   something passes behind it; on the flat sections below the hero there is
+   nothing to refract, so `glass` there would spend a compositing layer per
+   element — eight of them across Journey and Problem alone — to blur a solid
+   colour. This keeps what actually reads as the material (the fill, the
+   three-stop refraction edge, the specular sheen) and drops the filter.
+   Rule of thumb for this codebase: `glass` inside the hero, `glass-flat`
+   everywhere below it. */
+@utility glass-flat {
+  background-color: var(--glass-fill-strong);
+  background-image: var(--glass-sheen);
+  box-shadow: var(--glass-edge);
+}
+
+/* The hero's key light. A gradient, not a blurred box: `blur-3xl` on a solid
+   circle gives a gaussian falloff that always reads as a generic bloom,
+   because every bloom made that way has the same curve. Explicit radial
+   stops let the falloff be shaped — bright core, fast mid decay, long tail —
+   which is what makes it read as a source rather than a wash.
+   Positioned low and to the right — behind and *beyond* the product, the way
+   the reference's horizon sits behind its phone. Centred on the phone it
+   read as a halo around the device; pushed past it, the device is lit by
+   something rather than emitting. */
+@utility hero-key-light {
+  background:
+    radial-gradient(
+      62rem 46rem at 62% 72%,
+      color-mix(in srgb, var(--brand) var(--hero-key-core), transparent) 0%,
+      color-mix(in srgb, var(--brand) var(--hero-key-mid), transparent) 28%,
+      color-mix(in srgb, var(--brand) var(--hero-key-tail), transparent) 50%,
+      transparent 74%
+    ),
+    radial-gradient(
+      26rem 20rem at 66% 80%,
+      color-mix(in srgb, var(--brand) var(--hero-key-inner), transparent) 0%,
+      transparent 66%
+    );
+}
+
+/* The ground the stage stands on. Wide and shallow — an ellipse 5× wider
+   than it is tall, sitting at the very bottom of the stage so it reads as
+   the surface catching the key light rather than a second glow of its own.
+   The first attempt was 40rem×9rem centred under the phone, which at that
+   ratio is not a floor, it is a blob behind the device. */
+@utility hero-floor {
+  background: radial-gradient(
+    52rem 6rem at 52% 100%,
+    color-mix(in srgb, var(--brand) var(--hero-floor-core), transparent) 0%,
+    color-mix(in srgb, var(--brand) var(--hero-floor-mid), transparent) 38%,
+    transparent 72%
+  );
+}
+
+/* Dither. A warm gradient spread across ~900px on a 99%-lightness ground
+   moves through single 8-bit steps, and each step lands as a visible
+   horizontal seam — the hero had one at roughly y=811. It is not a bug in
+   the gradient; it is the display's quantisation, and no amount of restaging
+   the stops removes it. The fix is the one film and print have always used:
+   add noise below the quantisation step so the banding is dithered into
+   grain the eye reads as texture.
+   feTurbulence generated once as a data URI — no request, no raster asset,
+   no JS. This is also the closest thing the light theme has to the
+   reference's photographic backdrop, which is doing the same job.
+
+   Amplitude is the whole game and it is measurable, not a matter of taste:
+   the seam here was a 2.5/255 step, so the dither has to swing at least that
+   far or it does nothing. fractalNoise lands around mid-grey ±0.2, so at
+   0.05 alpha and full element opacity the swing is ~±2.5 levels — enough to
+   scatter the step, still far below where grain becomes visible as texture.
+   A first pass at 0.045 alpha × 0.55 opacity swung ~±1.3 and left the seam
+   exactly where it was. */
+@utility hero-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
 }
 
 @layer base {
@@ -560,6 +766,29 @@
    coverage visual (a ring behind the donut, low-opacity, never on the data
    itself). Reuses --motion-ambient rather than a new duration; collapses
    under the reduced-motion guard below like every other animation here. */
+/* PR-2 — the two motions the hero stage adds, both tied to a state that is
+   actually changing rather than running for decoration. `cable-flow` only
+   renders while a system is "active"; `typing-dot` only while HIRA is
+   composing. Neither loops once the demo settles. */
+@keyframes cable-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
 @keyframes ambient-pulse {
   0%,
   100% {

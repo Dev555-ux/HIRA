@@ -9,7 +9,15 @@ import Link from "next/link";
 // across the dashboard) replaces the unstyled browser-default outline.
 export function SiteFooter() {
   return (
-    <footer className="border-t py-8">
+    // Phase 2 — the footer carries `dark`, the same scoped treatment the header
+// and hero use. Two reasons, both continuity: a light footer directly under
+// FinalCta's dark closing band put a hard horizontal seam at the very end of
+// the page, the one place PR-1 had taught the eye to expect a dissolve; and
+// the page now opens and closes in the same material, which is what makes
+// the whole thing read as one document rather than a dark hero bolted to a
+// light page. No layout, link or copy change — the border-t goes because
+// there is no longer a tone change for it to mark.
+    <footer className="dark bg-background py-8 text-foreground">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 text-sm text-muted-foreground sm:flex-row sm:px-6">
         <p>&copy; {new Date().getFullYear()} HIRA. All rights reserved.</p>
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">

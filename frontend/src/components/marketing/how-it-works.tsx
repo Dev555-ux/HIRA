@@ -53,7 +53,7 @@ const STEPS = [
 export function HowItWorks() {
   return (
     <section id="how-it-works" className="scroll-mt-16 border-t bg-secondary/40 py-20 sm:py-28">
-      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <SectionHeader title="Set up in four steps" className="mx-auto max-w-2xl" />
         <ol className="relative mt-16 flex flex-col gap-10 lg:grid lg:grid-cols-4 lg:gap-x-8 lg:gap-y-10">
           <div

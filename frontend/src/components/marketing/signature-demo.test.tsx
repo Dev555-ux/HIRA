@@ -46,13 +46,26 @@ function mockReducedMotion(matches: boolean) {
   })) as typeof window.matchMedia;
 }
 
+// PR-2 — the system's state indicator moved from a free-floating node on a
+// radial canvas to the icon tile inside its row. Same thing being asserted
+// (this system's visual state), read from where it now lives.
 function indicatorFor(label: string) {
-  const labelEl = screen.getByText(label);
-  return labelEl.parentElement?.querySelector("span");
+  return screen.getByText(label).closest("li")?.querySelector("span");
+}
+
+// The status line beneath the label: the system's standing role while idle,
+// its live text while working, its outcome once done.
+function statusLineFor(label: string) {
+  const ps = screen.getByText(label).closest("li")?.querySelectorAll("p");
+  return ps?.[1];
 }
 
 // Mirrors BEATS' hold values in signature-demo.tsx exactly, in order.
-const HOLDS_MS = [1400, 500, 300, 700, 300, 500, 200, 400, 300, 700, 400, 700, 2200, 3200, 600];
+// Mirrors CLEANING_BEATS' hold values in signature-demo.tsx exactly, in
+// order. PR-3 added two beats — the customer's acknowledgement and HIRA's
+// confirmation — between the reply and the closing line, and shortened the
+// reply's own hold now that something follows it.
+const HOLDS_MS = [1400, 500, 300, 700, 300, 500, 200, 400, 300, 700, 400, 700, 1600, 1300, 2400, 3200, 600];
 
 function advance(ms: number) {
   act(() => vi.advanceTimersByTime(ms));
@@ -69,7 +82,7 @@ describe("SignatureDemo", () => {
     expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
     expect(screen.queryByText(/thursday at 10:00 am works/i)).toBeNull();
     expect(screen.queryByText(/this is hira/i)).toBeNull();
-    expect(indicatorFor("Knowledge")).toHaveClass("border-border/50");
+    expect(indicatorFor("Knowledge")).toHaveClass("border-border");
   });
 
   it("exposes one accessible label instead of narrating four systems to screen readers", () => {
@@ -87,12 +100,12 @@ describe("SignatureDemo", () => {
     render(<SignatureDemo />);
 
     for (const ms of HOLDS_MS.slice(0, 3)) advance(ms); // -> Knowledge active
-    expect(indicatorFor("Knowledge")).toHaveClass("border-primary");
-    expect(screen.getByText("Searching…")).toHaveClass("opacity-100");
+    expect(indicatorFor("Knowledge")).toHaveClass("border-brand/75");
+    expect(statusLineFor("Knowledge")).toHaveTextContent("Searching…");
 
     advance(HOLDS_MS[3]); // -> CRM active, while Knowledge is still active
-    expect(indicatorFor("Knowledge")).toHaveClass("border-primary");
-    expect(indicatorFor("CRM")).toHaveClass("border-primary");
+    expect(indicatorFor("Knowledge")).toHaveClass("border-brand/75");
+    expect(indicatorFor("CRM")).toHaveClass("border-brand/75");
 
     vi.useRealTimers();
   });
@@ -101,11 +114,15 @@ describe("SignatureDemo", () => {
     vi.useFakeTimers();
     const { container } = render(<SignatureDemo />);
 
+    // PR-2 — the connectors are cubic paths keyed by data-system rather than
+    // straight lines identified by their end coordinates. The behaviour under
+    // test is unchanged: an active system's cable carries a travelling dash,
+    // and loses it the moment that system finishes.
     const knowledgePulse = () =>
-      container.querySelector("svg line.animate-signature-pulse[x2='50'][y2='12']");
+      container.querySelector('svg g[data-system="knowledge"] path[stroke-dasharray]');
 
     for (const ms of HOLDS_MS.slice(0, 3)) advance(ms); // -> Knowledge active
-    expect(knowledgePulse()).toHaveAttribute("stroke-dasharray", "8 92");
+    expect(knowledgePulse()).toHaveClass("stroke-brand");
 
     advance(HOLDS_MS[3]); // -> CRM active
     advance(HOLDS_MS[4]); // -> Knowledge done
@@ -119,13 +136,13 @@ describe("SignatureDemo", () => {
     render(<SignatureDemo />);
 
     for (const ms of HOLDS_MS.slice(0, 5)) advance(ms); // -> Knowledge done
-    expect(screen.getByText("→ Verified")).toHaveClass("opacity-100");
+    expect(statusLineFor("Knowledge")).toHaveTextContent("Verified");
 
     for (const ms of HOLDS_MS.slice(5, 7)) advance(ms); // -> CRM done
-    expect(screen.getByText("→ Customer found")).toHaveClass("opacity-100");
+    expect(statusLineFor("CRM")).toHaveTextContent("Customer found");
 
     for (const ms of HOLDS_MS.slice(7, 10)) advance(ms); // -> Team done
-    expect(screen.getByText("→ Team notified")).toHaveClass("opacity-100");
+    expect(statusLineFor("Team")).toHaveTextContent("Team notified");
 
     vi.useRealTimers();
   });
@@ -136,13 +153,17 @@ describe("SignatureDemo", () => {
 
     for (const ms of HOLDS_MS.slice(0, 10)) advance(ms); // -> Team done (last one)
 
-    expect(screen.getByText("→ Thu · 10:00 AM")).toHaveClass("opacity-100");
+    expect(statusLineFor("Calendar")).toHaveTextContent("Thu · 10:00 AM");
 
     advance(HOLDS_MS[10]); // the settle beat itself
+    // PR-2 — settling no longer dims the systems to a neutral "spent" grey,
+    // and no longer fades their outcomes away. Both were compensating for a
+    // radial canvas where four lit nodes competed with the hub; in a row list
+    // the hub is distinct by position, so the outcomes stay legible instead.
     for (const label of ["Knowledge", "CRM", "Calendar", "Team"]) {
-      expect(indicatorFor(label)).toHaveClass("border-foreground/40");
+      expect(indicatorFor(label)).toHaveClass("border-success/70");
     }
-    expect(screen.getByText("→ Thu · 10:00 AM")).toHaveClass("opacity-0");
+    expect(statusLineFor("Calendar")).toHaveTextContent("Thu · 10:00 AM");
 
     vi.useRealTimers();
   });
@@ -157,17 +178,23 @@ describe("SignatureDemo", () => {
     advance(HOLDS_MS[11]); // -> reply beat
     expect(screen.getByText(/thursday at 10:00 am works/i)).toBeInTheDocument();
 
-    advance(HOLDS_MS[12]); // -> closing beat
+    advance(HOLDS_MS[12]); // -> the customer's acknowledgement
+    expect(screen.getByText(/perfect, thank you/i)).toBeInTheDocument();
+
+    advance(HOLDS_MS[13]); // -> HIRA's confirmation
+    expect(screen.getByText(/calendar invite sent/i)).toBeInTheDocument();
+
+    advance(HOLDS_MS[14]); // -> closing beat
     expect(screen.getByText(/this is hira/i)).toBeInTheDocument();
     expect(
       screen.getByText(/one message\. four business systems\. zero manual work\./i),
     ).toBeInTheDocument();
 
-    advance(HOLDS_MS[13]); // closing still holding
-    advance(HOLDS_MS[14]); // wraps past the end, resets
+    advance(HOLDS_MS[15]); // closing still holding
+    advance(HOLDS_MS[16]); // wraps past the end, resets
     expect(screen.queryByText(/this is hira/i)).toBeNull();
     expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
-    expect(indicatorFor("Knowledge")).toHaveClass("border-border/50");
+    expect(indicatorFor("Knowledge")).toHaveClass("border-border");
 
     vi.useRealTimers();
   });
@@ -181,13 +208,15 @@ describe("SignatureDemo", () => {
       advance(HOLDS_MS[11]); // -> reply beat
       expect(screen.getByText(/thursday at 10:00 am works/i)).toBeInTheDocument();
 
-      advance(HOLDS_MS[12]); // -> closing beat
+      advance(HOLDS_MS[12]); // -> acknowledgement
+      advance(HOLDS_MS[13]); // -> confirmation
+      advance(HOLDS_MS[14]); // -> closing beat
       expect(screen.getByText(/this is hira/i)).toBeInTheDocument();
       // The reply bubble is replaced by the closing overlay, not stacked on it.
       expect(screen.queryByText(/thursday at 10:00 am works/i)).toBeNull();
 
-      advance(HOLDS_MS[13]); // closing still holding
-      advance(HOLDS_MS[14]); // wraps past the end, resets to idle
+      advance(HOLDS_MS[15]); // closing still holding
+      advance(HOLDS_MS[16]); // wraps past the end, resets to idle
       expect(screen.queryByText(/this is hira/i)).toBeNull();
       expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
     };
@@ -200,7 +229,12 @@ describe("SignatureDemo", () => {
     vi.useRealTimers();
   });
 
-  it("pauses on hover and resumes when the mouse leaves", () => {
+  // v0.69 inverted this deliberately. Hover used to pause so a reader could
+  // study the loop; the device is now the page's interactive object, and
+  // freezing the thing someone just reached for is the opposite of the
+  // intent. The test is kept, pointed at the new contract, rather than
+  // deleted — the behaviour is still load-bearing, it just changed.
+  it("keeps playing on hover — the device is interactive, not frozen", () => {
     vi.useFakeTimers();
     render(<SignatureDemo />);
     const group = screen.getByRole("group", { name: /four.*systems/i });
@@ -208,9 +242,26 @@ describe("SignatureDemo", () => {
     fireEvent.mouseEnter(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
+    expect(screen.getByText(/do you have availability for a cleaning/i)).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  // The pause mechanism moves to keyboard focus rather than disappearing.
+  // This demo auto-plays and loops indefinitely, which is exactly what WCAG
+  // 2.2.2 (Pause, Stop, Hide) requires a mechanism for, and focus-to-pause is
+  // now the only one the page has — so it is worth a test of its own.
+  it("pauses on keyboard focus and resumes on blur (WCAG 2.2.2 mechanism)", () => {
+    vi.useFakeTimers();
+    render(<SignatureDemo />);
+    const group = screen.getByRole("group", { name: /four.*systems/i });
+
+    fireEvent.focus(group);
+    advance(HOLDS_MS[0]);
+    advance(HOLDS_MS[1]);
     expect(screen.queryByText(/do you have availability for a cleaning/i)).toBeNull();
 
-    fireEvent.mouseLeave(group);
+    fireEvent.blur(group);
     advance(HOLDS_MS[0]);
     advance(HOLDS_MS[1]);
     expect(screen.getByText(/do you have availability for a cleaning/i)).toBeInTheDocument();
@@ -260,7 +311,7 @@ describe("SignatureDemo", () => {
     expect(screen.getByRole("img", { name: /four.*systems/i })).toBeInTheDocument();
     expect(screen.getByText(/do you have availability for a cleaning/i)).toBeInTheDocument();
     expect(screen.getByText(/thursday at 10:00 am works/i)).toBeInTheDocument();
-    expect(screen.getByText("→ Team notified")).toHaveClass("opacity-100");
+    expect(statusLineFor("Team")).toHaveTextContent("Team notified");
   });
 
   afterEach(() => {
@@ -363,11 +414,15 @@ describe("ScenarioSelector (Sprint 66 PR-3)", () => {
       advance(holds[7]); // -> reply beat
       expect(screen.getByText(/i've flagged this to your team/i)).toBeInTheDocument();
 
-      advance(holds[8]); // -> closing beat
+      advance(holds[8]); // -> the customer's acknowledgement
+      advance(holds[9]); // -> HIRA's confirmation
+      expect(screen.getByText(/someone is picking it up now/i)).toBeInTheDocument();
+
+      advance(holds[10]); // -> closing beat
       expect(screen.getByText(/this is hira/i)).toBeInTheDocument();
 
-      advance(holds[9]); // closing still holding
-      advance(holds[10]); // wraps past the end, resets to idle
+      advance(holds[11]); // closing still holding
+      advance(holds[12]); // wraps past the end, resets to idle
       expect(screen.queryByText(/this is hira/i)).toBeNull();
       expect(screen.queryByText(/speak with your team/i)).toBeNull();
     };

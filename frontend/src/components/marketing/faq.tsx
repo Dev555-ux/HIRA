@@ -50,7 +50,7 @@ export function Faq() {
     // background — a real but subtle shift with nothing marking it. border-t
     // matches the established pattern; no other property changed.
     <section id="faq" className="scroll-mt-16 border-t py-20 sm:py-28">
-      <Reveal className="mx-auto max-w-2xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8">
         <SectionHeader title="Frequently asked questions" />
         {/* V4 "Signal & Quiet": no more per-row cards — a plain hairline-divided
             list, same <details> semantics, quieter register matching the rest

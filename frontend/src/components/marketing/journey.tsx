@@ -51,7 +51,7 @@ const JOURNEY = [
 export function Journey() {
   return (
     <section id="journey" className="scroll-mt-16 border-t py-20 sm:py-28">
-      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <SectionHeader
           title="From a message to a finished job"
           description="What happens between a customer texting and the job being done."
@@ -63,10 +63,16 @@ export function Journey() {
               <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
                 {item.step}
               </span>
-              <div className="mt-3 flex size-10 items-center justify-center rounded-full border border-border">
+              <div className="mt-3 glass-flat flex size-10 items-center justify-center rounded-xl border border-[color:var(--glass-border)]">
                 <item.icon className="size-4 text-muted-foreground" aria-hidden="true" />
               </div>
-              <h3 className="mt-5 text-lg font-semibold tracking-tight">{item.title}</h3>
+              {/* Phase 2 — lg:min-h reserves the two lines the longest title needs,
+                  so all five descriptions start on one baseline. Only at lg:
+                  below it the grid is 1-2 columns and titles wrap
+                  unpredictably, where a reserved height would just add gaps. */}
+              <h3 className="mt-5 text-lg font-semibold tracking-tight lg:min-h-[3.3rem]">
+                {item.title}
+              </h3>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{item.description}</p>
             </li>
           ))}

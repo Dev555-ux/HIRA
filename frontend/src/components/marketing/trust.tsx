@@ -25,7 +25,7 @@ const TRUST_ITEMS = [
 export function Trust() {
   return (
     <section className="py-6 sm:py-8">
-      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <h2 className="sr-only">What HIRA does today</h2>
         <ul className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground sm:justify-between">
           {TRUST_ITEMS.map((item) => (

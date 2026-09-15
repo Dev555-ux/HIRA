@@ -68,7 +68,12 @@ const workingIndicatorDarkOverride = {
 function FinalCtaAtmosphere() {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      {/* Phase 2 — the blurred disc stays (this is the page's closing beat
+          and its glow predates the hero), joined by the same grain the hero
+          and Solution carry, so all three dark moments are the same material
+          rather than three different dark fills. */}
       <div className="absolute left-1/2 top-full h-[24rem] w-[48rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/30 blur-3xl dark:bg-primary-foreground/20" />
+      <div className="hero-grain absolute inset-0" />
     </div>
   );
 }
@@ -82,7 +87,7 @@ export function FinalCta() {
   return (
     <section className="relative isolate bg-primary py-24 text-primary-foreground sm:py-32 lg:py-40">
       <FinalCtaAtmosphere />
-      <Reveal className="relative mx-auto max-w-2xl px-4 text-center sm:px-6">
+      <Reveal className="relative mx-auto max-w-2xl px-4 text-center sm:px-6 lg:px-8">
         <h2 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
           Never miss another message again
         </h2>
@@ -94,7 +99,7 @@ export function FinalCta() {
           <Button
             asChild
             size="xl"
-            className="bg-brand text-brand-foreground hover:bg-brand/90"
+            className="rounded-full bg-brand text-brand-foreground shadow-e3 hover:bg-brand/90"
             onMouseEnter={() => setHovering(true)}
             onMouseLeave={() => setHovering(false)}
             onFocus={() => setHovering(true)}

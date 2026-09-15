@@ -19,7 +19,13 @@ describe("SectionHeader", () => {
     render(<SectionHeader title="One employee, not a bundle of bots" description="A single AI agent holds it together." />);
 
     const description = screen.getByText("A single AI agent holds it together.");
-    expect(description).toHaveClass("text-lg");
+    // Phase 2 — the supporting paragraph was text-lg with default leading and
+    // no measure of its own. It now matches the hero's body copy (17px / 1.6)
+    // and caps at 60ch, so it is still "the one shared size" this test
+    // guards, just a different one.
+    expect(description).toHaveClass("text-[1.0625rem]");
+    expect(description).toHaveClass("leading-[1.6]");
+    expect(description).toHaveClass("max-w-[60ch]");
   });
 
   it("merges a caller-provided className onto the wrapper without losing text-center", () => {
