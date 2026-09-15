@@ -154,7 +154,7 @@ cp .env.example .env   # fill in DATABASE_URL at minimum
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
-`GET /health` should return `{"status": "ok"}`. Run tests with `pytest`.
+`GET /health` should return `{"status": "ok"}`. Run tests with `pytest`. Lint with `ruff check .` and `ruff format --check .` — Ruff is pinned to an exact version in `backend/pyproject.toml` so local results match CI; re-run `pip install -e ".[dev]"` after that pin changes.
 
 **Frontend**
 ```bash
