@@ -245,7 +245,16 @@ Not yet implemented in code (`DEPLOY-4` in `IMPLEMENTATION_PLAN.md`, Medium prio
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | `/sign-in` |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | `/sign-up` |
 
-3. Deploy. Vercel gives you a production domain (e.g. `hira.vercel.app` or a custom domain if configured) — copy it back into Railway's `FRONTEND_URL` variable (step 2) and redeploy the backend so CORS allows the real frontend origin. Note: `app/main.py`'s CORS config already allow-lists `https://hira-tau.vercel.app` specifically and any `https://hira-*.vercel.app` preview deployment via regex — if your production domain differs, add it explicitly rather than relying on the regex alone.
+3. Deploy. The canonical production domain is **`https://stoneveil.in`** — set it as the backend's `FRONTEND_URL` (step 2) and redeploy the backend so CORS allows the real frontend origin. In the Vercel project's Domains settings, every other hostname permanently redirects (308, path and query preserved) to it, so none of them serve pages or need a CORS entry:
+
+   | Domain | Vercel setting |
+   |---|---|
+   | `stoneveil.in` | Production (canonical) |
+   | `www.stoneveil.in` | 308 → `stoneveil.in` |
+   | `app.stoneveil.in` | 308 → `stoneveil.in` |
+   | `hira-tau.vercel.app` (Vercel's default project domain) | 308 → `stoneveil.in` |
+
+   Note: `app/main.py`'s CORS config allow-lists `https://stoneveil.in` explicitly, plus any `https://hira-*.vercel.app` preview deployment via regex. If the production domain ever changes, add the new one explicitly rather than relying on the regex alone.
 
 ## 9. End-to-end verification (do this before calling it done)
 

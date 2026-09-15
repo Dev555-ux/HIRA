@@ -92,7 +92,7 @@ The existing privacy policy already reflects this correctly ("FAQs, pricing, hou
 |---|---|---|
 | Backend compute | Documented as Railway, but `documentation/DEPLOYMENT.md:10` states production deployment steps were "not yet executed" as of the last doc update. A parallel AWS EC2 self-managed Docker Compose target exists (`backend/docker-compose.prod.yml`, `documentation/DEPLOYMENT_AWS.md`). **Needs Owner Confirmation**: which is actually live at publish time — the policy should describe hosting generically enough not to overclaim. |
 | Database | Postgres + pgvector, self-hosted in Docker — not RDS |
-| Frontend hosting | Vercel (`hira-tau.vercel.app` in CORS allowlist, `backend/app/main.py:186`) |
+| Frontend hosting | Vercel, serving the canonical domain `stoneveil.in`; `www.stoneveil.in`, `app.stoneveil.in` and `hira-tau.vercel.app` 308-redirect to it | `stoneveil.in` in the CORS allowlist (`backend/app/main.py`); Vercel project Domains settings |
 | AWS managed services (S3/SES/SNS/Lambda) | **None** — no `boto3` dependency anywhere |
 | Email provider | **None found** — no Resend/SendGrid/Postmark/SES/SMTP anywhere in code or `.env.example`. HIRA currently sends no transactional email (welcome, password reset, notification) via any provider. |
 | Backups | Nightly `pg_dump`, gzip, cron on the host, **14-day retention** (`RETENTION_DAYS=14`, env-overridable), stored **locally only** at `/var/backups/hira-postgres` — no offsite/S3 copy, not encrypted by the script itself | `backend/scripts/backup_postgres.sh:16,32`, `documentation/DEPLOYMENT_AWS.md:247-255` |
