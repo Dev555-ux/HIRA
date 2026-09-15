@@ -68,7 +68,9 @@ def get_dashboard(
 
     business = db.get(Business, business_id)
 
-    msg = message_stats(db, recent_failure_cutoff=now - RECENT_FAILURE_WINDOW, business_id=business_id).get(
+    msg = message_stats(
+        db, recent_failure_cutoff=now - RECENT_FAILURE_WINDOW, business_id=business_id
+    ).get(
         business_id,
         {
             "ai_responses": 0,
@@ -114,10 +116,14 @@ def get_dashboard(
             now=now,
             stale_activity_window=STALE_ACTIVITY_WINDOW,
         ),
-        "conversations_by_status": status_breakdown(db, Conversation, Conversation.status, business_id),
+        "conversations_by_status": status_breakdown(
+            db, Conversation, Conversation.status, business_id
+        ),
         "leads_by_stage": status_breakdown(db, Lead, Lead.stage, business_id),
         "leads_by_source": status_breakdown(db, Lead, Lead.source, business_id),
-        "appointments_by_status": status_breakdown(db, Appointment, Appointment.status, business_id),
+        "appointments_by_status": status_breakdown(
+            db, Appointment, Appointment.status, business_id
+        ),
     }
 
     return {

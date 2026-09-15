@@ -69,9 +69,7 @@ class TestEnqueueCreation:
 
     def test_server_generated_timestamps_are_populated(self, db_session):
         business = _make_business(db_session)
-        job = enqueue_job(
-            db_session, business_id=business.id, task_name="t", payload={}
-        )
+        job = enqueue_job(db_session, business_id=business.id, task_name="t", payload={})
         # created_at / updated_at / run_at come from the DB clock (func.now()),
         # the same source every other table in this schema uses.
         assert job.created_at is not None
@@ -119,9 +117,7 @@ class TestEnqueueCreation:
         via_class = OutboxService(db_session).enqueue(
             business_id=business.id, task_name="t", payload={"k": 1}
         )
-        via_fn = enqueue_job(
-            db_session, business_id=business.id, task_name="t", payload={"k": 2}
-        )
+        via_fn = enqueue_job(db_session, business_id=business.id, task_name="t", payload={"k": 2})
         assert via_class is not None and via_fn is not None
         assert via_class.id != via_fn.id
 
@@ -130,9 +126,7 @@ class TestPayloadHandling:
     def test_dict_payload_round_trips_as_jsonb(self, db_session):
         business = _make_business(db_session)
         payload = {"message_id": "m1", "nested": {"n": 1}, "list": [1, 2, 3]}
-        job = enqueue_job(
-            db_session, business_id=business.id, task_name="t", payload=payload
-        )
+        job = enqueue_job(db_session, business_id=business.id, task_name="t", payload=payload)
         db_session.expire(job)
         assert job.payload == payload
 
@@ -170,9 +164,7 @@ class TestValidation:
     def test_overlong_task_name_is_rejected(self, db_session):
         business = _make_business(db_session)
         with pytest.raises(OutboxValidationError, match="task_name"):
-            enqueue_job(
-                db_session, business_id=business.id, task_name="x" * 129, payload={}
-            )
+            enqueue_job(db_session, business_id=business.id, task_name="x" * 129, payload={})
 
     def test_blank_queue_name_is_rejected(self, db_session):
         business = _make_business(db_session)
@@ -332,14 +324,10 @@ class TestIntegrityErrorDoesNotPoisonCallerTransaction:
         db_session.commit()  # commit the business so the good enqueue below has a valid FK
 
         with pytest.raises(IntegrityError):
-            enqueue_job(
-                db_session, business_id=uuid.uuid4(), task_name="t", payload={}
-            )
+            enqueue_job(db_session, business_id=uuid.uuid4(), task_name="t", payload={})
 
         # The outer transaction survived the failed INSERT: a good enqueue works.
-        good = enqueue_job(
-            db_session, business_id=real_business.id, task_name="t", payload={}
-        )
+        good = enqueue_job(db_session, business_id=real_business.id, task_name="t", payload={})
         assert good is not None
         db_session.commit()
         assert _count_jobs(db_session) == 1

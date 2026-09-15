@@ -309,7 +309,9 @@ def list_activity_for_dashboard(
             continue
 
         customer = customers_by_conversation.get(trace.conversation_id)
-        customer_name = customer.display_name if customer and customer.display_name else "a customer"
+        customer_name = (
+            customer.display_name if customer and customer.display_name else "a customer"
+        )
 
         steps = trace.plan.get("steps") or []
         action = steps[0].get("action") if steps else None

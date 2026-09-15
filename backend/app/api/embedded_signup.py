@@ -72,7 +72,9 @@ def start_embedded_signup(
     try:
         session = provider.start(business_id=principal.business_id)
     except EmbeddedSignupNotConfiguredError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     return {"data": {"config_id": session.config_id, "state": session.state}}
 
 
@@ -97,7 +99,9 @@ def embedded_signup_callback(
             state=payload.state,
         )
     except EmbeddedSignupNotConfiguredError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     return {
         "data": {
             "success": result.success,

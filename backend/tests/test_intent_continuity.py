@@ -101,14 +101,14 @@ class TestBookingConfirmationFollowUp:
 
 class TestBookingRejection:
     def test_an_explicit_decline_overrides_the_pending_domain(self):
-        """"No thanks" confidently matches small talk on its own — a
+        """ "No thanks" confidently matches small talk on its own — a
         confident classification always wins over an inherited domain."""
         plan = build_execution_plan("No thanks, I'll pass.", pending_domain="calendar")
         assert plan.category == ConversationCategory.CONVERSATION
         assert plan.tools == []
 
     def test_a_soft_negative_still_continues_the_workflow(self):
-        """"That doesn't work for me" has no confident signal of its own —
+        """ "That doesn't work for me" has no confident signal of its own —
         in context, this almost always means "try a different time/slot,"
         not "abandon the request," so it correctly continues rather than
         going tools-less."""

@@ -107,7 +107,10 @@ def _post(client, phone_number_id, wa_message_id, app_secret=TEST_APP_SECRET, **
     return client.post(
         "/webhooks/whatsapp",
         content=body,
-        headers={"X-Hub-Signature-256": _sign(body, app_secret), "Content-Type": "application/json"},
+        headers={
+            "X-Hub-Signature-256": _sign(body, app_secret),
+            "Content-Type": "application/json",
+        },
     )
 
 

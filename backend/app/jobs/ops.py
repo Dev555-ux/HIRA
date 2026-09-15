@@ -60,9 +60,7 @@ def get_job_metrics(db: Session) -> dict:
     thrown off by app/DB clock skew — a lagging queue or a stuck worker shows up
     honestly. Each age is None when there is no job in that state.
     """
-    count_rows = db.execute(
-        select(JobOutbox.status, func.count()).group_by(JobOutbox.status)
-    ).all()
+    count_rows = db.execute(select(JobOutbox.status, func.count()).group_by(JobOutbox.status)).all()
     counts = {status.value: n for status, n in count_rows}
 
     # Oldest PENDING by created_at (how long the oldest unfinished job has waited)
@@ -111,13 +109,9 @@ def list_jobs(
     Returns the page plus `total` (rows matching the filter, ignoring
     limit/offset) so a caller can drive pagination.
     """
-    total = db.scalar(
-        _filtered(select(func.count()).select_from(JobOutbox), status, queue_name)
-    )
+    total = db.scalar(_filtered(select(func.count()).select_from(JobOutbox), status, queue_name))
     stmt = _filtered(select(JobOutbox), status, queue_name)
-    jobs = db.scalars(
-        stmt.order_by(JobOutbox.created_at.desc()).limit(limit).offset(offset)
-    ).all()
+    jobs = db.scalars(stmt.order_by(JobOutbox.created_at.desc()).limit(limit).offset(offset)).all()
     return {
         "jobs": [_job_summary(job) for job in jobs],
         "total": int(total or 0),

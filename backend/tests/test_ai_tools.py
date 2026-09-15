@@ -152,7 +152,9 @@ def test_confirmation_lead_tool_differs_from_preview():
 
 
 def test_failure_message_for_conflict():
-    result = ToolExecutionResult(False, "Requested slot overlaps an existing appointment", reason="conflict")
+    result = ToolExecutionResult(
+        False, "Requested slot overlaps an existing appointment", reason="conflict"
+    )
 
     message = failure_message_for(result)
 
@@ -179,7 +181,9 @@ def test_failure_message_for_needs_confirmation():
 
 
 def test_failure_message_for_not_found():
-    result = ToolExecutionResult(False, "No upcoming appointment found to modify.", reason="not_found")
+    result = ToolExecutionResult(
+        False, "No upcoming appointment found to modify.", reason="not_found"
+    )
 
     message = failure_message_for(result)
 

@@ -123,7 +123,9 @@ class GroqProvider(LLMProvider):
                         time.sleep(0.5 * attempt)
                         continue
                     raise LLMError(f"Groq rejected the request: {exc}") from exc
-                error_code = exc.body.get("error", {}).get("code") if isinstance(exc.body, dict) else None
+                error_code = (
+                    exc.body.get("error", {}).get("code") if isinstance(exc.body, dict) else None
+                )
                 if error_code == "tool_use_failed":
                     last_error = exc
                     logger.warning("Groq tool_use_failed (attempt %d): %s", attempt, exc)

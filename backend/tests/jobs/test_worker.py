@@ -165,9 +165,7 @@ class TestRetryScheduling:
 
         register_handler("flaky", handler)
         before = _utcnow()
-        OutboxWorker(
-            session_factory=worker_factory, backoff_base_seconds=2.0
-        ).run_once()
+        OutboxWorker(session_factory=worker_factory, backoff_base_seconds=2.0).run_once()
 
         db_session.expire_all()
         refreshed = db_session.get(JobOutbox, job.id)
@@ -211,9 +209,7 @@ class TestDeadLetter:
     def test_job_dead_letters_when_attempts_exhausted(self, db_session, worker_factory):
         business = _make_business(db_session)
         # One attempt away from the limit: this failure is the last one.
-        job = _make_job(
-            db_session, business, task_name="always_fails", max_attempts=3, attempts=2
-        )
+        job = _make_job(db_session, business, task_name="always_fails", max_attempts=3, attempts=2)
         db_session.commit()
 
         register_handler(
@@ -297,8 +293,12 @@ class TestConcurrentWorkersSkipLocked:
         transaction, worker B claims a *different* job rather than blocking or
         double-claiming."""
         business = _make_business(db_session)
-        job_a = _make_job(db_session, business, task_name="t", run_at=_utcnow() - timedelta(minutes=1))
-        job_b = _make_job(db_session, business, task_name="t", run_at=_utcnow() - timedelta(minutes=1))
+        job_a = _make_job(
+            db_session, business, task_name="t", run_at=_utcnow() - timedelta(minutes=1)
+        )
+        job_b = _make_job(
+            db_session, business, task_name="t", run_at=_utcnow() - timedelta(minutes=1)
+        )
         db_session.commit()
 
         worker_a = OutboxWorker(session_factory=worker_factory, batch_size=1, worker_id="A")
@@ -324,8 +324,12 @@ class TestConcurrentWorkersSkipLocked:
 
     def test_worker_skips_a_locked_row_and_takes_the_next(self, db_session, worker_factory):
         business = _make_business(db_session)
-        locked = _make_job(db_session, business, task_name="known", run_at=_utcnow() - timedelta(minutes=1))
-        free = _make_job(db_session, business, task_name="known", run_at=_utcnow() - timedelta(minutes=1))
+        locked = _make_job(
+            db_session, business, task_name="known", run_at=_utcnow() - timedelta(minutes=1)
+        )
+        free = _make_job(
+            db_session, business, task_name="known", run_at=_utcnow() - timedelta(minutes=1)
+        )
         db_session.commit()
         register_handler("known", lambda db, j: None)
 
@@ -363,14 +367,14 @@ class TestBatchProcessing:
 
         assert processed == 3
         db_session.expire_all()
-        completed = [
-            db_session.get(JobOutbox, i).status is JobStatus.COMPLETED for i in ids
-        ]
+        completed = [db_session.get(JobOutbox, i).status is JobStatus.COMPLETED for i in ids]
         assert completed.count(True) == 3  # exactly the batch, not more
 
     def test_future_dated_jobs_are_not_claimed(self, db_session, worker_factory):
         business = _make_business(db_session)
-        due = _make_job(db_session, business, task_name="k", run_at=_utcnow() - timedelta(minutes=1))
+        due = _make_job(
+            db_session, business, task_name="k", run_at=_utcnow() - timedelta(minutes=1)
+        )
         later = _make_job(
             db_session, business, task_name="k", run_at=_utcnow() + timedelta(hours=1)
         )
@@ -391,8 +395,12 @@ class TestGracefulShutdown:
         stops — remaining claimed jobs are released back to PENDING, not left
         stranded in PROCESSING."""
         business = _make_business(db_session)
-        first = _make_job(db_session, business, task_name="shutter", run_at=_utcnow() - timedelta(minutes=1))
-        second = _make_job(db_session, business, task_name="shutter", run_at=_utcnow() - timedelta(minutes=1))
+        first = _make_job(
+            db_session, business, task_name="shutter", run_at=_utcnow() - timedelta(minutes=1)
+        )
+        second = _make_job(
+            db_session, business, task_name="shutter", run_at=_utcnow() - timedelta(minutes=1)
+        )
         db_session.commit()
 
         worker = OutboxWorker(session_factory=worker_factory, batch_size=2)
@@ -408,7 +416,10 @@ class TestGracefulShutdown:
         # Exactly one job was processed to completion...
         assert len(finished) == 1
         db_session.expire_all()
-        statuses = {db_session.get(JobOutbox, first.id).status, db_session.get(JobOutbox, second.id).status}
+        statuses = {
+            db_session.get(JobOutbox, first.id).status,
+            db_session.get(JobOutbox, second.id).status,
+        }
         assert JobStatus.COMPLETED in statuses
         # ...and the other is back to PENDING (released), never left PROCESSING.
         assert JobStatus.PENDING in statuses

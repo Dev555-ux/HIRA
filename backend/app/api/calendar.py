@@ -62,7 +62,9 @@ def map_calendar_error(exc: CalendarError) -> HTTPException:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Calendar integration hasn't been configured yet.",
         )
-    if isinstance(exc, (CalendarNotConnectedError, CalendarConflictError, CalendarAlreadyCancelledError)):
+    if isinstance(
+        exc, (CalendarNotConnectedError, CalendarConflictError, CalendarAlreadyCancelledError)
+    ):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     if isinstance(exc, CalendarValidationError):
         return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))

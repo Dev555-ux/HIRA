@@ -554,9 +554,7 @@ def test_the_teeth_cleaning_demo_scenario_books_via_internal_scheduler_end_to_en
     # implicit in the plan -> tool call -> result), same as any other turn.
     conversation = get_or_create_playground_conversation(db_session, biz.id)
     trace = db_session.query(ExecutionTrace).filter_by(conversation_id=conversation.id).one()
-    assert trace.proposed_tool_calls == [
-        {"tool_name": BOOK_APPOINTMENT, "agent_role": "scheduler"}
-    ]
+    assert trace.proposed_tool_calls == [{"tool_name": BOOK_APPOINTMENT, "agent_role": "scheduler"}]
 
     # Conversation Replay shows the completed conversation — the real
     # inbound customer message and the real outbound confirmation.
@@ -913,9 +911,7 @@ def test_sprint_82_a_polite_lead_request_offers_the_tool_instead_of_hallucinatin
         lambda name=None: MockProvider(fixed_reply="", fixed_tool_calls=[lead_call]),
     )
 
-    _, _, body, tool_outcome = playground_reply(
-        db_session, biz.id, "Can you log me as a lead?"
-    )
+    _, _, body, tool_outcome = playground_reply(db_session, biz.id, "Can you log me as a lead?")
 
     conversation = get_or_create_playground_conversation(db_session, biz.id)
     trace = (
