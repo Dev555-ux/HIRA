@@ -157,7 +157,7 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     return JSONResponse(status_code=422, content={"detail": detail})
 
 
-# Fixed localhost dev ports, the production Vercel domain, plus
+# Fixed localhost dev ports, the production domain, plus
 # settings.frontend_url so a deployed frontend isn't CORS-blocked once
 # FRONTEND_URL is set to the real domain (Sprint 34). allow_origins only
 # does exact string matches, so Vercel preview deployments (random
@@ -181,7 +181,6 @@ _CORS_ORIGINS = {
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:3002",
-    "https://hira-tau.vercel.app",
     "https://stoneveil.in",
     settings.frontend_url,
 }
