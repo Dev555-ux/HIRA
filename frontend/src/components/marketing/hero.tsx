@@ -216,6 +216,15 @@ export function Hero() {
                 whileHover={{ y: -2, scale: 1.01 }}
                 whileTap={{ y: 0, scale: 0.99 }}
                 transition={{ type: "spring", stiffness: 300, damping: 24 }}
+                // Release QA — framer-motion adds tabIndex={0} to any element
+                // carrying whileTap, so it can receive a keyboard "tap". That
+                // put a focusable <div> with no role and no accessible name
+                // into the tab order directly before the real CTA: a keyboard
+                // user tabbed onto nothing, then tabbed again to reach "Get
+                // started". The link inside is the control; this wrapper is
+                // only a motion container, so it is taken back out of the tab
+                // order. Pre-existing, found by walking the real tab order.
+                tabIndex={-1}
                 className="relative inline-block"
               >
                 {/* The reference haloes its CTA. It can, because it is a
