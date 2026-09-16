@@ -1,6 +1,6 @@
 "use client";
 
-import { animate, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
+import { animate, motion, useMotionValue, useSpring, useTransform } from "motion/react";
 import { Check, Paperclip, Mic } from "lucide-react";
 import { useCallback, useRef } from "react";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";

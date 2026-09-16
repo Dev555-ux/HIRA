@@ -2,7 +2,7 @@
 
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { motion, MotionConfig } from "framer-motion";
+import { motion, MotionConfig } from "motion/react";
 import { useState } from "react";
 import { HeroTrustPills } from "@/components/marketing/hero-trust-strip";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/components/marketing/signature-demo";
 import { Button } from "@/components/ui/button";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import { ease } from "@/lib/motion";
 
 // Cinematic rebuild — this hero is now the whole opening screen rather than
 // the first of three stacked sections. What changed, and why:
@@ -32,8 +33,6 @@ import { useReducedMotion } from "@/hooks/use-reduced-motion";
 //      stage can only tell one, and the orchestration engine is the one
 //      that drives the graph and the four scenarios. See the delivery notes
 //      for the tests this removed.
-const EASE_OUT = [0.16, 1, 0.3, 1] as const;
-
 const springIn = { type: "spring", stiffness: 130, damping: 20, mass: 0.7 } as const;
 
 const staggerContainer = {
@@ -272,7 +271,7 @@ export function Hero() {
           <motion.div
             initial={{ opacity: 0, y: 24, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ ...springIn, delay: 0.2, ease: EASE_OUT }}
+            transition={{ ...springIn, delay: 0.2, ease: ease.out }}
             className="relative mt-16 lg:mt-0"
           >
             {/* The floor. Without it the stage is an object with nothing
