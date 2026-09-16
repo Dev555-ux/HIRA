@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
+import * as m from "motion/react-m";
 import type { ReactNode } from "react";
 import type { DeviceChrome } from "@/components/marketing/stage-parts";
 
@@ -118,12 +118,12 @@ export function PhoneFrame({
             gradient's stops cannot do. Very low alpha on purpose: at rest
             both sit at half strength, so the hover reads as the highlight
             sliding across the metal rather than switching on. */}
-        <motion.div
+        <m.div
           aria-hidden="true"
           style={chrome?.railL}
           className="pointer-events-none absolute inset-y-8 left-0 w-[7px] rounded-l-[3.4rem] bg-[linear-gradient(90deg,rgb(255_255_255/0.16),transparent)]"
         />
-        <motion.div
+        <m.div
           aria-hidden="true"
           style={chrome?.railR}
           className="pointer-events-none absolute inset-y-8 right-0 w-[7px] rounded-r-[3.4rem] bg-[linear-gradient(270deg,rgb(255_255_255/0.16),transparent)]"
@@ -146,7 +146,7 @@ export function PhoneFrame({
                 rotation, not the hover state, so it behaves like an optical
                 property of the glass rather than a highlight that switches on
                 when a cursor arrives. */}
-            <motion.div
+            <m.div
               aria-hidden="true"
               style={chrome?.glassEdge}
               className="pointer-events-none absolute inset-0 z-40 rounded-[2.7rem]"
@@ -154,7 +154,7 @@ export function PhoneFrame({
             {/* Deepest layer — the chat ground. Moves least of anything on
                 the display, which is what makes the layers above it read as
                 floating over it. */}
-            <motion.div
+            <m.div
               aria-hidden="true"
               style={chrome?.bg}
               className="pointer-events-none absolute inset-[-4px] z-0 bg-background"
@@ -168,7 +168,7 @@ export function PhoneFrame({
             {glare}
 
             {/* Cutout, with an actual lens and a speaker slot in it. */}
-            <motion.div
+            <m.div
               aria-hidden="true"
               style={chrome?.island}
               // Refinement — proportions. 88x27 was too small and too round
@@ -183,7 +183,7 @@ export function PhoneFrame({
               <span className="relative size-[7px] rounded-full bg-[oklch(0.14_0.012_250)] ring-[0.5px] ring-foreground/[0.16]">
                 <span className="absolute left-[1px] top-[1px] size-[2px] rounded-full bg-foreground/35" />
               </span>
-            </motion.div>
+            </m.div>
 
             <div
               aria-hidden="true"
@@ -193,9 +193,9 @@ export function PhoneFrame({
               <StatusGlyphs />
             </div>
 
-            <motion.div style={chrome?.thread} className="relative z-10 flex h-full flex-col pb-6 pt-[46px]">
+            <m.div style={chrome?.thread} className="relative z-10 flex h-full flex-col pb-6 pt-[46px]">
               {children}
-            </motion.div>
+            </m.div>
 
             <div
               aria-hidden="true"

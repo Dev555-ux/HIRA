@@ -1,6 +1,7 @@
 "use client";
 
-import { animate, motion, useMotionValue, useSpring, useTransform } from "motion/react";
+import { animate, useMotionValue, useSpring, useTransform } from "motion/react";
+import * as m from "motion/react-m";
 import { Check, Paperclip, Mic } from "lucide-react";
 import { useCallback, useRef } from "react";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
@@ -112,13 +113,13 @@ export function Composer({ style }: { style?: React.CSSProperties }) {
   return (
     // Second-closest layer to the glass after the island, so it travels
     // further than the thread behind it.
-    <motion.div style={style} className="relative z-10 flex items-center gap-2 px-3.5 pt-2.5">
+    <m.div style={style} className="relative z-10 flex items-center gap-2 px-3.5 pt-2.5">
       <Paperclip className="size-4 shrink-0 text-muted-foreground/70" aria-hidden="true" />
       <div className="glass flex h-8 flex-1 items-center rounded-full border border-[color:var(--glass-border)] px-3">
         <span className="text-[12px] text-muted-foreground/70">Message</span>
       </div>
       <Mic className="size-4 shrink-0 text-muted-foreground/70" aria-hidden="true" />
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -576,7 +577,7 @@ export function DeviceShell({
   }
 
   const glare = (
-    <motion.div
+    <m.div
       aria-hidden="true"
       // The cast is needed because framer's style prop types the CSS custom
       // properties as plain strings; --gx/--gy are MotionValues so the
@@ -592,7 +593,7 @@ export function DeviceShell({
     // The perspective lives on the wrapper and the transform on the child:
     // putting both on one element makes the rotation flat and lifeless.
     <div style={{ perspective: 2200 }} className="w-full">
-      <motion.div
+      <m.div
         ref={ref}
         // Mouse events, not pointer events. The tilt is a hover affordance
         // and hover does not exist on touch — pointer events would fire on a
@@ -621,7 +622,7 @@ export function DeviceShell({
           thread: { x: threadX, y: threadY },
           bg: { x: bgX, y: bgY },
         } as unknown as DeviceChrome)}
-      </motion.div>
+      </m.div>
     </div>
   );
 }

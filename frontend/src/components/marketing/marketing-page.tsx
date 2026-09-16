@@ -1,3 +1,4 @@
+import { MotionProvider } from "@/components/motion/motion-provider";
 import { AiEmployees } from "@/components/marketing/ai-employees";
 import { Faq } from "@/components/marketing/faq";
 import { Features } from "@/components/marketing/features";
@@ -51,19 +52,25 @@ export function MarketingPage() {
         Skip to content
       </a>
       <SiteHeader />
-      <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
-        <Hero />
-        <Trust />
-        <Journey />
-        <Problem />
-        <Solution />
-        <AiEmployees />
-        <Features />
-        <HowItWorks />
-        <Faq />
-        <FinalCta />
-      </main>
-      <SiteFooter />
+      {/* The provider wraps <main> and the footer, not the header: the header
+          is deliberately free of client JS and has no Motion in it. Children
+          stay server components — they are passed through, not imported by a
+          client boundary. */}
+      <MotionProvider>
+        <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
+          <Hero />
+          <Trust />
+          <Journey />
+          <Problem />
+          <Solution />
+          <AiEmployees />
+          <Features />
+          <HowItWorks />
+          <Faq />
+          <FinalCta />
+        </main>
+        <SiteFooter />
+      </MotionProvider>
     </div>
   );
 }
