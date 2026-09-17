@@ -195,21 +195,10 @@ export function Hero() {
               in the rail that should sit slightly apart from the text it
               concludes. */}
           <m.div data-reveal variants={fadeUpEnter} custom={1} className="mt-1 flex justify-center lg:justify-start">
-            <m.div
-              whileHover={{ y: -2, scale: 1.01 }}
-              whileTap={{ y: 0, scale: 0.99 }}
-              transition={{ type: "spring", stiffness: 300, damping: 24 }}
-              // Release QA — framer-motion adds tabIndex={0} to any element
-              // carrying whileTap, so it can receive a keyboard "tap". That
-              // put a focusable <div> with no role and no accessible name
-              // into the tab order directly before the real CTA: a keyboard
-              // user tabbed onto nothing, then tabbed again to reach "Get
-              // started". The link inside is the control; this wrapper is
-              // only a motion container, so it is taken back out of the tab
-              // order. Pre-existing, found by walking the real tab order.
-              tabIndex={-1}
-              className="relative inline-block"
-            >
+            {/* T3.2 — the glow needs a positioning context, nothing more. The
+                Button owns hover, focus and press feedback, exactly as every
+                other button on the site does. */}
+            <span className="relative inline-block">
               {/* The reference haloes its CTA. It can, because it is a
                   white pill on black. Inverting that literally here would
                   mean glowing a near-black pill on near-white, which just
@@ -230,7 +219,7 @@ export function Hero() {
                   <ArrowRight aria-hidden="true" />
                 </Link>
               </Button>
-            </m.div>
+            </span>
           </m.div>
 
           <m.div data-reveal variants={fadeUpEnter} custom={2}>
