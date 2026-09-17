@@ -1,5 +1,5 @@
 import { MessageCircle, Share2, Sparkles, TrendingUp, Zap } from "lucide-react";
-import { Reveal } from "@/components/motion/reveal";
+import { Reveal, RevealGroup, RevealItem } from "@/components/motion/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 const JOURNEY = [
@@ -51,15 +51,17 @@ const JOURNEY = [
 export function Journey() {
   return (
     <section id="journey" className="scroll-mt-16 border-t py-20 sm:py-28">
-      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        <SectionHeader
-          title="From a message to a finished job"
-          description="What happens between a customer texting and the job being done."
-          className="mx-auto max-w-2xl"
-        />
-        <ol className="mt-16 grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-5">
-          {JOURNEY.map((item) => (
-            <li key={item.step}>
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <Reveal>
+          <SectionHeader
+            title="From a message to a finished job"
+            description="What happens between a customer texting and the job being done."
+            className="mx-auto max-w-2xl"
+          />
+        </Reveal>
+        <RevealGroup as="ol" className="mt-16 grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-5">
+          {JOURNEY.map((item, index) => (
+            <RevealItem key={item.step} i={index}>
               <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
                 {item.step}
               </span>
@@ -74,10 +76,10 @@ export function Journey() {
                 {item.title}
               </h3>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{item.description}</p>
-            </li>
+            </RevealItem>
           ))}
-        </ol>
-      </Reveal>
+        </RevealGroup>
+      </div>
     </section>
   );
 }

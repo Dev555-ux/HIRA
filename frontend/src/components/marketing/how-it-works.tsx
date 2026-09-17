@@ -1,4 +1,4 @@
-import { Reveal } from "@/components/motion/reveal";
+import { Reveal, RevealGroup, RevealItem } from "@/components/motion/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 // V4 "Signal & Quiet": no more boxed cards — a connected numbered timeline
@@ -53,9 +53,11 @@ const STEPS = [
 export function HowItWorks() {
   return (
     <section id="how-it-works" className="scroll-mt-16 border-t bg-secondary/40 py-20 sm:py-28">
-      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        <SectionHeader title="Set up in four steps" className="mx-auto max-w-2xl" />
-        <ol className="relative mt-16 flex flex-col gap-10 lg:grid lg:grid-cols-4 lg:gap-x-8 lg:gap-y-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <Reveal>
+          <SectionHeader title="Set up in four steps" className="mx-auto max-w-2xl" />
+        </Reveal>
+        <RevealGroup as="ol" className="relative mt-16 flex flex-col gap-10 lg:grid lg:grid-cols-4 lg:gap-x-8 lg:gap-y-10">
           <div
             className="absolute inset-y-0 left-[1.125rem] w-px bg-border lg:hidden"
             aria-hidden="true"
@@ -64,8 +66,8 @@ export function HowItWorks() {
             className="absolute inset-x-0 top-[1.125rem] hidden h-px bg-border lg:block"
             aria-hidden="true"
           />
-          {STEPS.map((item) => (
-            <li key={item.step} className="relative pl-14 lg:pl-0">
+          {STEPS.map((item, index) => (
+            <RevealItem key={item.step} i={index} className="relative pl-14 lg:pl-0">
               <span className="absolute left-0 top-0 z-10 flex size-9 items-center justify-center rounded-full bg-brand text-sm font-semibold text-brand-foreground lg:static">
                 {item.step}
               </span>
@@ -73,10 +75,10 @@ export function HowItWorks() {
               <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground">
                 {item.description}
               </p>
-            </li>
+            </RevealItem>
           ))}
-        </ol>
-      </Reveal>
+        </RevealGroup>
+      </div>
     </section>
   );
 }
