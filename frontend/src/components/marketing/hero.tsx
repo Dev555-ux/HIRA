@@ -12,7 +12,7 @@ import {
   type ScenarioId,
 } from "@/components/marketing/signature-demo";
 import { Button } from "@/components/ui/button";
-import { ease } from "@/lib/motion";
+import { fadeUpEnter, transition, viewportOnce } from "@/lib/motion";
 
 // Cinematic rebuild — this hero is now the whole opening screen rather than
 // the first of three stacked sections. What changed, and why:
@@ -32,18 +32,6 @@ import { ease } from "@/lib/motion";
 //      stage can only tell one, and the orchestration engine is the one
 //      that drives the graph and the four scenarios. See the delivery notes
 //      for the tests this removed.
-const springIn = { type: "spring", stiffness: 130, damping: 20, mass: 0.7 } as const;
-
-const staggerContainer = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.1, delayChildren: 0.06 } },
-};
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: springIn },
-};
-
 // The reference hero's depth comes from a 390 KB photographic backdrop plus
 // two scrim layers and a 40s infinite drift. This reproduces the *lighting*
 // — a warm key light off the upper right, falling off to clean background
@@ -120,7 +108,6 @@ export function Hero() {
           narrowest the rail goes with the selector still on one row. */}
       <div className="relative mx-auto w-full max-w-[1420px] lg:grid lg:grid-cols-[440px_1fr] lg:items-center lg:gap-5">
         <m.div
-          variants={staggerContainer}
           initial="hidden"
           animate="show"
           // Liquid Glass PR-1 — gap-6 → gap-5, and the ad-hoc mt-2/mt-1
@@ -133,7 +120,8 @@ export function Hero() {
         >
           <m.div
             data-reveal
-            variants={fadeUp}
+            variants={fadeUpEnter}
+            custom={0}
             className="flex items-center justify-center gap-2.5 lg:justify-start"
           >
             <span className="size-[7px] shrink-0 rounded-full bg-brand" aria-hidden="true" />
@@ -151,14 +139,7 @@ export function Hero() {
               brand colour with no background: the old <mark> chip existed
               to carry a resolved-state signal from a demo that no longer
               lives in this column. */}
-          <m.h1
-            // Spec amendment A3 (T1.1): the headline is the LCP element, so it must
-            // be visible in the server HTML rather than waiting for hydration.
-            // initial={false} renders it at its resting state and skips the entrance,
-            // while keeping it a variant child so the stagger indices of the blocks
-            // below are unchanged. T3.1 owns the hero timing rebuild.
-            initial={false}
-            variants={fadeUp}
+          <h1
             // leading 1.08 → 1.02. At four lines of 68px type that is
             // ~24px of the ~60px overflow above, recovered without
             // touching the size — and it is the tighter setting the
@@ -191,12 +172,9 @@ export function Hero() {
                 content, and what a screen reader announces, is
                 unchanged. */}
             <span className="text-brand">.</span>
-          </m.h1>
+          </h1>
 
-          <m.p
-            // A3, as above: body copy above the fold is never gated on JS.
-            initial={false}
-            variants={fadeUp}
+          <p
             // 1.68 → 1.6: still a comfortable measure for 17px at this
             // width, and paired with the tighter headline above it keeps
             // the copy rail reading as one composed block rather than
@@ -208,7 +186,7 @@ export function Hero() {
             HIRA answers your customers on WhatsApp, books appointments, follows
             up on leads, and hands the conversation to your team the moment it
             needs a human touch.
-          </m.p>
+          </p>
 
           {/* One undivided action, as in the reference — the old secondary
               "See how it works" link is gone, and the anchor it pointed at
@@ -216,7 +194,7 @@ export function Hero() {
           {/* mt-1 on the row, not a gap change: the CTA is the one block
               in the rail that should sit slightly apart from the text it
               concludes. */}
-          <m.div data-reveal variants={fadeUp} className="mt-1 flex justify-center lg:justify-start">
+          <m.div data-reveal variants={fadeUpEnter} custom={1} className="mt-1 flex justify-center lg:justify-start">
             <m.div
               whileHover={{ y: -2, scale: 1.01 }}
               whileTap={{ y: 0, scale: 0.99 }}
@@ -255,14 +233,14 @@ export function Hero() {
             </m.div>
           </m.div>
 
-          <m.div data-reveal variants={fadeUp}>
+          <m.div data-reveal variants={fadeUpEnter} custom={2}>
             <HeroTrustPills />
           </m.div>
 
           {/* The selector sits with the copy, not over the stage — it
               labels what the stage is playing, and at this position it is
               reachable before the demo in both reading and tab order. */}
-          <m.div data-reveal variants={fadeUp}>
+          <m.div data-reveal variants={fadeUpEnter} custom={3}>
             <p className="mb-2.5 text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-muted-foreground">
               Try a scenario
             </p>
@@ -276,9 +254,10 @@ export function Hero() {
 
         <m.div
           data-reveal
-          initial={{ opacity: 0, y: 24, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ ...springIn, delay: 0.2, ease: ease.out }}
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={viewportOnce}
+          transition={transition.reveal}
           className="relative mt-16 lg:mt-0"
         >
           {/* The floor. Without it the stage is an object with nothing

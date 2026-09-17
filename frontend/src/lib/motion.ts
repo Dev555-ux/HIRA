@@ -17,7 +17,18 @@ export const staggerDelay = (i = 0) => Math.min(i, STAGGER_CAP) * STAGGER;
 
 export const viewportOnce = { once: true, margin: "0px 0px -10% 0px", amount: 0.15 } as const;
 
+// Scroll reveals: viewport-triggered section content, arriving as the reader
+// scrolls to it. 320ms — the extra time reads as "arriving", not "late".
 export const fadeUp: Variants = {
   hidden: { opacity: 0, y: 8 },
   show: (i = 0) => ({ opacity: 1, y: 0, transition: { ...transition.reveal, delay: staggerDelay(i) } }),
+};
+
+// Page entrances: the hero and above-the-fold content choreographed on first
+// render. Same states, travel and stagger as fadeUp; transition.enter instead
+// of transition.reveal, so a four-item entrance completes in
+// 3 x 40ms + 180ms = 300ms (DESIGN-MOTION-001 §7.1).
+export const fadeUpEnter: Variants = {
+  hidden: { opacity: 0, y: 8 },
+  show: (i = 0) => ({ opacity: 1, y: 0, transition: { ...transition.enter, delay: staggerDelay(i) } }),
 };

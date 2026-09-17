@@ -1,5 +1,4 @@
 import { Briefcase, Building2, Dumbbell, Scissors, Stethoscope, UtensilsCrossed } from "lucide-react";
-import { Reveal } from "@/components/motion/reveal";
 
 // Sprint 66 PR-7 — a fast answer to "who is this built for," not a
 // testimonial or logo cloud: no customer names, no claimed counts, nothing
@@ -37,7 +36,7 @@ const INDUSTRIES = [
 // alone carries the content.
 export function HeroTrustPills() {
   return (
-    <Reveal>
+    <>
       <span className="text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-muted-foreground">
         Trusted by modern businesses
       </span>
@@ -59,6 +58,6 @@ export function HeroTrustPills() {
           </li>
         ))}
       </ul>
-    </Reveal>
+    </>
   );
 }
