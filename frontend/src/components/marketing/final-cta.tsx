@@ -6,7 +6,7 @@ import { useState } from "react";
 import type { CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { WorkingIndicator } from "@/components/ui/working-indicator";
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 
 // V4 "Signal & Quiet": the page's second Signal band, bookending Solution's
 // dark statement earlier — same bg-primary/text-primary-foreground tokens,

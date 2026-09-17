@@ -1,5 +1,5 @@
 import { Briefcase, Building2, Dumbbell, Scissors, Stethoscope, UtensilsCrossed } from "lucide-react";
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 
 // Sprint 66 PR-7 — a fast answer to "who is this built for," not a
 // testimonial or logo cloud: no customer names, no claimed counts, nothing

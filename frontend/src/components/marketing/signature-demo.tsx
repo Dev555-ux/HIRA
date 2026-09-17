@@ -1,7 +1,7 @@
 "use client";
 
 import { BookOpen, Calendar, UserCheck, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { PhoneFrame } from "@/components/marketing/phone-frame";
 import {
@@ -17,7 +17,7 @@ import {
   TypingBubble,
 } from "@/components/marketing/stage-parts";
 import { Badge } from "@/components/ui/badge";
-import { useInView } from "@/hooks/use-in-view";
+import { useInView } from "motion/react";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
@@ -276,7 +276,10 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
   const reducedMotion = useReducedMotion();
   // DESIGN-MOTION-001 §7.3: at rest until scrolled into view, then alive;
   // pauses again if scrolled away.
-  const { ref: viewRef, inView } = useInView<HTMLDivElement>({ once: false, rootMargin: "0px" });
+  const viewRef = useRef<HTMLDivElement>(null);
+  // Continuous (not once): the beat walker pauses whenever the stage leaves
+  // the viewport and resumes when it returns.
+  const inView = useInView(viewRef, { amount: 0.15 });
   const scenario = SCENARIOS[scenarioId];
   const [beatIndex, setBeatIndex] = useState(0);
   const [messageVisible, setMessageVisible] = useState(false);

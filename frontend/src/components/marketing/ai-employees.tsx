@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { WorkingIndicator } from "@/components/ui/working-indicator";
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 
 const FUTURE_ROLES = ["Sales follow-up", "Support", "Scheduling"];
 

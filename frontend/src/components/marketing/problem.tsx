@@ -1,5 +1,5 @@
 import { Clock, MessageSquareOff, Users } from "lucide-react";
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 const PROBLEMS = [

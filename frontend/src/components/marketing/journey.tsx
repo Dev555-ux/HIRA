@@ -1,5 +1,5 @@
 import { MessageCircle, Share2, Sparkles, TrendingUp, Zap } from "lucide-react";
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 const JOURNEY = [

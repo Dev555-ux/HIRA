@@ -6,7 +6,7 @@ import {
   ShieldAlert,
   Target,
 } from "lucide-react";
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";

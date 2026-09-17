@@ -54,3 +54,30 @@ if (typeof window !== "undefined" && !window.matchMedia) {
     dispatchEvent: () => false,
   })) as typeof window.matchMedia;
 }
+
+// jsdom has no IntersectionObserver, and Motion's whileInView has no fallback
+// for its absence — without this, every revealed section would stay at
+// opacity 0 in tests and assertions about visible content would fail for the
+// wrong reason. The stub reports a single intersecting entry, which is the
+// state tests care about: the content is on screen.
+if (typeof window !== "undefined" && !window.IntersectionObserver) {
+  class StubIntersectionObserver implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = "";
+    readonly thresholds: ReadonlyArray<number> = [0];
+    constructor(private readonly callback: IntersectionObserverCallback) {}
+    observe(target: Element) {
+      this.callback(
+        [{ isIntersecting: true, target, intersectionRatio: 1 } as IntersectionObserverEntry],
+        this,
+      );
+    }
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+  window.IntersectionObserver = StubIntersectionObserver as unknown as typeof IntersectionObserver;
+  globalThis.IntersectionObserver = window.IntersectionObserver;
+}
