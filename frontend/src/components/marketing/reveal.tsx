@@ -19,6 +19,9 @@ export const Reveal = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
           if (typeof forwardedRef === "function") forwardedRef(node);
           else if (forwardedRef) forwardedRef.current = node;
         }}
+        // data-reveal marks "starts hidden, revealed by JS" — the noscript rule
+        // in app/layout.tsx targets it so this content is visible without JS.
+        data-reveal
         className={cn(className, inView ? "animate-fade-in-up" : "opacity-0")}
         {...props}
       >

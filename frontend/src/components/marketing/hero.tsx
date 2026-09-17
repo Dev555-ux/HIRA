@@ -132,6 +132,7 @@ export function Hero() {
           className="flex flex-col gap-5 text-center lg:text-left"
         >
           <m.div
+            data-reveal
             variants={fadeUp}
             className="flex items-center justify-center gap-2.5 lg:justify-start"
           >
@@ -151,6 +152,12 @@ export function Hero() {
               to carry a resolved-state signal from a demo that no longer
               lives in this column. */}
           <m.h1
+            // Spec amendment A3 (T1.1): the headline is the LCP element, so it must
+            // be visible in the server HTML rather than waiting for hydration.
+            // initial={false} renders it at its resting state and skips the entrance,
+            // while keeping it a variant child so the stagger indices of the blocks
+            // below are unchanged. T3.1 owns the hero timing rebuild.
+            initial={false}
             variants={fadeUp}
             // leading 1.08 → 1.02. At four lines of 68px type that is
             // ~24px of the ~60px overflow above, recovered without
@@ -187,6 +194,8 @@ export function Hero() {
           </m.h1>
 
           <m.p
+            // A3, as above: body copy above the fold is never gated on JS.
+            initial={false}
             variants={fadeUp}
             // 1.68 → 1.6: still a comfortable measure for 17px at this
             // width, and paired with the tighter headline above it keeps
@@ -207,7 +216,7 @@ export function Hero() {
           {/* mt-1 on the row, not a gap change: the CTA is the one block
               in the rail that should sit slightly apart from the text it
               concludes. */}
-          <m.div variants={fadeUp} className="mt-1 flex justify-center lg:justify-start">
+          <m.div data-reveal variants={fadeUp} className="mt-1 flex justify-center lg:justify-start">
             <m.div
               whileHover={{ y: -2, scale: 1.01 }}
               whileTap={{ y: 0, scale: 0.99 }}
@@ -246,14 +255,14 @@ export function Hero() {
             </m.div>
           </m.div>
 
-          <m.div variants={fadeUp}>
+          <m.div data-reveal variants={fadeUp}>
             <HeroTrustPills />
           </m.div>
 
           {/* The selector sits with the copy, not over the stage — it
               labels what the stage is playing, and at this position it is
               reachable before the demo in both reading and tab order. */}
-          <m.div variants={fadeUp}>
+          <m.div data-reveal variants={fadeUp}>
             <p className="mb-2.5 text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-muted-foreground">
               Try a scenario
             </p>
@@ -266,6 +275,7 @@ export function Hero() {
         </m.div>
 
         <m.div
+          data-reveal
           initial={{ opacity: 0, y: 24, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ ...springIn, delay: 0.2, ease: ease.out }}

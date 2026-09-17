@@ -37,6 +37,16 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
+      <head>
+        {/* Entrance animations start from a hidden state, which only JavaScript
+            can resolve. Without this, a visitor with JS disabled or still
+            loading sees an empty page. Every element that starts hidden carries
+            data-reveal, so this one rule makes all of them visible when there is
+            no script to animate them. */}
+        <noscript>
+          <style>{"[data-reveal]{opacity:1!important;transform:none!important}"}</style>
+        </noscript>
+      </head>
       <body className="min-h-screen antialiased">
         <script
           type="application/ld+json"

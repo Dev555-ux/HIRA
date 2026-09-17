@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Hero } from "./hero";
@@ -89,6 +90,25 @@ describe("Hero", () => {
     expect(
       screen.getByRole("group", { name: /speak with your team about an urgent issue/i }),
     ).toBeInTheDocument();
+  });
+
+  // T1.1 — the headline is the LCP element. Rendering it at opacity 0 means no
+  // copy is readable until JavaScript has loaded and hydrated, and defers LCP
+  // behind the bundle. This asserts the server HTML, not the hydrated DOM,
+  // because that is the state a visitor sees first.
+  it("server-renders the headline and lede visibly, without opacity gating", () => {
+    const html = renderToString(<Hero />);
+
+    const h1 = html.match(/<h1[^>]*>/)?.[0] ?? "";
+    expect(h1).not.toMatch(/opacity:\s*0[^.]/);
+
+    // Anything that does start hidden must carry data-reveal, which the
+    // <noscript> rule in app/layout.tsx targets.
+    const hidden = html.match(/<[a-z0-9]+[^>]*style="[^"]*opacity:0[^"]*"[^>]*>/g) ?? [];
+    const contentHidden = hidden.filter(
+      (tag) => !tag.includes("data-reveal") && !tag.includes('aria-hidden="true"'),
+    );
+    expect(contentHidden).toEqual([]);
   });
 
   it("renders a static, fully resolved stage for prefers-reduced-motion", () => {
