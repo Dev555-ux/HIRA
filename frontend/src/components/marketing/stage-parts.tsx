@@ -5,6 +5,7 @@ import * as m from "motion/react-m";
 import { Check, Paperclip, Mic } from "lucide-react";
 import { useCallback, useRef } from "react";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import { fadeUp, transition } from "@/lib/motion";
 import type * as React from "react";
 import type { LucideIcon } from "lucide-react";
 import { AIAvatar } from "@/components/ui/ai-avatar";
@@ -64,18 +65,32 @@ function Meta({ time, ticks }: { time: string; ticks?: boolean }) {
 
 export function CustomerBubble({ text, time }: { text: string; time: string }) {
   return (
-    <div className="animate-fade-in flex justify-start">
+    <m.div
+      layout="position"
+      transition={transition.enter}
+      variants={fadeUp}
+      initial="hidden"
+      animate="show"
+      className="flex justify-start"
+    >
       <div className="max-w-[86%] rounded-2xl rounded-bl-md bg-muted px-3 py-2 shadow-e1">
         <p className="text-[13px] leading-snug">{text}</p>
         <Meta time={time} />
       </div>
-    </div>
+    </m.div>
   );
 }
 
 export function ReplyBubble({ text, time }: { text: string; time: string }) {
   return (
-    <div className="animate-fade-in flex justify-end">
+    <m.div
+      layout="position"
+      transition={transition.enter}
+      variants={fadeUp}
+      initial="hidden"
+      animate="show"
+      className="flex justify-end"
+    >
       {/* bg-brand/20 + text-foreground, not the brand/brand-foreground pair:
           at 20% the fill is a tint over the screen, so the readable pairing
           is against the screen's own foreground. Measured, not assumed. */}
@@ -83,7 +98,7 @@ export function ReplyBubble({ text, time }: { text: string; time: string }) {
         <p className="text-[13px] leading-snug text-foreground">{text}</p>
         <Meta time={time} ticks />
       </div>
-    </div>
+    </m.div>
   );
 }
 
@@ -93,7 +108,14 @@ export function ReplyBubble({ text, time }: { text: string; time: string }) {
 // gain. Purely decorative, and the stage is aria-hidden regardless.
 export function TypingBubble() {
   return (
-    <div className="animate-fade-in flex justify-end">
+    <m.div
+      layout="position"
+      transition={transition.enter}
+      variants={fadeUp}
+      initial="hidden"
+      animate="show"
+      className="flex justify-end"
+    >
       <div className="flex items-center gap-1 rounded-2xl rounded-br-md bg-brand/12 px-3 py-2.5 ring-1 ring-brand/20">
         {[0, 1, 2].map((i) => (
           <span
@@ -103,7 +125,7 @@ export function TypingBubble() {
           />
         ))}
       </div>
-    </div>
+    </m.div>
   );
 }
 

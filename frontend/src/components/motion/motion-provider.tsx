@@ -1,11 +1,17 @@
 "use client";
 
-import { domAnimation, LazyMotion, MotionConfig } from "motion/react";
+import { LazyMotion, MotionConfig } from "motion/react";
 import { transition } from "@/lib/motion";
 
-// LazyMotion + `m` loads ~4.6kB of features for the initial render instead of
-// the full ~34kB `motion` component. `strict` makes a stray `motion.*` inside
-// this tree throw rather than silently pulling that bundle back in.
+// LazyMotion + `m` loads the feature set separately from the ~34kB `motion`
+// component. `strict` makes a stray `motion.*` inside this tree throw rather
+// than silently pulling that bundle back in.
+//
+// T3.6(b) — the features now load through a dynamic import, so the projection
+// code the chat thread needs for layout animation lands in its own chunk
+// instead of the initial bundle. `.then(mod => mod.default)` is load-bearing:
+// LazyFeatureBundle is `() => Promise<FeatureBundle>`, and handing it the
+// module namespace does not compile (spec amendment A5).
 //
 // reducedMotion="user" replaces the previous hand-rolled
 // `reducedMotion={hook ? "always" : "never"}`: the hook initialises to false on
@@ -17,7 +23,10 @@ import { transition } from "@/lib/motion";
 // should not pay for it.
 export function MotionProvider({ children }: { children: React.ReactNode }) {
   return (
-    <LazyMotion features={domAnimation} strict>
+    <LazyMotion
+      features={() => import("@/components/motion/features").then((mod) => mod.default)}
+      strict
+    >
       <MotionConfig reducedMotion="user" transition={transition.enter}>
         {children}
       </MotionConfig>

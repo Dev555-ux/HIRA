@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import type { ReactNode } from "react";
 import type { DeviceChrome } from "@/components/marketing/stage-parts";
@@ -194,7 +195,10 @@ export function PhoneFrame({
             </div>
 
             <m.div style={chrome?.thread} className="relative z-10 flex h-full flex-col pb-6 pt-[46px]">
-              {children}
+              {/* T3.6(b) — the message list. initial={false} so the thread that
+                  is already on screen when a scenario mounts does not replay
+                  its entrance; only messages arriving on later beats animate. */}
+              <AnimatePresence initial={false}>{children}</AnimatePresence>
             </m.div>
 
             <div
