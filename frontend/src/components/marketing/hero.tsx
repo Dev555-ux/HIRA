@@ -2,6 +2,7 @@
 
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { useState } from "react";
 import { HeroTrustPills } from "@/components/marketing/hero-trust-strip";
@@ -263,7 +264,22 @@ export function Hero() {
             aria-hidden="true"
             className="hero-floor pointer-events-none absolute -inset-x-32 -bottom-6 -z-10 h-40"
           />
-          <OrchestrationStage key={scenarioId} scenarioId={scenarioId} />
+          {/* T3.6(a) — switching scenarios used to replace a ~700px stage
+              between two frames, so the click had no visible consequence.
+              mode="wait" keeps exactly one stage mounted: the outgoing one
+              fades out before the incoming one mounts. Opacity only — the
+              stage contains a 3D-transformed device, and translating or
+              scaling it would re-rasterise that subtree. */}
+          <AnimatePresence mode="wait" initial={false}>
+            <m.div
+              key={scenarioId}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: transition.enter }}
+              exit={{ opacity: 0, transition: transition.exit }}
+            >
+              <OrchestrationStage scenarioId={scenarioId} />
+            </m.div>
+          </AnimatePresence>
         </m.div>
       </div>
       </section>

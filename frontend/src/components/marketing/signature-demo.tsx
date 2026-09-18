@@ -480,6 +480,15 @@ export function ScenarioSelector({
   return (
     <fieldset className={cn("flex flex-wrap justify-center gap-2", className)}>
       <legend className="sr-only">Choose a demo scenario</legend>
+      {/* T3.6(a) — the stage crossfades on selection, which assistive tech
+          cannot see. This announces the change once, and only the change:
+          it reads scenarioId, never the demo's beat state, so a running
+          scenario stays silent. Lives here rather than inside the stage
+          because the stage remounts per scenario, and a live region that
+          arrives with its text is not reliably announced. */}
+      <p aria-live="polite" className="sr-only">
+        {`Now playing: the ${SCENARIOS[scenarioId].chipLabel} scenario.`}
+      </p>
       {SCENARIO_ORDER.map((id) => (
         <label key={id} className="cursor-pointer">
           <input
