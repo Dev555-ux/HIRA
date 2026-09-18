@@ -435,7 +435,9 @@ const SETTLE = { stiffness: 105, damping: 30, mass: 1.15 } as const;
 export type DeviceChrome = {
   railL: React.CSSProperties;
   railR: React.CSSProperties;
-  glassEdge: React.CSSProperties;
+  glassEdgeA: React.CSSProperties;
+  glassEdgeB: React.CSSProperties;
+  glassEdgeEngaged: React.CSSProperties;
   island: React.CSSProperties;
   composer: React.CSSProperties;
   thread: React.CSSProperties;
@@ -500,12 +502,16 @@ export function DeviceShell({
   // not glowing: this rides the rotation, never the hover state, so it
   // behaves like an optical property rather than a highlight that switches
   // on.
-  const edgeAngle = useTransform(sx, [-0.5, 0.5], [115, 65]);
-  const edgeLight = useTransform(
-    [edgeAngle, sEngaged],
-    ([a, e]) =>
-      `linear-gradient(${a}deg, rgb(255 255 255 / ${0.05 + 0.05 * (e as number)}) 0%, transparent 18%, transparent 82%, rgb(255 255 255 / ${0.02 + 0.03 * (e as number)}) 100%)`,
-  );
+  // T2.2 (A7) — this used to rebuild a linear-gradient string from the
+  // rotation on every pointer frame, which repaints the glass-edge layer each
+  // time. Two static gradients at the extremes of the same 115deg..65deg
+  // sweep, cross-faded by the same sx, put the work on the compositor: the
+  // angles, alphas and ranges are unchanged, only the mechanism is. The
+  // component already uses this pattern for the two rails, for the same
+  // reason a single gradient cannot animate its own stops.
+  const edgeOpacityA = useTransform(sx, [-0.5, 0.5], [1, 0]);
+  const edgeOpacityB = useTransform(sx, [-0.5, 0.5], [0, 1]);
+  const edgeEngaged = useTransform(sEngaged, [0, 1], [0.7, 1]);
   // The shadow deepens and spreads as the device rises — a lift with a
   // constant shadow reads as the whole scene scaling, not as an object
   // leaving the surface.
@@ -514,16 +520,14 @@ export function DeviceShell({
   // it lifts, the contact shadow fades and spreads while the ambient one
   // deepens. Animating only the ambient shadow is why the old lift read as
   // the whole scene scaling instead of an object leaving the surface.
+  // T2.2 — the same two shadows, as two pre-blurred layers instead of one
+  // box-shadow string rebuilt per frame. Blur is fixed at the midpoint of the
+  // range each used to interpolate (ambient 40..68 -> 54, contact 10..22 ->
+  // 16); opacity and y still travel their original ranges, both on the
+  // compositor.
   const ambOpacity = useTransform(sEngaged, [0, 1], [0.42, 0.62]);
-  const ambBlur = useTransform(sEngaged, [0, 1], [40, 68]);
   const ambY = useTransform(sEngaged, [0, 1], [20, 36]);
   const contactOpacity = useTransform(sEngaged, [0, 1], [0.5, 0.26]);
-  const contactBlur = useTransform(sEngaged, [0, 1], [10, 22]);
-  const boxShadow = useTransform(
-    [ambY, ambBlur, ambOpacity, contactBlur, contactOpacity],
-    ([y, b, o, cb, co]) =>
-      `0 ${y}px ${b}px -12px rgb(0 0 0 / ${o}), 0 6px ${cb}px -8px rgb(0 0 0 / ${co})`,
-  );
 
   // The highlight sweeps opposite the tilt, which is what a reflection does:
   // the glass turns toward the light, so the bright band slides the other way.
@@ -534,8 +538,13 @@ export function DeviceShell({
   // few degrees. It also no longer fades fully to zero at rest — glass is
   // never matte, and a highlight that appears out of nothing announces the
   // hover instead of rewarding it.
-  const glareX = useTransform(sx, [-0.5, 0.5], ["78%", "18%"]);
-  const glareY = useTransform(sy, [-0.5, 0.5], ["72%", "22%"]);
+  // T2.2 — the centre used to move via --gx/--gy, repainting the radial every
+  // frame. The layer is now 3x the device and carries a centred gradient of
+  // the same relative size, translated instead: 78%..18% of the device width
+  // is +-0.28W..-0.32W from centre, which on a 3W box is the percentages
+  // below. Same travel, same size at any breakpoint, no repaint.
+  const glareX = useTransform(sx, [-0.5, 0.5], ["9.33%", "-10.67%"]);
+  const glareY = useTransform(sy, [-0.5, 0.5], ["7.33%", "-9.33%"]);
   const glareOpacity = useTransform(sEngaged, [0, 1], [0.35, 1]);
   // Edge lighting strengthens as the device turns into the light.
   const railLight = useTransform(sEngaged, [0, 1], [0, 1]);
@@ -601,13 +610,8 @@ export function DeviceShell({
   const glare = (
     <m.div
       aria-hidden="true"
-      // The cast is needed because framer's style prop types the CSS custom
-      // properties as plain strings; --gx/--gy are MotionValues so the
-      // gradient's centre animates on the compositor instead of re-rendering.
-      style={
-        { opacity: glareOpacity, "--gx": glareX, "--gy": glareY } as unknown as React.CSSProperties
-      }
-      className="pointer-events-none absolute inset-0 z-20 bg-[radial-gradient(70%_55%_at_var(--gx)_var(--gy),rgb(255_255_255/0.10),rgb(255_255_255/0.03)_45%,transparent_72%)]"
+      style={{ opacity: glareOpacity, x: glareX, y: glareY }}
+      className="pointer-events-none absolute -inset-[100%] z-20 bg-[radial-gradient(23.4%_18.3%_at_50%_50%,rgb(255_255_255/0.10),rgb(255_255_255/0.03)_45%,transparent_72%)]"
     />
   );
 
@@ -628,17 +632,30 @@ export function DeviceShell({
           rotateY,
           y: lift,
           scale,
-          boxShadow,
           transformStyle: "preserve-3d",
           borderRadius: "3.4rem",
           ["--rail-light" as string]: railLight,
         }}
         className="will-change-transform"
       >
+        {/* The two shadow layers, behind the device and rotating with it. Each
+            carries a static box-shadow; only opacity and y animate. */}
+        <m.div
+          aria-hidden="true"
+          style={{ opacity: ambOpacity, y: ambY }}
+          className="pointer-events-none absolute inset-0 -z-10 rounded-[3.4rem] shadow-[0_0_54px_-12px_rgb(0_0_0)]"
+        />
+        <m.div
+          aria-hidden="true"
+          style={{ opacity: contactOpacity }}
+          className="pointer-events-none absolute inset-0 -z-10 rounded-[3.4rem] shadow-[0_6px_16px_-8px_rgb(0_0_0)]"
+        />
         {children(glare, {
           railL: { opacity: railL },
           railR: { opacity: railR },
-          glassEdge: { backgroundImage: edgeLight },
+          glassEdgeA: { opacity: edgeOpacityA },
+          glassEdgeB: { opacity: edgeOpacityB },
+          glassEdgeEngaged: { opacity: edgeEngaged },
           island: { x: islandX, y: islandY },
           composer: { x: composerX, y: composerY },
           thread: { x: threadX, y: threadY },

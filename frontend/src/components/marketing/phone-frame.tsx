@@ -147,11 +147,26 @@ export function PhoneFrame({
                 rotation, not the hover state, so it behaves like an optical
                 property of the glass rather than a highlight that switches on
                 when a cursor arrives. */}
+            {/* T2.2 — two static gradients at the ends of the same sweep,
+                cross-faded by the rotation, inside a wrapper whose opacity
+                carries the engagement term. Previously one gradient string
+                rebuilt per pointer frame. */}
             <m.div
               aria-hidden="true"
-              style={chrome?.glassEdge}
+              style={chrome?.glassEdgeEngaged}
               className="pointer-events-none absolute inset-0 z-40 rounded-[2.7rem]"
-            />
+            >
+              <m.div
+                aria-hidden="true"
+                style={chrome?.glassEdgeA}
+                className="absolute inset-0 rounded-[2.7rem] bg-[linear-gradient(115deg,rgb(255_255_255/0.075)_0%,transparent_18%,transparent_82%,rgb(255_255_255/0.035)_100%)]"
+              />
+              <m.div
+                aria-hidden="true"
+                style={chrome?.glassEdgeB}
+                className="absolute inset-0 rounded-[2.7rem] bg-[linear-gradient(65deg,rgb(255_255_255/0.075)_0%,transparent_18%,transparent_82%,rgb(255_255_255/0.035)_100%)]"
+              />
+            </m.div>
             {/* Deepest layer — the chat ground. Moves least of anything on
                 the display, which is what makes the layers above it read as
                 floating over it. */}
