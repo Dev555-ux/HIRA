@@ -1,6 +1,6 @@
 "use client";
 
-import { animate, useMotionValue, useSpring, useTransform } from "motion/react";
+import { animate, AnimatePresence, useMotionValue, useSpring, useTransform } from "motion/react";
 import * as m from "motion/react-m";
 import { Check, Paperclip, Mic } from "lucide-react";
 import { useCallback, useRef } from "react";
@@ -296,14 +296,27 @@ export function SystemRow({
         {/* The second line swaps role → live status → outcome. One line, not
             two stacked, so the row height never changes and the connectors
             stay aligned with it. */}
-        <p
-          className={cn(
-            "truncate text-[11.5px] leading-tight transition-colors duration-[var(--motion-slow)]",
-            status === "done" ? "text-success" : status === "active" ? "text-brand" : "text-muted-foreground",
-          )}
-        >
-          {status === "idle" ? role : statusText}
-        </p>
+        {/* T3.7 — below lg the connector cables are not rendered, so the
+            travelling pulse that signals "work is moving" is absent exactly
+            where the phone fills the screen, and this line used to swap
+            between frames. Keyed on status so each state gets its own
+            element; mode="wait" so the outgoing text clears before the
+            incoming one arrives, which is what makes the change readable
+            rather than a cross-fade of two strings in the same place. */}
+        <AnimatePresence mode="wait" initial={false}>
+          <m.p
+            key={status}
+            initial={{ opacity: 0, x: 4 }}
+            animate={{ opacity: 1, x: 0, transition: transition.enter }}
+            exit={{ opacity: 0, transition: transition.exit }}
+            className={cn(
+              "truncate text-[11.5px] leading-tight transition-colors duration-[var(--motion-slow)]",
+              status === "done" ? "text-success" : status === "active" ? "text-brand" : "text-muted-foreground",
+            )}
+          >
+            {status === "idle" ? role : statusText}
+          </m.p>
+        </AnimatePresence>
       </div>
       {status === "done" && (
         <Check className="size-4 shrink-0 text-success" strokeWidth={2.5} aria-hidden="true" />
