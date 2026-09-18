@@ -32,8 +32,10 @@ export function AiEmployees() {
     <section className="py-10 sm:py-12">
       <Reveal className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <h2 className="sr-only">AI employees, not just automations</h2>
+        {/* T4.1 — no `interactive`: the hover lift signalled a click this card
+            does not accept. The mouse/focus handlers stay; they drive the
+            WorkingIndicator, which has a focus path as well as a hover one. */}
         <Card
-          interactive
           className="glass-flat mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-2xl border border-[color:var(--glass-border)] p-6 text-center sm:flex-row sm:gap-6 sm:text-left"
           onMouseEnter={() => setHovering(true)}
           onMouseLeave={() => setHovering(false)}
