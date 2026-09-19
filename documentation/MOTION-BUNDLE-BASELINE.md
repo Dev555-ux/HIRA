@@ -23,6 +23,8 @@ code splitting `LazyMotion` exists for).
 | T3.5 | 36.5 kB | 168 kB | Connector draw; +2 kB is the client boundary this adds to a server component |
 | T3.6(a) | 38.3 kB | 170 kB | Scenario crossfade; +2 kB is the `AnimatePresence` import |
 | **T2.1** | **38.3 kB** | **170 kB** | Guard + unreferenced loader. No change: `features.ts` is in no chunk |
+| T3.6(b) / T2.2 / T2.3 / T3.7 / T4.1 / T4.2 | 33.9 kB | 166 kB | Loader wired; `domMax` moved to its own async chunk |
+| **T5.3** | **34.2 kB** | **167 kB** | Demo pause control. +330 B gzip exact (166.21 → 166.54); the table step is 3-sig-fig rounding |
 
 ## The async feature loader
 
