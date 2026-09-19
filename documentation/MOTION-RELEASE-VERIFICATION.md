@@ -227,7 +227,7 @@ No runtime code was modified.
 | M2 Performance | T2.1, T2.2, T2.3 | **PASS** |
 | M3 High Impact UX | T3.1, T3.2, T3.4, T3.5, T3.6(a), T3.6(b), T3.7 | **PASS** |
 | M4 Micro-interactions | T4.1, T4.2 | **PASS** |
-| T5.2 Auth shell height | — | **BLOCKED** |
+| T5.2 Auth shell height | — | **PASS** (completed after this report; see AUTH-SHELL-RESERVATION.md) |
 | T5.3 Accessibility + pause control | — | **PASS** |
 | T5.4 Release verification | — | **PASS** |
 
@@ -240,10 +240,9 @@ specification to track.
 
 ### Blocked
 
-- **T5.2 — auth shell height reservation.** Needs real Clerk `<SignIn />` and
-  `<SignUp />` widget heights at 390 and 1440. Synthetic keys produce a client
-  crash, so the measurement cannot be taken here. No code written; no estimate
-  used.
+- ~~**T5.2 — auth shell height reservation.**~~ **Resolved.** Measured against a
+  real Clerk Development instance and completed; see
+  `AUTH-SHELL-RESERVATION.md`. CLS on both auth routes is now 0.
 
 ### Deferred
 
