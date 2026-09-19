@@ -64,3 +64,12 @@ added: it costs readability and creates stale-closure risk for no gain.
 8 renders per loop in `OrchestrationStage` (one per beat), 1 `Hero` render per
 scenario switch, and a stage remount per switch. All are caused by state the
 user or the demo actually changed, and all are well inside one frame.
+
+## Still valid at T5.4
+
+Re-checked during the release verification. `OrchestrationStage` has changed
+twice since this profile — T3.7 added the status-line crossfade, T5.3 added
+the pause control — and neither adds per-frame work. The conclusion holds,
+corroborated end to end: through a full demo loop at **4x CPU throttle**, the
+worst frame was **17.7 ms** and **no frame exceeded 33 ms**, at 1440 x 900 and
+390 x 844 alike. Still no reason to consolidate the beat state.

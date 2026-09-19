@@ -28,15 +28,13 @@ code splitting `LazyMotion` exists for).
 
 ## The async feature loader
 
-`src/components/motion/features.ts` exists but is deliberately unreferenced —
-verified: it appears in no emitted chunk, and `/` is byte-for-byte the same
-size with and without it. It exists so layout animation can be added later
-without putting `domMax` in the initial bundle.
+`src/components/motion/features.ts` re-exports `domMax` as its default. T2.1
+added it unreferenced; **T3.6(b) wired it to `MotionProvider`**, because the
+chat thread's `layout="position"` needs the projection code that `domAnimation`
+does not carry.
 
-Measured with the loader temporarily wired to `MotionProvider` (throwaway
-copy, not shipped): `/` first-load fell to **166 kB** and the projection code
-moved into a separate 60 kB chunk that is not in the page's initial list.
-Consuming it requires resolving the module's default export:
+It loads through a dynamic import, so that code lands in its own chunk instead
+of the initial bundle:
 
 ```tsx
 <LazyMotion features={() => import("@/components/motion/features").then((mod) => mod.default)} strict>
@@ -44,4 +42,9 @@ Consuming it requires resolving the module's default export:
 
 The `.then((mod) => mod.default)` is load-bearing: `LazyFeatureBundle` is
 `() => Promise<FeatureBundle>`, so handing it the module namespace fails to
-compile with "Property 'renderer' is missing".
+compile with "Property 'renderer' is missing" (spec amendment A5).
+
+Verified at T5.4 against the shipped build: the Motion runtime in the initial
+bundle is **22.2 kB gzipped**, and the feature bundle is a **19.1 kB gzipped**
+chunk that is **not** in the page's initial file list — it is fetched after
+first paint. Wiring it *reduced* `/` first-load from 170 kB to 166 kB.
