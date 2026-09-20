@@ -5,6 +5,7 @@ tests monkeypatch them down to something trivial to trigger deterministically
 without sending dozens of requests.
 """
 
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from app.ai.llm.mock import MockProvider
@@ -131,3 +132,57 @@ def test_business_creation_rate_limit_returns_429(db_session, monkeypatch):
 
     assert first.status_code == 201
     assert second.status_code == 429
+
+
+# --- Sprint 82: the two Meta-facing connect paths -------------------------
+
+
+def test_whatsapp_connect_rate_limit_returns_429(db_session, monkeypatch):
+    """Every call to this route spends a live Graph API round-trip on Meta's
+    quota before it can even fail, so an unbounded retry loop is expensive
+    in a way an ordinary CRUD route isn't."""
+    monkeypatch.setattr(settings, "rate_limit_whatsapp_connect", "1/minute")
+    monkeypatch.setattr(settings, "calendar_encryption_key", Fernet.generate_key().decode())
+    monkeypatch.setattr(
+        "app.whatsapp.credentials.verify_whatsapp_credentials",
+        lambda phone_number_id, access_token, client=None: "+1 555 010 0000",
+    )
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+    payload = {
+        "phone_number_id": "PN1",
+        "whatsapp_business_account_id": "WABA1",
+        "access_token": "token",
+        "app_secret": "secret",
+    }
+
+    first = client.post("/api/v1/whatsapp/connect", headers=_auth(), json=payload)
+    second = client.post("/api/v1/whatsapp/connect", headers=_auth(), json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert int(second.headers["Retry-After"]) > 0
+    app.dependency_overrides.clear()
+
+
+def test_embedded_signup_routes_are_rate_limited(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "enable_embedded_signup", True)
+    monkeypatch.setattr(settings, "rate_limit_embedded_signup", "1/minute")
+    _seed_business(db_session, "A", "user_a")
+    db_session.commit()
+    client = _client(db_session, claims_for_token=lambda t: {"sub": "user_a"})
+
+    # The stub provider 503s both calls; the limiter runs first either way,
+    # which is the point — an unavailable flow must not be a free retry loop.
+    assert client.post("/api/v1/whatsapp/embedded-signup/start", headers=_auth()).status_code == 503
+    assert client.post("/api/v1/whatsapp/embedded-signup/start", headers=_auth()).status_code == 429
+
+    callback = {"code": "c", "state": "s"}
+    first = client.post("/api/v1/whatsapp/embedded-signup/callback", headers=_auth(), json=callback)
+    second = client.post(
+        "/api/v1/whatsapp/embedded-signup/callback", headers=_auth(), json=callback
+    )
+    assert first.status_code == 503
+    assert second.status_code == 429
+    app.dependency_overrides.clear()
