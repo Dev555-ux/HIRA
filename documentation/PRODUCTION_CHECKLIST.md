@@ -9,7 +9,7 @@ This is a checklist, not a design doc — it exists to answer "can we put a real
 ## Blocking — must resolve before onboarding a real beta business
 
 - [ ] **Permanent HTTPS deployment.** The backend and frontend both currently run on a laptop + ngrok tunnel (`INFRA-001`). No hosting decision has been made yet — this is explicitly a founder decision (a paid service / infrastructure choice), not something this sprint could resolve unilaterally.
-- [ ] **Production secrets manager.** All secrets (`WHATSAPP_ACCESS_TOKEN`, `GROQ_API_KEY`/`ANTHROPIC_API_KEY`, `DATABASE_URL`, `CALENDAR_ENCRYPTION_KEY`, Clerk keys) live in a local, git-ignored `.env` file today (`INFRA-002`). Fine for one founder's laptop; not fine for a real deployment.
+- [ ] **Production secrets manager.** All secrets (`META_APP_SECRET`, `GROQ_API_KEY`/`ANTHROPIC_API_KEY`, `DATABASE_URL`, `CALENDAR_ENCRYPTION_KEY`, Clerk keys) live in a local, git-ignored `.env` file today (`INFRA-002`). Fine for one founder's laptop; not fine for a real deployment.
 - [ ] **`FRONTEND_URL` set to the real domain** once deployed. Confirmed this sprint: the backend's CORS policy (`app/main.py`) and the Google OAuth callback redirect (`app/api/calendar.py`) both derive from `settings.frontend_url`, which defaults to `http://localhost:3000`. Leaving it unset in production means the deployed dashboard is silently CORS-blocked from calling its own API. (Fixed this sprint: CORS previously had *no* path from this setting into `allow_origins` at all — see below.)
 - [ ] **Re-verify the WhatsApp webhook end-to-end against the deployed URL** (`INFRA-006`) — the current live-verified round-trip (`PROGRESS.md`, 2026-07-04) was proven against ngrok, a different network path than a real deployment.
 

@@ -1,14 +1,16 @@
 # WhatsApp Onboarding v2 — Founder-First Design (Sprint 81)
 
-Status: **Design only — not implemented, not approved for build.** See `DECISIONS.md` DEC-038/DEC-041/DEC-042 for what's already shipped (guided-manual v1) and why Embedded Signup was deferred until now.
+Status (updated Sprint 83, 2026-09-19): **Implemented, awaiting live validation.** The flow described below is built end to end — provider, Graph API calls, frontend screens, error recovery (DEC-061) — on Sprint 82's foundation (DEC-060). It has not yet run against Meta's real API: everything is verified against a mocked Graph API built from Meta's documented response shapes. Guided-manual v1 remains the default entry point until a live pilot confirms this one (§10 steps 6-7).
 
 This document is the complete design for replacing HIRA's current WhatsApp connection flow — where a business owner creates their own Meta App and pastes four values into a form — with Meta's Embedded Signup: a hosted, one-popup flow that removes that manual step entirely. It does not contain implementation code. It is written to be reviewed and approved before any code is written.
 
-## 0. The one fact that gates everything below
+## 0. The fact that used to gate everything below — now resolved
 
-**Embedded Signup requires Meta Tech Provider approval.** This is an external, non-engineering approval process (business verification + app review, submitted to Meta, outcome and timeline not controlled by HIRA). `TODOS.md` (`ONBOARD-E`) has listed this as "not yet started" and "the longest lead-time item in the onboarding plan." At the time of writing this design, **that status was not re-confirmed with the founder** — this document proceeds with the full target-state design regardless, per explicit instruction, but the Implementation Roadmap (§10) treats confirming/advancing this approval as the literal first step, not an afterthought.
+**Embedded Signup requires Meta Tech Provider approval, and Stoneveil now has it.** Meta's dashboard confirms Tech Provider onboarding is complete (2/2 steps) and Partner Tools are available. The external, non-engineering approval process that this document was written around — and that DEC-038, DEC-042 and DEC-052 all deferred to — is done.
 
-Everything in Phases 1–7 below is the destination. Whether HIRA can start building it this week or needs to spend the next several weeks on a Meta approval queue first is a fact only the founder can supply — see §10.
+What remains is engineering, entirely within HIRA's control. As of Sprint 82 the foundation is built (see the Status line above); §10's roadmap steps 3–7 are what's left.
+
+Everything in Phases 1–7 below is the destination, unchanged by the approval landing.
 
 ---
 
@@ -314,11 +316,12 @@ Covered inline with each screen in §3 (purpose / copy / primary action / states
 
 ## 10. Implementation Roadmap
 
-1. **Confirm Meta Tech Provider approval status with the founder** — either it exists, is in flight, or needs to be started. This is the literal first task, ahead of any code.
-2. **If not yet applied**: submit the Tech Provider application (business verification + app review, including the two required demonstration videos per §1's research) — external, long lead time, should run in parallel with anything else HIRA works on, not block other Phase-2 reliability work.
-3. **Backend**: build the Embedded Signup callback endpoint (code exchange, `/register` call, `subscribed_apps` call) alongside — not replacing — the existing guided-manual v1 endpoints, so both can coexist during rollout.
-4. **Frontend**: build the Welcome/Connecting/Success/error screens per §3, wire the JS SDK popup launch.
-5. **Connection Health**: generalize the existing `last_inbound_at` signal (DEC-041) to also react to permission/auth errors, per §5.
+1. ~~**Confirm Meta Tech Provider approval status with the founder**~~ — done. Approval granted (confirmed on Meta's dashboard, Sprint 82).
+2. ~~**Submit the Tech Provider application**~~ — done, and approved.
+   **2b. Foundation (Sprint 82, DEC-060)** — done: Tech Provider configuration centralized in `app/meta.py`, the webhook verifying both architectures, the schema and `WhatsAppOnboardingAttempt` model the callback will write, rate limits, and structured onboarding logs. No Meta call implemented.
+3. ~~**Backend**: build the Embedded Signup callback endpoint~~ — done (Sprint 83, DEC-061), alongside the guided-manual v1 endpoints, which are untouched.
+4. ~~**Frontend**: build the Welcome/Connecting/Success/error screens per §3, wire the JS SDK popup launch~~ — done (Sprint 83).
+5. **Connection Health**: generalize the existing `last_inbound_at` signal (DEC-041) to also react to permission/auth errors, per §5. **Still open** — the reactive half doesn't exist yet; a revoked token is currently discovered only when a send fails.
 6. **Pilot**: connect a small number of real businesses through the new flow while guided-manual v1 stays available, to validate the 10/7-days cap doesn't block early rollout and that Meta's real screens behave as documented.
 7. **Cut over**: make Embedded Signup the default entry point once validated; keep guided-manual v1 as the documented fallback (§9).
 
