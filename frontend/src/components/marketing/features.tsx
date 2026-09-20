@@ -6,7 +6,7 @@ import {
   ShieldAlert,
   Target,
 } from "lucide-react";
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -60,11 +60,11 @@ const FEATURES = [
 // compact. Spans only apply at `lg:` — sm is a plain balanced 2-up grid,
 // and mobile is simple stacked single-column cards, per the brief.
 //
-// Cards reuse <Card interactive> verbatim (existing radius/shadow/elevation
-// and the existing hover-lift transition) — no new card treatment, no
-// glassmorphism, no gradients. The hover lift is a resting/hover/active
-// CSS transition already defined on Card itself, so this stays pure CSS —
-// no client state, no "use client" needed anywhere in this file.
+// Cards reuse <Card> verbatim (existing radius/shadow/elevation) — no new
+// card treatment, no glassmorphism, no gradients. T4.1 dropped `interactive`:
+// the hover lift it added promised a click these cards do not accept
+// (DESIGN-MOTION-001 §5.2 — only clickable cards move). Still pure CSS, still
+// no client state and no "use client" anywhere in this file.
 const LARGE_FEATURE_INDICES = new Set([0, 1, 5]);
 const LARGE_SPAN_CLASS_NAME: Record<number, string> = {
   0: "lg:col-span-2",
@@ -93,7 +93,6 @@ export function Features() {
                     surface the brief names as a good glass candidate — not a
                     large panel or a decorative blur. */}
                 <Card
-                  interactive
                   className={cn(
                     "glass-flat flex h-full flex-col gap-3 border border-[color:var(--glass-border)]",
                     large ? "p-6 sm:p-8" : "p-5 sm:p-6",

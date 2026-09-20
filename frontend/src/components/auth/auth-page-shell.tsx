@@ -29,7 +29,15 @@ export function AuthPageShell({
         <p className="mt-1.5 text-sm text-muted-foreground">{subheading}</p>
       </div>
 
-      {children}
+      {/* T5.2 — Clerk renders client-side, so without a reservation the widget
+          pops in and drags the centred stack with it: measured CLS 0.186 on
+          /sign-up at 390. The height is the taller of the two widgets at each
+          breakpoint, measured on a real Clerk instance (.cl-rootBox):
+          sign-in 488 at both widths; sign-up 570 at 1440, 588 at 390. One
+          shared shell serves both routes, so both reserve the larger value.
+          Sized, not full-width, so it stays a centred flex item and the
+          layout is otherwise untouched. */}
+      <div className="min-h-[588px] lg:min-h-[570px]">{children}</div>
     </div>
   );
 }

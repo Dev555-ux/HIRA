@@ -1,4 +1,4 @@
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 import { SectionHeader } from "@/components/marketing/section-header";
 
 export const FAQS = [
@@ -62,7 +62,7 @@ export function Faq() {
             page should feel more intimate than the product's own feature
             sheet, not identical to it. Narrower column (max-w-2xl vs
             max-w-3xl), smaller question type, tighter row padding. */}
-        <div className="mt-12 divide-y divide-border border-t">
+        <div className="faq mt-12 divide-y divide-border border-t">
           {FAQS.map((faq) => (
             <details key={faq.question} className="group py-4">
               {/* Signal & Depth PR-7 — <summary> is natively focusable but

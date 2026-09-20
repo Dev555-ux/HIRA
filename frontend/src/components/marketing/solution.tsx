@@ -1,4 +1,4 @@
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 
 // The three-card breakdown of what "one employee" means (knowledge, calendar,
 // hand-off) used to live here — it's cut because Features below covers the

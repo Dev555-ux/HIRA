@@ -1,9 +1,11 @@
 "use client";
 
-import { animate, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
+import { animate, AnimatePresence, useMotionValue, useSpring, useTransform } from "motion/react";
+import * as m from "motion/react-m";
 import { Check, Paperclip, Mic } from "lucide-react";
 import { useCallback, useRef } from "react";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import { fadeUp, transition } from "@/lib/motion";
 import type * as React from "react";
 import type { LucideIcon } from "lucide-react";
 import { AIAvatar } from "@/components/ui/ai-avatar";
@@ -63,18 +65,32 @@ function Meta({ time, ticks }: { time: string; ticks?: boolean }) {
 
 export function CustomerBubble({ text, time }: { text: string; time: string }) {
   return (
-    <div className="animate-fade-in flex justify-start">
+    <m.div
+      layout="position"
+      transition={transition.enter}
+      variants={fadeUp}
+      initial="hidden"
+      animate="show"
+      className="flex justify-start"
+    >
       <div className="max-w-[86%] rounded-2xl rounded-bl-md bg-muted px-3 py-2 shadow-e1">
         <p className="text-[13px] leading-snug">{text}</p>
         <Meta time={time} />
       </div>
-    </div>
+    </m.div>
   );
 }
 
 export function ReplyBubble({ text, time }: { text: string; time: string }) {
   return (
-    <div className="animate-fade-in flex justify-end">
+    <m.div
+      layout="position"
+      transition={transition.enter}
+      variants={fadeUp}
+      initial="hidden"
+      animate="show"
+      className="flex justify-end"
+    >
       {/* bg-brand/20 + text-foreground, not the brand/brand-foreground pair:
           at 20% the fill is a tint over the screen, so the readable pairing
           is against the screen's own foreground. Measured, not assumed. */}
@@ -82,7 +98,7 @@ export function ReplyBubble({ text, time }: { text: string; time: string }) {
         <p className="text-[13px] leading-snug text-foreground">{text}</p>
         <Meta time={time} ticks />
       </div>
-    </div>
+    </m.div>
   );
 }
 
@@ -92,7 +108,14 @@ export function ReplyBubble({ text, time }: { text: string; time: string }) {
 // gain. Purely decorative, and the stage is aria-hidden regardless.
 export function TypingBubble() {
   return (
-    <div className="animate-fade-in flex justify-end">
+    <m.div
+      layout="position"
+      transition={transition.enter}
+      variants={fadeUp}
+      initial="hidden"
+      animate="show"
+      className="flex justify-end"
+    >
       <div className="flex items-center gap-1 rounded-2xl rounded-br-md bg-brand/12 px-3 py-2.5 ring-1 ring-brand/20">
         {[0, 1, 2].map((i) => (
           <span
@@ -102,7 +125,7 @@ export function TypingBubble() {
           />
         ))}
       </div>
-    </div>
+    </m.div>
   );
 }
 
@@ -112,13 +135,13 @@ export function Composer({ style }: { style?: React.CSSProperties }) {
   return (
     // Second-closest layer to the glass after the island, so it travels
     // further than the thread behind it.
-    <motion.div style={style} className="relative z-10 flex items-center gap-2 px-3.5 pt-2.5">
+    <m.div style={style} className="relative z-10 flex items-center gap-2 px-3.5 pt-2.5">
       <Paperclip className="size-4 shrink-0 text-muted-foreground/70" aria-hidden="true" />
       <div className="glass flex h-8 flex-1 items-center rounded-full border border-[color:var(--glass-border)] px-3">
         <span className="text-[12px] text-muted-foreground/70">Message</span>
       </div>
       <Mic className="size-4 shrink-0 text-muted-foreground/70" aria-hidden="true" />
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -273,14 +296,27 @@ export function SystemRow({
         {/* The second line swaps role → live status → outcome. One line, not
             two stacked, so the row height never changes and the connectors
             stay aligned with it. */}
-        <p
-          className={cn(
-            "truncate text-[11.5px] leading-tight transition-colors duration-[var(--motion-slow)]",
-            status === "done" ? "text-success" : status === "active" ? "text-brand" : "text-muted-foreground",
-          )}
-        >
-          {status === "idle" ? role : statusText}
-        </p>
+        {/* T3.7 — below lg the connector cables are not rendered, so the
+            travelling pulse that signals "work is moving" is absent exactly
+            where the phone fills the screen, and this line used to swap
+            between frames. Keyed on status so each state gets its own
+            element; mode="wait" so the outgoing text clears before the
+            incoming one arrives, which is what makes the change readable
+            rather than a cross-fade of two strings in the same place. */}
+        <AnimatePresence mode="wait" initial={false}>
+          <m.p
+            key={status}
+            initial={{ opacity: 0, x: 4 }}
+            animate={{ opacity: 1, x: 0, transition: transition.enter }}
+            exit={{ opacity: 0, transition: transition.exit }}
+            className={cn(
+              "truncate text-[11.5px] leading-tight transition-colors duration-[var(--motion-slow)]",
+              status === "done" ? "text-success" : status === "active" ? "text-brand" : "text-muted-foreground",
+            )}
+          >
+            {status === "idle" ? role : statusText}
+          </m.p>
+        </AnimatePresence>
       </div>
       {status === "done" && (
         <Check className="size-4 shrink-0 text-success" strokeWidth={2.5} aria-hidden="true" />
@@ -412,7 +448,9 @@ const SETTLE = { stiffness: 105, damping: 30, mass: 1.15 } as const;
 export type DeviceChrome = {
   railL: React.CSSProperties;
   railR: React.CSSProperties;
-  glassEdge: React.CSSProperties;
+  glassEdgeA: React.CSSProperties;
+  glassEdgeB: React.CSSProperties;
+  glassEdgeEngaged: React.CSSProperties;
   island: React.CSSProperties;
   composer: React.CSSProperties;
   thread: React.CSSProperties;
@@ -477,12 +515,16 @@ export function DeviceShell({
   // not glowing: this rides the rotation, never the hover state, so it
   // behaves like an optical property rather than a highlight that switches
   // on.
-  const edgeAngle = useTransform(sx, [-0.5, 0.5], [115, 65]);
-  const edgeLight = useTransform(
-    [edgeAngle, sEngaged],
-    ([a, e]) =>
-      `linear-gradient(${a}deg, rgb(255 255 255 / ${0.05 + 0.05 * (e as number)}) 0%, transparent 18%, transparent 82%, rgb(255 255 255 / ${0.02 + 0.03 * (e as number)}) 100%)`,
-  );
+  // T2.2 (A7) — this used to rebuild a linear-gradient string from the
+  // rotation on every pointer frame, which repaints the glass-edge layer each
+  // time. Two static gradients at the extremes of the same 115deg..65deg
+  // sweep, cross-faded by the same sx, put the work on the compositor: the
+  // angles, alphas and ranges are unchanged, only the mechanism is. The
+  // component already uses this pattern for the two rails, for the same
+  // reason a single gradient cannot animate its own stops.
+  const edgeOpacityA = useTransform(sx, [-0.5, 0.5], [1, 0]);
+  const edgeOpacityB = useTransform(sx, [-0.5, 0.5], [0, 1]);
+  const edgeEngaged = useTransform(sEngaged, [0, 1], [0.7, 1]);
   // The shadow deepens and spreads as the device rises — a lift with a
   // constant shadow reads as the whole scene scaling, not as an object
   // leaving the surface.
@@ -491,16 +533,14 @@ export function DeviceShell({
   // it lifts, the contact shadow fades and spreads while the ambient one
   // deepens. Animating only the ambient shadow is why the old lift read as
   // the whole scene scaling instead of an object leaving the surface.
+  // T2.2 — the same two shadows, as two pre-blurred layers instead of one
+  // box-shadow string rebuilt per frame. Blur is fixed at the midpoint of the
+  // range each used to interpolate (ambient 40..68 -> 54, contact 10..22 ->
+  // 16); opacity and y still travel their original ranges, both on the
+  // compositor.
   const ambOpacity = useTransform(sEngaged, [0, 1], [0.42, 0.62]);
-  const ambBlur = useTransform(sEngaged, [0, 1], [40, 68]);
   const ambY = useTransform(sEngaged, [0, 1], [20, 36]);
   const contactOpacity = useTransform(sEngaged, [0, 1], [0.5, 0.26]);
-  const contactBlur = useTransform(sEngaged, [0, 1], [10, 22]);
-  const boxShadow = useTransform(
-    [ambY, ambBlur, ambOpacity, contactBlur, contactOpacity],
-    ([y, b, o, cb, co]) =>
-      `0 ${y}px ${b}px -12px rgb(0 0 0 / ${o}), 0 6px ${cb}px -8px rgb(0 0 0 / ${co})`,
-  );
 
   // The highlight sweeps opposite the tilt, which is what a reflection does:
   // the glass turns toward the light, so the bright band slides the other way.
@@ -511,8 +551,13 @@ export function DeviceShell({
   // few degrees. It also no longer fades fully to zero at rest — glass is
   // never matte, and a highlight that appears out of nothing announces the
   // hover instead of rewarding it.
-  const glareX = useTransform(sx, [-0.5, 0.5], ["78%", "18%"]);
-  const glareY = useTransform(sy, [-0.5, 0.5], ["72%", "22%"]);
+  // T2.2 — the centre used to move via --gx/--gy, repainting the radial every
+  // frame. The layer is now 3x the device and carries a centred gradient of
+  // the same relative size, translated instead: 78%..18% of the device width
+  // is +-0.28W..-0.32W from centre, which on a 3W box is the percentages
+  // below. Same travel, same size at any breakpoint, no repaint.
+  const glareX = useTransform(sx, [-0.5, 0.5], ["9.33%", "-10.67%"]);
+  const glareY = useTransform(sy, [-0.5, 0.5], ["7.33%", "-9.33%"]);
   const glareOpacity = useTransform(sEngaged, [0, 1], [0.35, 1]);
   // Edge lighting strengthens as the device turns into the light.
   const railLight = useTransform(sEngaged, [0, 1], [0, 1]);
@@ -576,15 +621,10 @@ export function DeviceShell({
   }
 
   const glare = (
-    <motion.div
+    <m.div
       aria-hidden="true"
-      // The cast is needed because framer's style prop types the CSS custom
-      // properties as plain strings; --gx/--gy are MotionValues so the
-      // gradient's centre animates on the compositor instead of re-rendering.
-      style={
-        { opacity: glareOpacity, "--gx": glareX, "--gy": glareY } as unknown as React.CSSProperties
-      }
-      className="pointer-events-none absolute inset-0 z-20 bg-[radial-gradient(70%_55%_at_var(--gx)_var(--gy),rgb(255_255_255/0.10),rgb(255_255_255/0.03)_45%,transparent_72%)]"
+      style={{ opacity: glareOpacity, x: glareX, y: glareY }}
+      className="pointer-events-none absolute -inset-[100%] z-20 bg-[radial-gradient(23.4%_18.3%_at_50%_50%,rgb(255_255_255/0.10),rgb(255_255_255/0.03)_45%,transparent_72%)]"
     />
   );
 
@@ -592,7 +632,7 @@ export function DeviceShell({
     // The perspective lives on the wrapper and the transform on the child:
     // putting both on one element makes the rotation flat and lifeless.
     <div style={{ perspective: 2200 }} className="w-full">
-      <motion.div
+      <m.div
         ref={ref}
         // Mouse events, not pointer events. The tilt is a hover affordance
         // and hover does not exist on touch — pointer events would fire on a
@@ -605,23 +645,36 @@ export function DeviceShell({
           rotateY,
           y: lift,
           scale,
-          boxShadow,
           transformStyle: "preserve-3d",
           borderRadius: "3.4rem",
           ["--rail-light" as string]: railLight,
         }}
         className="will-change-transform"
       >
+        {/* The two shadow layers, behind the device and rotating with it. Each
+            carries a static box-shadow; only opacity and y animate. */}
+        <m.div
+          aria-hidden="true"
+          style={{ opacity: ambOpacity, y: ambY }}
+          className="pointer-events-none absolute inset-0 -z-10 rounded-[3.4rem] shadow-[0_0_54px_-12px_rgb(0_0_0)]"
+        />
+        <m.div
+          aria-hidden="true"
+          style={{ opacity: contactOpacity }}
+          className="pointer-events-none absolute inset-0 -z-10 rounded-[3.4rem] shadow-[0_6px_16px_-8px_rgb(0_0_0)]"
+        />
         {children(glare, {
           railL: { opacity: railL },
           railR: { opacity: railR },
-          glassEdge: { backgroundImage: edgeLight },
+          glassEdgeA: { opacity: edgeOpacityA },
+          glassEdgeB: { opacity: edgeOpacityB },
+          glassEdgeEngaged: { opacity: edgeEngaged },
           island: { x: islandX, y: islandY },
           composer: { x: composerX, y: composerY },
           thread: { x: threadX, y: threadY },
           bg: { x: bgX, y: bgY },
         } as unknown as DeviceChrome)}
-      </motion.div>
+      </m.div>
     </div>
   );
 }

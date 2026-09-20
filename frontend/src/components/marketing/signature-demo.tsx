@@ -1,7 +1,7 @@
 "use client";
 
-import { BookOpen, Calendar, UserCheck, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BookOpen, Calendar, Pause, Play, UserCheck, Users } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { PhoneFrame } from "@/components/marketing/phone-frame";
 import {
@@ -17,7 +17,7 @@ import {
   TypingBubble,
 } from "@/components/marketing/stage-parts";
 import { Badge } from "@/components/ui/badge";
-import { useInView } from "@/hooks/use-in-view";
+import { useInView } from "motion/react";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
@@ -276,7 +276,10 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
   const reducedMotion = useReducedMotion();
   // DESIGN-MOTION-001 §7.3: at rest until scrolled into view, then alive;
   // pauses again if scrolled away.
-  const { ref: viewRef, inView } = useInView<HTMLDivElement>({ once: false, rootMargin: "0px" });
+  const viewRef = useRef<HTMLDivElement>(null);
+  // Continuous (not once): the beat walker pauses whenever the stage leaves
+  // the viewport and resumes when it returns.
+  const inView = useInView(viewRef, { amount: 0.15 });
   const scenario = SCENARIOS[scenarioId];
   const [beatIndex, setBeatIndex] = useState(0);
   const [messageVisible, setMessageVisible] = useState(false);
@@ -286,7 +289,13 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
   const [followUpVisible, setFollowUpVisible] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [closingVisible, setClosingVisible] = useState(false);
-  const [paused, setPaused] = useState(false);
+  // T5.3 (spec amendment A8) — two independent facts, not one. Focus pause is
+  // transient and reverts on blur; a pause the reader asked for has to survive
+  // them tabbing away, or the WCAG 2.2.2 mechanism silently undoes itself. The
+  // beat walker still reads a single effective value.
+  const [manuallyPaused, setManuallyPaused] = useState(false);
+  const [focusPaused, setFocusPaused] = useState(false);
+  const paused = manuallyPaused || focusPaused;
   // v0.69 — the pointer is over the device. Drives the graph's own reaction so
   // the two halves respond as one object, not two hover targets.
   const [engaged, setEngaged] = useState(false);
@@ -399,11 +408,11 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
     <div
       ref={viewRef}
       role="group"
-      aria-label={`${summary} Animation pauses while hovered or focused.`}
+      aria-label={`${summary} Use the Pause button to stop the animation.`}
       tabIndex={0}
       className={cn(
         STAGE_LAYOUT,
-        "rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "relative rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
       )}
       // v0.69 — hover no longer pauses. It used to, so that a reader could
       // stop the loop and study it; but the device is now the page's
@@ -415,9 +424,39 @@ export function OrchestrationStage({ scenarioId }: { scenarioId: ScenarioId }) {
       // (Pause, Stop, Hide) requires a mechanism for, and focus-to-pause was
       // the only mechanism this page had. Moving it to keyboard-only keeps
       // the obligation met while freeing the pointer for the interaction.
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
+      //
+      // T5.3 — the target check is load-bearing. React's onFocus is focusin,
+      // so it bubbles: without it, pressing the Pause button focused the
+      // button, set focusPaused, and Play then cleared manuallyPaused while
+      // focusPaused still held the loop frozen. The control was pause-only.
+      // Focus-pause belongs to the stage's own tabindex; a control inside it
+      // is a control, not a focus target for this mechanism.
+      onFocus={(event) => {
+        if (event.target === event.currentTarget) setFocusPaused(true);
+      }}
+      onBlur={(event) => {
+        if (event.target === event.currentTarget) setFocusPaused(false);
+      }}
     >
+      {/* T5.3 — focus-to-pause is undiscoverable for anyone using touch, and
+          the demo auto-plays and loops, which WCAG 2.2.2 requires a mechanism
+          to stop. A toggle button keeps a stable accessible name and reports
+          its state through aria-pressed; the icon is the visual half of the
+          same thing. 44px minimum target. */}
+      <button
+        type="button"
+        aria-pressed={manuallyPaused}
+        aria-label="Pause animation"
+        onClick={() => setManuallyPaused((value) => !value)}
+        className="absolute right-0 top-0 z-30 flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:text-foreground focus-visible:focus-ring lg:right-2 lg:top-2"
+      >
+        {manuallyPaused ? (
+          <Play className="size-4" aria-hidden="true" />
+        ) : (
+          <Pause className="size-4" aria-hidden="true" />
+        )}
+      </button>
+
       {phone(
         <>
           {messageVisible && !closingVisible && (
@@ -477,6 +516,15 @@ export function ScenarioSelector({
   return (
     <fieldset className={cn("flex flex-wrap justify-center gap-2", className)}>
       <legend className="sr-only">Choose a demo scenario</legend>
+      {/* T3.6(a) — the stage crossfades on selection, which assistive tech
+          cannot see. This announces the change once, and only the change:
+          it reads scenarioId, never the demo's beat state, so a running
+          scenario stays silent. Lives here rather than inside the stage
+          because the stage remounts per scenario, and a live region that
+          arrives with its text is not reliably announced. */}
+      <p aria-live="polite" className="sr-only">
+        {`Now playing: the ${SCENARIOS[scenarioId].chipLabel} scenario.`}
+      </p>
       {SCENARIO_ORDER.map((id) => (
         <label key={id} className="cursor-pointer">
           <input

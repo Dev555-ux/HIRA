@@ -939,6 +939,35 @@
   outline-offset: var(--focus-ring-offset);
 }
 
+/* FAQ disclosure (T4.2). The answer grows out of its question instead of the
+   page jumping — most noticeable on a phone, where the FAQ sits ~9,000px down
+   and opening item 6 or 7 used to move the reader's scroll position.
+
+   Native, so <details>/<summary> keep their semantics, their keyboard toggle
+   and find-in-page. interpolate-size is what makes block-size: auto
+   animatable at all; content-visibility needs allow-discrete so the content
+   stays rendered for the length of the transition rather than disappearing on
+   frame one. Behind @supports: where either is unsupported the disclosure
+   opens instantly, exactly as it did before this rule existed.
+
+   The global prefers-reduced-motion guard below collapses these transitions
+   like every other one in this file. */
+@supports (interpolate-size: allow-keywords) {
+  .faq details {
+    interpolate-size: allow-keywords;
+  }
+  .faq details::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size var(--motion-slow) var(--ease-out-quart),
+      content-visibility var(--motion-slow) allow-discrete;
+  }
+  .faq details[open]::details-content {
+    block-size: auto;
+  }
+}
+
 /* Global reduced-motion guard (Sprint 46). Every animation/transition in this
    file — old and new — collapses to effectively instant for anyone who has
    asked the OS for reduced motion, per this sprint's explicit accessibility
@@ -948,7 +977,12 @@
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
-  *::after {
+  *::after,
+  /* T4.2 — ::details-content is a fourth pseudo-element, matched by none of
+     the three above: `*` matches elements, not pseudo-elements, and this one
+     did not exist when this guard was written. Without it a transition on a
+     disclosure's content escapes the guard entirely. */
+  *::details-content {
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;

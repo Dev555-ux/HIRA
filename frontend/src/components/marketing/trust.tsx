@@ -1,5 +1,5 @@
 import { CheckCircle2 } from "lucide-react";
-import { Reveal } from "@/components/marketing/reveal";
+import { Reveal } from "@/components/motion/reveal";
 
 // Deliberately lightweight — a scannable checklist, not another card grid
 // (Features below already covers these in depth). No logos, no testimonials:

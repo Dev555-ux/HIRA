@@ -1,0 +1,50 @@
+# Motion bundle baseline
+
+Record of `/` bundle size across the Motion roadmap (DESIGN-MOTION-001, task
+T2.1). Every figure is `npm run build` in `frontend/`, reading the route table
+row for `/`.
+
+**PB1: first-load JS for `/` must stay at or below 177 kB.** From T2.1 onward
+the import guard in `eslint.config.mjs` fails CI on the two ways that budget
+has historically been broken: importing `framer-motion` (the legacy package
+name, which would ship a second copy of the library) and importing the full
+`motion` component inside `src/components/marketing/**` (which defeats the
+code splitting `LazyMotion` exists for).
+
+| Milestone | Route JS | First-load JS | Note |
+|---|---|---|---|
+| main @ 4db61f0 | 62.4 kB | 177 kB | Baseline. `framer-motion` 13.2, full `motion` component |
+| T1.2 | 64.6 kB | 179 kB | Package swap. Over budget, permitted on an unmerged branch (amendment A2) |
+| T1.3 | 51.4 kB | 166 kB | `LazyMotion` + `domAnimation`; Motion chunk 50 → 39 kB gz |
+| T1.1 | 51.4 kB | 166 kB | SSR visibility fix, no bundle effect |
+| T1.4 | 36.6 kB | 167 kB | Reveal primitives; Motion chunk 15 kB gz |
+| T3.1 / T3.2 | 36.5 kB | 166 kB | Hero entrance, CTA wrapper removed |
+| T3.4 | 36.5 kB | 166 kB | Sequence stagger, no bundle effect |
+| T3.5 | 36.5 kB | 168 kB | Connector draw; +2 kB is the client boundary this adds to a server component |
+| T3.6(a) | 38.3 kB | 170 kB | Scenario crossfade; +2 kB is the `AnimatePresence` import |
+| **T2.1** | **38.3 kB** | **170 kB** | Guard + unreferenced loader. No change: `features.ts` is in no chunk |
+| T3.6(b) / T2.2 / T2.3 / T3.7 / T4.1 / T4.2 | 33.9 kB | 166 kB | Loader wired; `domMax` moved to its own async chunk |
+| **T5.3** | **34.2 kB** | **167 kB** | Demo pause control. +330 B gzip exact (166.21 → 166.54); the table step is 3-sig-fig rounding |
+
+## The async feature loader
+
+`src/components/motion/features.ts` re-exports `domMax` as its default. T2.1
+added it unreferenced; **T3.6(b) wired it to `MotionProvider`**, because the
+chat thread's `layout="position"` needs the projection code that `domAnimation`
+does not carry.
+
+It loads through a dynamic import, so that code lands in its own chunk instead
+of the initial bundle:
+
+```tsx
+<LazyMotion features={() => import("@/components/motion/features").then((mod) => mod.default)} strict>
+```
+
+The `.then((mod) => mod.default)` is load-bearing: `LazyFeatureBundle` is
+`() => Promise<FeatureBundle>`, so handing it the module namespace fails to
+compile with "Property 'renderer' is missing" (spec amendment A5).
+
+Verified at T5.4 against the shipped build: the Motion runtime in the initial
+bundle is **22.2 kB gzipped**, and the feature bundle is a **19.1 kB gzipped**
+chunk that is **not** in the page's initial file list — it is fetched after
+first paint. Wiring it *reduced* `/` first-load from 170 kB to 166 kB.
