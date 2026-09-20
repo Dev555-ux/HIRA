@@ -14,8 +14,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # dev defaults declared on the fields further down.
 _INSECURE_PRODUCTION_DEFAULTS = {
     "whatsapp_verify_token": "dev-verify-token",
-    "whatsapp_app_secret": "dev-app-secret",
-    "whatsapp_access_token": "dev-access-token",
+    # Sprint 82: WHATSAPP_APP_SECRET/WHATSAPP_ACCESS_TOKEN were dropped from
+    # this guard *and* from Settings entirely. They were global, one-Meta-App-
+    # for-everyone values from before Sprint 69 made credentials per-business;
+    # since then no code path has read either one (webhook signatures verify
+    # against the business's own stored secret, sends use its own stored
+    # token), yet production was still required to set two variables that did
+    # nothing — and the error message pointed at docs that described them as
+    # load-bearing. Stoneveil's own Tech Provider app secret is META_APP_SECRET
+    # (app/meta.py), which is a genuinely different thing: it signs Embedded
+    # Signup customers' webhooks. `extra="ignore"` below means deployments
+    # that still set the old variables keep booting; they're simply unread.
     # Sprint 69.5: "mock" returns a canned reply to every real customer with
     # no error, no crash, and nothing in Sentry — the most severe silent
     # misconfiguration this guard can catch.
@@ -65,38 +74,49 @@ class Settings(BaseSettings):
             return "postgresql+psycopg://" + value.removeprefix("postgresql://")
         return value
 
-    # WhatsApp / Meta. Dev defaults let the webhook run and be tested locally;
-    # real values come from .env (never committed). See documentation/WHATSAPP_INTEGRATION.md.
+    # WhatsApp / Meta. The dev default lets the webhook handshake run and be
+    # tested locally; the real value comes from .env (never committed). Read
+    # the two Graph settings through app/meta.py::graph_url(), never directly.
+    # See documentation/WHATSAPP_INTEGRATION.md.
     whatsapp_verify_token: str = "dev-verify-token"
-    whatsapp_app_secret: str = "dev-app-secret"
-    whatsapp_access_token: str = "dev-access-token"
     whatsapp_api_base: str = "https://graph.facebook.com"
     whatsapp_graph_version: str = "v21.0"
+
+    # Meta Tech Provider (Sprint 82). Stoneveil's *own* Meta App — the one app
+    # that serves every Embedded Signup customer, as opposed to the per-
+    # business apps guided-manual v1 customers bring. Its secret signs those
+    # customers' webhooks (app/webhooks/whatsapp.py) and authenticates the
+    # server-to-server code exchange; the config id launches Meta's popup.
+    #
+    # Empty by default and deliberately NOT in _REQUIRED_IN_PRODUCTION: no
+    # customer is onboarded through Embedded Signup yet, so requiring these
+    # would fail the boot of a production deployment that is working
+    # perfectly well on manual onboarding. Every consumer fails closed on an
+    # empty value instead (see app/meta.py::tech_provider_configured).
+    # Accessed through app/meta.py, never `settings.meta_*` directly.
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_app_config_id: str = ""
 
     # WhatsApp Embedded Signup (Track B / ONBOARD-E, TODOS.md, DEC-052).
     # Master kill-switch: OFF means production keeps using the existing
     # guided-manual connect flow (app/api/whatsapp.py) untouched — no route
-    # or UI change is reachable. Meta Tech Provider approval isn't granted
-    # yet (TODOS.md ONBOARD-E), so this stays False until it is; flipping it
-    # on today would just surface the stub provider's "not configured" error,
-    # never fake success. `embedded_signup_config_id` is the `config_id`
-    # Meta's JS SDK needs to launch the real popup (per
-    # documentation/WHATSAPP_ONBOARDING_V2_DESIGN.md §5) — also required, not
-    # just the flag, before the flow is considered configured.
+    # or UI change is reachable. The real provider exists as of Sprint 83, so
+    # turning this on with the META_* values set runs a live flow; with them
+    # unset the routes 503 rather than faking a success. Stays False until
+    # the flow has been validated against Meta's real API (Sprint 84 could
+    # not complete that — see DEC-062). The popup's `config_id` is
+    # META_APP_CONFIG_ID above — one Meta configuration id for the whole app,
+    # not a second copy owned by this feature flag.
     enable_embedded_signup: bool = False
-    embedded_signup_config_id: str = ""
 
-    # Shadow Mode (Sprint 64A PR 4). Dormant as of PR 5: the webhook route
-    # (app/webhooks/whatsapp.py) no longer schedules the comparison
-    # background task at all — production and Shadow Mode shared one
-    # parser as of the PR 5 cutover, so comparing them would just be
-    # comparing WhatsAppProvider against itself. This setting, and
-    # app/channels/whatsapp/shadow.py's comparator/metrics/tests, are
-    # deliberately kept (not deleted) for a future migration to repoint —
-    # e.g. shadow-validating a second channel provider, or a future
-    # rewrite of this one — against something that's actually still a
-    # meaningful comparison.
-    enable_whatsapp_shadow_mode: bool = False
+    # Sprint 84 configuration audit: ENABLE_WHATSAPP_SHADOW_MODE was removed.
+    # It had no reader anywhere — not even app/channels/whatsapp/shadow.py,
+    # the module it nominally gated, which has been dormant since Sprint 64A
+    # PR 5. A flag nothing consults is a false promise on a deploy checklist.
+    # shadow.py itself is left in place (its retention was a deliberate call,
+    # see DEC-062); if it is ever repointed at a real comparison it can
+    # declare its own flag then.
 
     # Embeddings. Provider is swappable via config (see app/ai/embeddings).
     # "local_bge" runs BAAI/bge-small-en-v1.5 locally (384 dims) — no API key.
@@ -183,6 +203,13 @@ class Settings(BaseSettings):
     rate_limit_demo_chat: str = "20/minute"
     rate_limit_kb_upload: str = "10/minute"
     rate_limit_business_creation: str = "5/hour"
+    # Sprint 82. Both connect paths make outbound Graph API calls on behalf of
+    # the caller, so an unlimited retry loop (a stuck wizard, a misbehaving
+    # client) spends Stoneveil's Meta rate budget, not just CPU. Generous
+    # enough that no honest owner fighting a typo'd token ever sees a 429:
+    # connecting is a handful-of-attempts-then-done action, not a workflow.
+    rate_limit_whatsapp_connect: str = "20/hour"
+    rate_limit_embedded_signup: str = "30/hour"
 
     # Transactional outbox job engine (Sprint 64, ADR-001 / IMP-001). Master
     # kill-switch for the durable PostgreSQL job queue that will replace the
@@ -216,16 +243,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _reject_insecure_production_secrets(self) -> "Settings":
-        """SEC-1: whatsapp_verify_token/app_secret/access_token default to
-        guessable dev values so the webhook runs locally with no setup. That
-        default is safe only because local dev is never internet-reachable
-        under Meta's real signature scheme — deployed with ENVIRONMENT=
-        production and any of them still unset, the HMAC signature check in
-        app/channels/whatsapp/parsing.py::signature_valid becomes forgeable
-        (anyone who reads this source knows dev-app-secret) and the verify-token
-        handshake becomes guessable. Fails fast at startup, the same
+        """SEC-1: whatsapp_verify_token defaults to a guessable dev value so
+        the webhook handshake runs locally with no setup. That default is safe
+        only because local dev is never internet-reachable — deployed with
+        ENVIRONMENT=production and it still unset, Meta's one-time
+        "prove you own this endpoint" handshake becomes guessable by anyone
+        who reads this source. Fails fast at startup, the same
         actionable-error pattern _load_settings already uses for a missing
         DATABASE_URL, rather than deploying silently insecure.
+
+        Sprint 82 removed WHATSAPP_APP_SECRET/WHATSAPP_ACCESS_TOKEN from this
+        guard along with the settings themselves — see
+        _INSECURE_PRODUCTION_DEFAULTS above for why two variables no code has
+        read since Sprint 69 were still being demanded of every deploy.
 
         A2 (Sprint S1 security audit): same reasoning applies to
         `allow_mock_auth` — it only takes effect when `CLERK_JWKS_URL` is

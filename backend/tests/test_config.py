@@ -53,12 +53,12 @@ def test_missing_database_url_error_names_where_to_fix_it(monkeypatch):
 def test_dev_defaults_are_fine_outside_production():
     settings = _settings(database_url="postgresql+psycopg://u:p@host/db")
     assert settings.environment == "development"
-    assert settings.whatsapp_app_secret == "dev-app-secret"
+    assert settings.whatsapp_verify_token == "dev-verify-token"
 
 
 def test_production_with_dev_defaults_is_rejected(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    with pytest.raises(RuntimeError, match="WHATSAPP_APP_SECRET"):
+    with pytest.raises(RuntimeError, match="WHATSAPP_VERIFY_TOKEN"):
         _load_settings(
             _env_file=None,
             database_url="postgresql+psycopg://u:p@host/db",
@@ -68,9 +68,7 @@ def test_production_with_dev_defaults_is_rejected(monkeypatch):
 
 def test_production_names_every_still_insecure_secret(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    with pytest.raises(
-        RuntimeError, match="WHATSAPP_VERIFY_TOKEN.*WHATSAPP_APP_SECRET.*WHATSAPP_ACCESS_TOKEN"
-    ):
+    with pytest.raises(RuntimeError, match="WHATSAPP_VERIFY_TOKEN.*LLM_PROVIDER"):
         _load_settings(
             _env_file=None,
             database_url="postgresql+psycopg://u:p@host/db",
@@ -83,11 +81,40 @@ def test_production_with_real_secrets_starts_fine():
         database_url="postgresql+psycopg://u:p@host/db",
         environment="production",
         whatsapp_verify_token="a-real-verify-token",
-        whatsapp_app_secret="a-real-app-secret-from-meta",
-        whatsapp_access_token="a-real-access-token-from-meta",
         **_real_production_extras(),
     )
     assert settings.environment == "production"
+
+
+def test_production_does_not_require_the_retired_whatsapp_globals(monkeypatch):
+    """Sprint 82: WHATSAPP_APP_SECRET/WHATSAPP_ACCESS_TOKEN were global,
+    one-app-for-everyone values that no code has read since credentials went
+    per-business (Sprint 69). Production booted only if you set two variables
+    that did nothing. A deployment that never sets them now starts fine."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    settings = _settings(
+        database_url="postgresql+psycopg://u:p@host/db",
+        environment="production",
+        whatsapp_verify_token="a-real-verify-token",
+        **_real_production_extras(),
+    )
+    assert not hasattr(settings, "whatsapp_app_secret")
+    assert not hasattr(settings, "whatsapp_access_token")
+
+
+def test_production_does_not_require_tech_provider_configuration():
+    """META_* is unset on a deployment serving only manual-onboarding
+    customers, and that must keep booting — Embedded Signup consumers fail
+    closed at the point of use instead (app/meta.py)."""
+    settings = _settings(
+        database_url="postgresql+psycopg://u:p@host/db",
+        environment="production",
+        whatsapp_verify_token="a-real-verify-token",
+        **_real_production_extras(),
+    )
+    assert settings.meta_app_id == ""
+    assert settings.meta_app_secret == ""
+    assert settings.meta_app_config_id == ""
 
 
 # --- A1 (Sprint S2A security fix): refuse to start in production with mock auth enabled ----
@@ -96,8 +123,6 @@ def test_production_with_real_secrets_starts_fine():
 def _real_whatsapp_secrets() -> dict:
     return {
         "whatsapp_verify_token": "a-real-verify-token",
-        "whatsapp_app_secret": "a-real-app-secret-from-meta",
-        "whatsapp_access_token": "a-real-access-token-from-meta",
     }
 
 
