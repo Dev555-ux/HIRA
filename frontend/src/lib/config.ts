@@ -26,17 +26,27 @@ export const isProduction = process.env.NODE_ENV === "production";
 // bypassing authentication.
 export const mockAuthAllowed = authEnabled || !isProduction;
 
-// WhatsApp Embedded Signup (Track B prep, TODOS.md ONBOARD-E). Mirrors
-// authEnabled's derivation above: "enabled" means there's actually something
-// configured to use, not just a flag flipped on by mistake. Both must be set
-// or the entry screen falls back to the existing manual connect flow — see
-// (dashboard)/connect-whatsapp/page.tsx. The backend independently gates its
-// own routes on ENABLE_EMBEDDED_SIGNUP; this is only the frontend's own copy
-// of that decision so the entry screen doesn't have to round-trip an API
-// call just to know whether to render itself.
-export const embeddedSignupConfigId = process.env.NEXT_PUBLIC_EMBEDDED_SIGNUP_CONFIG_ID ?? "";
+// Meta Tech Provider (Sprint 82). Stoneveil's own Meta App id, and the
+// Business Login configuration id that launches Embedded Signup's popup —
+// the browser-side halves of the backend's META_APP_ID/META_APP_CONFIG_ID.
+// Both are public by design: the app id ships in every FB.login() call and
+// the config id identifies a login configuration, not a credential. The
+// secret (META_APP_SECRET) is backend-only and must never appear here.
+export const facebookAppId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID ?? "";
+export const metaAppConfigId = process.env.NEXT_PUBLIC_META_APP_CONFIG_ID ?? "";
+
+// Mirrors authEnabled's derivation above: "enabled" means there's actually
+// something configured to use, not just a flag flipped on by mistake. All
+// three must be set or the entry screen falls back to the existing manual
+// connect flow — see (dashboard)/connect-whatsapp/page.tsx. The backend
+// independently gates its own routes and reports the authoritative answer
+// from GET /embedded-signup/config; this is only the frontend's own copy of
+// that decision, so the entry screen doesn't have to round-trip an API call
+// just to know whether to render itself.
 export const embeddedSignupEnabled =
-  process.env.NEXT_PUBLIC_ENABLE_EMBEDDED_SIGNUP === "true" && embeddedSignupConfigId.length > 0;
+  process.env.NEXT_PUBLIC_ENABLE_EMBEDDED_SIGNUP === "true" &&
+  facebookAppId.length > 0 &&
+  metaAppConfigId.length > 0;
 
 // Polling cadence for data that can change from outside the dashboard (a
 // WhatsApp webhook firing asynchronously) — pending replies, conversations,
