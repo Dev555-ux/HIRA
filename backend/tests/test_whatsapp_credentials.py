@@ -9,7 +9,7 @@ from app.models import Business, WhatsAppCredential
 from app.whatsapp.credentials import (
     disconnect,
     get_access_token,
-    get_app_secret,
+    get_webhook_signing_secret,
     get_stored_credential,
     store_credentials,
     verify_whatsapp_credentials,
@@ -78,7 +78,9 @@ def test_get_access_token_and_app_secret_decrypt_correctly(db_session):
     )
 
     assert get_access_token(credential) == "the-real-token"
-    assert get_app_secret(credential) == "the-real-secret"
+    # A manual credential signs its own webhooks — see
+    # tests/test_whatsapp_tech_provider.py for the Embedded Signup half.
+    assert get_webhook_signing_secret(credential) == "the-real-secret"
 
 
 def _client(handler):
@@ -130,3 +132,26 @@ def test_verify_whatsapp_credentials_raises_on_transport_error():
 
     with pytest.raises(WhatsAppCredentialInvalidError, match="Could not reach"):
         verify_whatsapp_credentials("PN1", "good-token", client=_client(handler))
+
+
+def test_meta_error_bodies_are_not_reflected_to_the_caller():
+    """Sprint 84 security review. This message becomes a 422 the browser
+    renders, and Graph error payloads quote request parameters back."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "Unsupported request for token EAA-secret-leak on phone +1555",
+                    "code": 100,
+                }
+            },
+        )
+
+    with pytest.raises(WhatsAppCredentialInvalidError) as exc:
+        verify_whatsapp_credentials("PN1", "tok", client=_client(handler))
+
+    assert "EAA-secret-leak" not in str(exc.value)
+    assert "+1555" not in str(exc.value)
+    assert "code=100" in str(exc.value)
