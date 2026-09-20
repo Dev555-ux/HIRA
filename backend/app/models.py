@@ -26,6 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.jobs.models import JobOutbox, JobStatus  # noqa: F401  — register on Base.metadata
+from app.meta import TOKEN_SOURCE_MANUAL
 
 
 class Business(Base):
@@ -53,6 +54,14 @@ class Business(Base):
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     whatsapp_phone_number_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     whatsapp_business_account_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The Meta Business Portfolio ("Business Manager") that owns the WABA
+    # above (Sprint 82). Manual onboarding never captures it — the business
+    # pastes a WABA id and a phone number id, and Meta doesn't hand the
+    # portfolio id over in either of those calls — so it stays NULL for every
+    # guided-manual customer. Embedded Signup gets it from the popup's own
+    # callback, where it's the id needed to tell two WABAs owned by different
+    # portfolios apart, and to read a business's verification status.
+    meta_business_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Meta Conversions API for Business Messaging (Sprint 73): the dataset a
     # LeadSubmitted event is posted to. Not a secret and not something a
     # business enters — resolved lazily from `GET /{WABA_ID}/dataset` the
@@ -71,9 +80,22 @@ class Business(Base):
     # created | live — see ONBOARDING_ARCHITECTURE.md §2.1. Only "created" is set
     # by anything today; "live" is reserved for the future go-live milestone.
     onboarding_status: Mapped[str] = mapped_column(String(32), default="created")
-    # not_connected | pending_verification | connected — reserved for the future
-    # WhatsApp-connection milestone; nothing sets it beyond the default yet.
+    # not_connected | pending_verification | connected — set by
+    # app/api/whatsapp.py's connect/disconnect routes. "pending_verification"
+    # is not written by any path today; it's the state Embedded Signup will
+    # sit in between the popup closing and registration completing.
     whatsapp_connection_status: Mapped[str] = mapped_column(String(24), default="not_connected")
+    # not_registered | registered — whether POST /{PHONE_NUMBER_ID}/register
+    # has succeeded for this number (Sprint 82). A number can be connected
+    # (credentials verify, Meta knows the number) and still not registered,
+    # in which case it can neither send nor receive — which is exactly why
+    # this is tracked separately from whatsapp_connection_status rather than
+    # folded into it. Manual onboarding customers register their own number
+    # inside Meta's console, so nothing in the manual flow writes this;
+    # Embedded Signup makes the /register call itself and will.
+    whatsapp_registration_status: Mapped[str] = mapped_column(
+        String(24), default="not_registered", server_default="not_registered"
+    )
     website_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     trial_ends_at: Mapped[datetime | None] = mapped_column(nullable=True)
     # {"mon": {"open": "09:00", "close": "17:00"}, ..., "sun": null} — a day's
@@ -341,13 +363,27 @@ class CalendarCredential(Base):
 
 
 class WhatsAppCredential(Base):
-    """A business's own Meta System User token + app secret (Sprint 69,
-    self-serve "guided-manual v1" WhatsApp connection) — mirrors
+    """A business's WhatsApp credentials (Sprint 69) — mirrors
     CalendarCredential's shape exactly (one row per business, secrets
     encrypted at rest with the same Fernet key). `Business.
     whatsapp_phone_number_id`/`whatsapp_business_account_id` are not
-    secrets and stay where they already were; only the two actual
-    credentials live here."""
+    secrets and stay where they already were; only the actual credentials
+    live here.
+
+    Sprint 82 (Tech Provider) made this row serve two onboarding paths, with
+    `token_source` as the discriminator (see app/meta.py):
+
+    * `manual` — guided-manual v1. The business owns its Meta App, so both
+      `access_token_encrypted` and `app_secret_encrypted` are theirs.
+    * `embedded_signup` — Stoneveil's Tech Provider app serves the business.
+      The access token is still per-business (a Business Integration System
+      User token Meta issues for that business), but there is no
+      per-business app secret at all: Meta signs their webhooks with
+      Stoneveil's `META_APP_SECRET`. Hence `app_secret_encrypted` being
+      nullable — NULL is the correct, meaningful value for those rows, not a
+      missing one, and `app/whatsapp/credentials.py::get_webhook_signing_
+      secret` is the single place that resolves which secret applies.
+    """
 
     __tablename__ = "whatsapp_credentials"
 
@@ -356,7 +392,86 @@ class WhatsAppCredential(Base):
         ForeignKey("businesses.id", ondelete="CASCADE"), unique=True
     )
     access_token_encrypted: Mapped[str] = mapped_column(Text)
-    app_secret_encrypted: Mapped[str] = mapped_column(Text)
+    # NULL only for token_source="embedded_signup" — see the class docstring.
+    app_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # manual | embedded_signup (app/meta.py::TOKEN_SOURCE_*). server_default
+    # so every row that existed before Sprint 82 — all of them guided-manual
+    # by definition, since Embedded Signup has never run — reads back as
+    # "manual" without a data migration.
+    token_source: Mapped[str] = mapped_column(
+        String(24), default=TOKEN_SOURCE_MANUAL, server_default=TOKEN_SOURCE_MANUAL
+    )
+    # What Meta calls this token, verbatim from GET /debug_token's `type`
+    # (e.g. "SYSTEM_USER"). NULL for rows predating Sprint 82 and for manual
+    # connections, which never call debug_token — recorded rather than
+    # assumed, so a token whose type isn't what onboarding expected is
+    # visible instead of inferred.
+    token_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Space-separated scopes Meta reported for this token, again from
+    # debug_token. Stored as text, not parsed into a table: nothing queries
+    # by scope, and the one real use is answering "why did this call 403."
+    granted_scopes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # NULL means "never expires" (System User tokens report expires_at=0) or
+    # "not known" — deliberately not distinguished, because both lead to the
+    # same reactive handling: watch for Meta rejecting the token, don't
+    # pre-emptively trust a clock.
+    token_expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # The 6-digit two-step-verification PIN, encrypted with the same Fernet
+    # key as the token above. Embedded Signup generates this itself and
+    # passes it to /register (the business owner never invents or sees one);
+    # it must be retained because re-registering the same number later
+    # requires the identical PIN. NULL for every manual connection, where the
+    # owner set their own PIN inside Meta's console and Stoneveil never
+    # learns it.
+    two_factor_pin_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class WhatsAppOnboardingAttempt(Base):
+    """One Embedded Signup attempt — the row that makes an onboarding flow
+    resumable, auditable, and safe against replay (Sprint 82, Task 4).
+
+    Mirrors the shape the Instagram OAuth flow arrived at, for the same
+    reasons: a signed `state` alone (what app/calendar/oauth.py does) proves
+    the callback wasn't forged and isn't stale, but not that it hasn't
+    already been used. An Embedded Signup callback spends its authorization
+    code on a token exchange, a /register call and a webhook subscription —
+    replaying one is not a harmless duplicate, so single-use has to be
+    enforced by something durable. That's this table: `state` is UNIQUE, and
+    `consumed_at` is what makes the second attempt to use it fail.
+
+    It also answers "what happened to that connection the owner started
+    yesterday and never finished" — `status` plus `failure_reason` turn a
+    silent abandonment into a support-answerable question, which the current
+    manual flow simply cannot do (it writes nothing until success).
+
+    Written by the Embedded Signup provider, which lands in a later sprint;
+    the state lifecycle itself lives in
+    `app/whatsapp/onboarding_attempts.py` and is exercised by its tests.
+    """
+
+    __tablename__ = "whatsapp_onboarding_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    # The signed CSRF state handed to Meta's popup and returned in its
+    # callback. UNIQUE is what enforces single-use at the database level
+    # rather than only in application code.
+    state: Mapped[str] = mapped_column(String(255), unique=True)
+    # pending | completed | failed — the literals live in
+    # app/whatsapp/onboarding_attempts.py, which owns every transition
+    # between them (this module can't import it without a cycle).
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    # Why a failed attempt failed, in engineer-readable terms (a Meta error
+    # code, a state rejection). Never shown to a business owner verbatim —
+    # the UI maps failures to its own copy — and never carries a token, a
+    # secret, or a Graph API response body.
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column()
+    consumed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
