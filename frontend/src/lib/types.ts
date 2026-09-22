@@ -381,9 +381,9 @@ export interface WhatsAppWebhookConfig {
   verify_token: string;
 }
 
-// WhatsApp Embedded Signup (Track B prep, TODOS.md ONBOARD-E). Placeholder
-// surface — /api/v1/whatsapp/embedded-signup/* 404s unless
-// ENABLE_EMBEDDED_SIGNUP is set on the backend.
+// WhatsApp Embedded Signup (Sprint 83). /api/v1/whatsapp/embedded-signup/*
+// 404s unless ENABLE_EMBEDDED_SIGNUP is set on the backend, and reports
+// enabled: false until Stoneveil's Meta app credentials are configured too.
 export interface EmbeddedSignupConfig {
   enabled: boolean;
 }
@@ -393,10 +393,33 @@ export interface EmbeddedSignupSession {
   state: string;
 }
 
+// Every failure the backend can report. The UI maps each to its own copy —
+// no Meta error text, error number, or response body ever reaches the
+// browser. Mirrors the ERROR_* constants in
+// backend/app/whatsapp/providers/base.py.
+export type EmbeddedSignupErrorCode =
+  | "state_invalid"
+  | "permission_denied"
+  | "no_waba"
+  | "no_phone_number"
+  | "phone_number_in_use"
+  | "token_exchange_failed"
+  | "registration_failed"
+  | "pin_mismatch"
+  | "subscription_failed"
+  | "meta_unavailable";
+
 export interface EmbeddedSignupResult {
   success: boolean;
   display_phone_number: string | null;
-  error: string | null;
+  error_code: EmbeddedSignupErrorCode | null;
+}
+
+export interface CompleteEmbeddedSignupPayload {
+  code: string;
+  state: string;
+  waba_id?: string;
+  phone_number_id?: string;
 }
 
 export interface AvailabilitySlot {

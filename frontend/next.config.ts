@@ -50,13 +50,38 @@ const CLERK_CONNECT = clerkFrontendOrigin
 const CLERK_IMG = "https://img.clerk.com https://images.clerk.dev";
 const CLERK_FRAME = "https://challenges.cloudflare.com";
 
+// Meta Embedded Signup (Sprint 83). The SDK is fetched from
+// connect.facebook.net (lib/facebook-sdk.ts) and, once initialized, plants a
+// hidden cross-domain-communication iframe on staticxx.facebook.com and
+// posts results back from the www/web.facebook.com popup — the same two
+// origins lib/facebook-sdk.ts allowlists for postMessage. Without these the
+// SDK's <script> is refused by script-src-elem and the flow fails as
+// "couldn't reach Facebook", which looks like a Meta outage rather than a
+// policy we set.
+//
+// Gated on the same flag as the feature itself so a deployment that doesn't
+// offer Embedded Signup keeps the tighter policy — matching this file's
+// existing rule that every directive is 'self', a documented dependency, or
+// this app's own configured origin, and nothing broader.
+const metaEmbeddedSignupEnabled = process.env.NEXT_PUBLIC_ENABLE_EMBEDDED_SIGNUP === "true";
+const META_SCRIPT = "https://connect.facebook.net";
+const META_FRAME = "https://www.facebook.com https://web.facebook.com https://staticxx.facebook.com";
+
 // Next.js's dev server (Fast Refresh/HMR) genuinely needs 'unsafe-eval' —
 // production builds don't. Keeping this dev-only avoids loosening the
 // policy actually shipped to real users for a build-tool requirement they
 // never hit.
 const scriptSrc = ["'self'", "'unsafe-inline'", CLERK_SCRIPT];
+if (metaEmbeddedSignupEnabled) {
+  scriptSrc.push(META_SCRIPT);
+}
 if (process.env.NODE_ENV !== "production") {
   scriptSrc.push("'unsafe-eval'");
+}
+
+const frameSrc = [CLERK_FRAME];
+if (metaEmbeddedSignupEnabled) {
+  frameSrc.push(META_FRAME);
 }
 
 // A10 (Sprint S1 security audit): a baseline CSP plus the standard
@@ -73,7 +98,7 @@ const CSP = [
   `img-src 'self' data: ${CLERK_IMG}`,
   `font-src 'self' data:`,
   `connect-src 'self' ${apiOrigin} ${CLERK_CONNECT}`,
-  `frame-src ${CLERK_FRAME}`,
+  `frame-src ${frameSrc.join(" ")}`,
   `worker-src 'self' blob:`,
   `frame-ancestors 'none'`,
   `base-uri 'self'`,

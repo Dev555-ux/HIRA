@@ -755,9 +755,10 @@ const FIELD_CONFIG: Record<
 type WhatsAppWizardStep = "entry" | FieldStep | "webhook" | "verify";
 
 /** Real self-serve connection (Sprint 69, ONBOARD-D "guided-manual v1") —
- * no Embedded Signup yet (that needs Meta's Tech Provider approval; per
- * DEC-052 §0 and confirmed directly with the founder, that application has
- * still not been submitted). The owner already runs WhatsApp Business and
+ * no Embedded Signup yet. Meta Tech Provider approval now exists (Sprint
+ * 82), but the Meta-backed provider hasn't been built, and per DEC-052 §10
+ * this flow stays the default entry point until that ships and is
+ * pilot-validated. The owner already runs WhatsApp Business and
  * already has customers messaging that number, so there's no
  * account-creation branch here, no "what is WhatsApp Business" explanation —
  * just the fastest path to locating four values from an account that

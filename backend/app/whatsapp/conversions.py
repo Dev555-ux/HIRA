@@ -12,10 +12,9 @@ Two Graph API calls, nothing else:
 * `POST /{DATASET_ID}/events`    -> the event itself.
 
 Both reuse the existing WhatsApp transport conventions verbatim —
-`settings.whatsapp_api_base` + `settings.whatsapp_graph_version` for the URL
-and the business's own stored System User token (`WhatsAppCredential`, via
-`app.whatsapp.credentials.get_access_token`) for auth. No new credential, no
-new client, no new base URL.
+`app.meta.graph_url()` for the URL and the business's own stored System User
+token (`WhatsAppCredential`, via `app.whatsapp.credentials.get_access_token`)
+for auth. No new credential, no new client, no new base URL.
 
 The token needs the `whatsapp_business_manage_events` permission on top of
 the `whatsapp_business_messaging`/`whatsapp_business_management` pair HIRA
@@ -35,7 +34,7 @@ import logging
 
 import httpx
 
-from app.core.config import settings
+from app import meta
 from app.whatsapp.errors import WhatsAppCredentialError
 
 logger = logging.getLogger(__name__)
@@ -59,10 +58,6 @@ class ConversionEventError(WhatsAppCredentialError):
         super().__init__(reason)
         self.reason = reason
         self.retryable = retryable
-
-
-def _graph_url(path: str) -> str:
-    return f"{settings.whatsapp_api_base}/{settings.whatsapp_graph_version}/{path}"
 
 
 def _check(resp: httpx.Response, what: str) -> None:
@@ -98,7 +93,7 @@ def resolve_dataset_id(
     try:
         try:
             resp = client.get(
-                _graph_url(f"{whatsapp_business_account_id}/dataset"),
+                meta.graph_url(whatsapp_business_account_id, "dataset"),
                 headers={"Authorization": f"Bearer {access_token}"},
             )
         except httpx.RequestError as exc:
@@ -164,7 +159,7 @@ def send_conversion_event(
     try:
         try:
             resp = client.post(
-                _graph_url(f"{dataset_id}/events"),
+                meta.graph_url(dataset_id, "events"),
                 headers={"Authorization": f"Bearer {access_token}"},
                 json=payload,
             )

@@ -21,7 +21,9 @@ import type {
   CreateLeadPayload,
   CustomerDetail,
   Customer,
+  CompleteEmbeddedSignupPayload,
   EmbeddedSignupConfig,
+  EmbeddedSignupResult,
   EmbeddedSignupSession,
   EscalateResult,
   Escalation,
@@ -396,6 +398,13 @@ export const api = {
     apiFetch<ApiEnvelope<EmbeddedSignupSession>>("/api/v1/whatsapp/embedded-signup/start", getToken, {
       method: "POST",
     }).then((r) => r.data),
+
+  completeEmbeddedSignup: (getToken: GetToken, payload: CompleteEmbeddedSignupPayload) =>
+    apiFetch<ApiEnvelope<EmbeddedSignupResult>>(
+      "/api/v1/whatsapp/embedded-signup/callback",
+      getToken,
+      { method: "POST", body: JSON.stringify(payload) },
+    ).then((r) => r.data),
 
   getAvailability: (getToken: GetToken, params: { starts_at: string; ends_at: string }) =>
     apiFetch<ApiEnvelope<AvailabilitySlot[]>>(

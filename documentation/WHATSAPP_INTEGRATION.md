@@ -83,19 +83,110 @@ Code map:
 | Var | Meaning | Where to get it |
 |---|---|---|
 | `WHATSAPP_VERIFY_TOKEN` | Arbitrary string; must match Meta's webhook config | You choose it |
-| `WHATSAPP_APP_SECRET` | Verifies `X-Hub-Signature-256` on every payload | Meta App → Settings → Basic → App Secret |
-| `WHATSAPP_ACCESS_TOKEN` | Bearer token for outbound sends | Meta → WhatsApp → API Setup (temp) or a System User token (permanent) |
 | `WHATSAPP_API_BASE` | Graph API base (default `https://graph.facebook.com`) | default |
 | `WHATSAPP_GRAPH_VERSION` | Graph API version (default `v21.0`) | default |
+| `META_APP_ID` | Stoneveil's own Meta App id (Tech Provider) | Meta App dashboard → Settings → Basic |
+| `META_APP_SECRET` | Verifies `X-Hub-Signature-256` for **Embedded Signup** customers, and authenticates the token exchange | Meta App dashboard → Settings → Basic |
+| `META_APP_CONFIG_ID` | Business Login configuration that launches Embedded Signup's popup | Meta App dashboard → WhatsApp → Embedded Signup |
 
 **No global `PHONE_NUMBER_ID`.** The sender phone-number-id is stored per business in `businesses.whatsapp_phone_number_id`, resolved from the inbound webhook's `metadata.phone_number_id`. This preserves multi-tenancy (each business sends from its own number).
 
+**No global `WHATSAPP_APP_SECRET`/`WHATSAPP_ACCESS_TOKEN` either** (removed Sprint 82). Since Sprint 69 every business's token and app secret live encrypted in `whatsapp_credentials`, and no code path read the global pair — production was required to set two variables that did nothing. Existing deployments can leave them set; they are ignored.
+
+### Which secret verifies a webhook signature (Sprint 82)
+
+Two onboarding architectures coexist, and they are signed by different apps. `WhatsAppCredential.token_source` records which, and `app/whatsapp/credentials.py::get_webhook_signing_secret` is the only place the question is answered:
+
+| `token_source` | Who owns the Meta App | Signature verified against |
+|---|---|---|
+| `manual` (guided-manual v1) | the business | that business's own stored, encrypted app secret |
+| `embedded_signup` (Tech Provider) | Stoneveil | `META_APP_SECRET` |
+
+If an Embedded Signup business exists on a deployment where `META_APP_SECRET` is unset, its deliveries are **rejected with 403** — unverifiable is never treated as trusted. That case logs at `error` level (`reason=no_signing_secret_available`), since it's a Stoneveil misconfiguration rather than a suspicious caller.
+
+## Embedded Signup (Sprint 83)
+
+The one-click onboarding flow: the owner signs in with Facebook, picks their business and number inside Meta's own popup, and HIRA does the rest server-side. Guided-manual v1 stays available as the documented fallback (DEC-052 §9).
+
+### The two channels the popup uses
+
+Both are needed, and they carry different things:
+
+| Channel | Carries | Trusted? |
+|---|---|---|
+| `FB.login` callback | the **authorization code** | Yes — it's useless without `META_APP_SECRET` |
+| `postMessage` from Meta's popup | which **WABA / phone number** was picked, or that the owner cancelled | **No** — it comes from a client, so the backend re-verifies both ids |
+
+The browser never holds an access token and never calls the Graph API. `frontend/src/lib/facebook-sdk.ts` checks the message origin against an exact allowlist (not a `endsWith("facebook.com")` suffix check, which `evilfacebook.com` passes).
+
+### Backend sequence
+
+`app/whatsapp/providers/embedded_signup_meta.py`, in this order — everything that can fail cheaply fails before anything changes state on Meta's side:
+
+1. **Consume the state** (single-use, signed, expiring). A replay stops here and reaches no Meta call at all.
+2. `GET /oauth/access_token` — code → the business's Business Integration System User token.
+3. `GET /debug_token` — validity, scopes, and the **granular scopes** naming which WABA this token covers. This is the authoritative answer, not the popup's.
+4. `GET /{WABA_ID}` and `GET /{WABA_ID}/phone_numbers` — resolve and verify the WABA, the Meta Business id, the phone number and its display number.
+5. **Tenancy check** — a phone number already on another business is refused here, before `/register`.
+6. `POST /{PHONE_NUMBER_ID}/register` with a HIRA-generated 2FA PIN. Without this the number cannot send or receive.
+7. `POST /{WABA_ID}/subscribed_apps` — points the WABA's webhooks at HIRA. Without this Meta accepts messages and delivers them nowhere.
+8. Persist the credential, the business fields, and the attempt outcome.
+
+### Verified against live Meta (2026-09-20)
+
+These payload shapes were captured from real Graph API calls against app **Stoneveil AI** (`898692016617650`) and WABA `2511632579311134`, not from documentation. Captured verbatim as fixtures in `tests/test_embedded_signup_provider.py`.
+
+| Assumption | Result |
+|---|---|
+| `debug_token` → `data.type`, `is_valid`, `scopes` | ✅ confirmed (`SYSTEM_USER`) |
+| `expires_at: 0` means "never expires" | ✅ confirmed — stored as NULL, not epoch 0 |
+| `granular_scopes[].target_ids` names the WABA | ❌ **absent.** Every granular scope came back with a `scope` key and no `target_ids` at all |
+| `GET /{WABA_ID}?fields=…owner_business_info` | ✅ confirmed — nests `{name, id}`; id is the Meta Business ID |
+| `phone_numbers` fields `id,display_phone_number,verified_name,code_verification_status` | ✅ all four exist; response adds a `paging` envelope we ignore |
+| `display_phone_number` formatting | `"+1 555-179-4066"` — hyphenated, so the `wa.me` link strips non-digits |
+| `GET /{WABA_ID}/subscribed_apps` | ✅ returns `data[].whatsapp_business_api_data{id,name,link}`; two apps were already subscribed, confirming re-subscription is a normal state |
+
+**The `target_ids` finding is the important one.** The implementation originally derived the WABA solely from `granular_scopes[].target_ids`; against a real token that yields nothing, which would have failed every onboarding with `no_waba`. WABA resolution now falls back to verifying the popup's hinted id with a real `GET /{WABA_ID}` call using that business's own token — an unauthorized id 4xxs there and is refused. Verification still always happens; only *which call* performs it changed.
+
+Note this was observed on a manually created System User token, not on an Embedded Signup Business Integration token (which could not be obtained — see below). Meta's documentation states ES tokens do carry `target_ids`. The fallback exists because the field is demonstrably optional in practice and a single unverified assumption should not be able to break every connection.
+
+### Not yet verified against live Meta
+
+The Embedded Signup flow itself has **never run against Meta**. Blocked on `META_APP_CONFIG_ID`: a Business Login configuration must be created in the Meta App Dashboard (WhatsApp → Embedded Signup) and is not retrievable through the Graph API — `GET /{app_id}/business_login_configs` returns error 2500, "Unknown path components". Unverified as a result: the `postMessage` payload shape, the OAuth code exchange, `/register`, `subscribed_apps` as a write, and every webhook behaviour for an Embedded Signup customer.
+
+### Required scopes
+
+`whatsapp_business_management` and `whatsapp_business_messaging` are required; missing either fails the connection as `permission_denied`. `whatsapp_business_manage_events` is **not** required — it only powers CTWA conversion events (Sprint 73), which degrade to "no events" rather than breaking messaging.
+
+### Idempotency and reconnects
+
+Re-running a connection is safe and is the designed recovery path for one that half-finished:
+
+- `subscribed_apps` is a no-op when already subscribed.
+- `/register` is re-issued with the **same stored PIN**. Generating a fresh PIN would collide with the one already set on the number (Meta error 133005), breaking every reconnect.
+- The credential writer is create-or-replace, so one business keeps exactly one row.
+- The authorization code itself is *not* idempotent — Meta spends it on first use — which is why each code is bound to a single-use state row.
+
+A manual customer who reconnects through Embedded Signup has their stored app secret **cleared to NULL** at the same moment Meta starts signing their webhooks with Stoneveil's. Leaving it behind would reject every inbound message from that point on.
+
+### Error codes
+
+`POST /embedded-signup/callback` returns a machine-readable `error_code`; the UI maps each to its own copy. No Meta error text, error number or response body ever reaches a browser.
+
+`state_invalid` · `permission_denied` · `no_waba` · `no_phone_number` · `phone_number_in_use` · `token_exchange_failed` · `registration_failed` · `pin_mismatch` · `subscription_failed` · `meta_unavailable`
+
+Meta error codes are mapped conservatively: only those whose meaning is confirmed (the PIN family, 133005/133008/133009) get specific handling; everything else falls through to the generic failure for its step rather than showing an owner confident but wrong advice. Extend `_PIN_ERRORS` and the mapping in `embedded_signup_meta.py` as more codes are confirmed against live traffic.
+
+### Retry policy
+
+`app/whatsapp/graph.py` retries **transport failures and 5xx only**, three attempts with linear backoff. A 4xx is a decision Meta has made; repeating it spends the Tech Provider app's rate budget for nothing.
+
 ### Meta configuration required (to go live)
 
-1. **Meta app** with the **WhatsApp** product added; note the **App Secret** → `WHATSAPP_APP_SECRET`.
+1. **Meta app** with the **WhatsApp** product added; note the **App Secret** → `META_APP_SECRET`.
 2. **A WhatsApp phone number** (test or production) → note its **Phone number ID**.
 3. Seed a `businesses` row whose `whatsapp_phone_number_id` = that Phone number ID (and `mode = "autonomous"` for the no-approval loop).
-4. **Access token** → `WHATSAPP_ACCESS_TOKEN` (temp 24h token for testing, or a System User permanent token).
+4. **Access token** — a System User permanent token, stored per business via the connect wizard (`POST /api/v1/whatsapp/connect`), not an environment variable.
 5. **Webhook**: expose the backend over HTTPS (e.g. `ngrok http 8000`), then in Meta → WhatsApp → Configuration set:
    - Callback URL: `https://<public-host>/webhooks/whatsapp`
    - Verify token: the same string as `WHATSAPP_VERIFY_TOKEN`
@@ -143,10 +234,11 @@ curl "http://localhost:8000/webhooks/whatsapp?hub.mode=subscribe&hub.verify_toke
 # → 12345
 ```
 
-Simulate an inbound message (signature must match the raw body):
+Simulate an inbound message (signature must match the raw body). `APP_SECRET` here is whichever secret signs *that* business's webhooks — the app secret stored at connect time for a `manual` business, or `META_APP_SECRET` for an `embedded_signup` one (see "Which secret verifies a webhook signature" above):
 ```bash
+APP_SECRET="<that business's app secret, or META_APP_SECRET>"
 BODY='{"entry":[{"changes":[{"value":{"metadata":{"phone_number_id":"<PHONE_NUMBER_ID>"},"contacts":[{"wa_id":"15551230000","profile":{"name":"Test"}}],"messages":[{"id":"wamid.test1","from":"15551230000","type":"text","text":{"body":"Are you open on Sunday?"}}]}}]}]}'
-SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$WHATSAPP_APP_SECRET" | sed 's/^.* //')"
+SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$APP_SECRET" | sed 's/^.* //')"
 curl -X POST http://localhost:8000/webhooks/whatsapp \
   -H "Content-Type: application/json" \
   -H "X-Hub-Signature-256: $SIG" \
@@ -154,10 +246,10 @@ curl -X POST http://localhost:8000/webhooks/whatsapp \
 # → {"status":"received"}; in autonomous mode the reply is generated (Groq) and sent via the Cloud API.
 ```
 
-Outbound send directly against the Cloud API (sanity-check token/number):
+Outbound send directly against the Cloud API (sanity-check token/number). The token is that business's own, stored encrypted in `whatsapp_credentials` — there is no global one to read from the environment:
 ```bash
 curl -X POST "https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages" \
-  -H "Authorization: Bearer $WHATSAPP_ACCESS_TOKEN" \
+  -H "Authorization: Bearer <that business's access token>" \
   -H "Content-Type: application/json" \
   -d '{"messaging_product":"whatsapp","to":"<CUSTOMER_WA_NUMBER>","type":"text","text":{"body":"Hello from HIRA"}}'
 ```

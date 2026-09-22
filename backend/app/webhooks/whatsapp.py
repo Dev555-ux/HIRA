@@ -5,20 +5,38 @@ POST /webhooks/whatsapp  — inbound messages. Verifies the request, resolves
 the WhatsApp provider, parses the payload, and hands the result to
 MessagingService. Returns 200 quickly so Meta does not retry.
 
-Sprint 69 (self-serve WhatsApp): every business now brings its own Meta App,
-so the HMAC signature is no longer verified against one shared global
-secret — it must be verified against *that business's own* stored,
-encrypted app secret. That requires knowing which business a payload is for
-*before* the signature can be checked, which flips the natural order: the
-payload's routing key is read first (untrusted), then the business (and its
-stored credential) is looked up, and only then is the signature verified
-with that business's own secret. Nothing from the payload is trusted or
-persisted until that signature check passes.
+Sprint 69 (self-serve WhatsApp): the HMAC signature is not verified against
+one shared global secret — it is verified against whichever secret Meta
+actually signed *that business's* delivery with. That requires knowing which
+business a payload is for *before* the signature can be checked, which flips
+the natural order: the payload's routing key is read first (untrusted), then
+the business (and its stored credential) is looked up, and only then is the
+signature verified. Nothing from the payload is trusted or persisted until
+that check passes.
+
+Sprint 82 (Tech Provider): "whichever secret" now has two answers, because
+two onboarding architectures coexist and will keep coexisting — DEC-052 §9
+is explicit that guided-manual stays a supported fallback rather than being
+deleted once Embedded Signup ships.
+
+* Guided-manual customers own their Meta App, so their own stored app
+  secret signs their webhooks — unchanged from Sprint 69.
+* Embedded Signup customers are served by Stoneveil's one Tech Provider
+  app, so Meta signs their webhooks with `META_APP_SECRET`.
+
+This route does not branch on that itself: it asks
+`app/whatsapp/credentials.py::get_webhook_signing_secret` for the right
+secret and rejects the delivery if there isn't one. That function, and
+`WhatsAppCredential.token_source` which it reads, are the only places the
+distinction lives.
+
 The verify_token used by the GET handshake above stays a single shared
-value on purpose — it's a one-time "prove you own this endpoint" handshake
-Meta performs once per App, not a per-message trust boundary, so every
-business is instructed to enter the same HIRA-provided value into their own
-Meta App's webhook config (see documentation/WHATSAPP_INTEGRATION.md).
+value on purpose — it's a one-time "prove you own this endpoint" handshake,
+not a per-message trust boundary. Under Embedded Signup it becomes shared in
+a stronger sense: one callback URL and one verify token for every customer,
+wired per-WABA server-side via `subscribed_apps` instead of each business
+pasting them into their own Meta App (see
+documentation/WHATSAPP_INTEGRATION.md).
 
 Sprint 64A PR 7 (webhook simplification): this route no longer parses Meta's
 JSON itself, and no longer persists anything — both moved out, to
@@ -33,6 +51,7 @@ part of "verify the request," not message parsing or persistence.
 from __future__ import annotations
 
 import hmac
+import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from sqlalchemy import select
@@ -46,8 +65,10 @@ from app.db.session import get_db
 from app.models import Business
 from app.services.channel_manager import ChannelManager
 from app.services.messaging_service import MessagingService
-from app.whatsapp.credentials import get_app_secret, get_stored_credential
+from app.whatsapp.credentials import get_stored_credential, get_webhook_signing_secret
 from app.whatsapp.errors import WhatsAppCredentialError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -115,20 +136,59 @@ def receive(
         select(Business).where(Business.whatsapp_phone_number_id == phone_number_id)
     ).first()
     if business is None:
+        logger.warning("whatsapp.webhook.rejected reason=unknown_phone_number_id")
         return Response(status_code=403)
 
     credential = get_stored_credential(db, business.id)
     if credential is None:
+        logger.warning(
+            "whatsapp.webhook.rejected reason=no_stored_credential business_id=%s", business.id
+        )
         return Response(status_code=403)
 
     try:
-        app_secret = get_app_secret(credential)
+        app_secret = get_webhook_signing_secret(credential)
     except WhatsAppCredentialError:
+        logger.warning(
+            "whatsapp.webhook.rejected reason=credential_undecryptable business_id=%s "
+            "token_source=%s",
+            business.id,
+            credential.token_source,
+        )
+        return Response(status_code=403)
+
+    if app_secret is None:
+        # An Embedded Signup business on a deployment with no META_APP_SECRET
+        # set. Unverifiable, so untrusted — but this is a Stoneveil
+        # misconfiguration, not a suspicious caller, and it would otherwise
+        # be indistinguishable from a forged signature in the logs.
+        logger.error(
+            "whatsapp.webhook.rejected reason=no_signing_secret_available business_id=%s "
+            "token_source=%s",
+            business.id,
+            credential.token_source,
+        )
         return Response(status_code=403)
 
     signing_creds = ChannelCredentials(channel="whatsapp", access_token="", secret=app_secret)
     if not provider.verify_webhook_signature(request.headers, raw_body, signing_creds):
+        logger.warning(
+            "whatsapp.webhook.rejected reason=invalid_signature business_id=%s token_source=%s",
+            business.id,
+            credential.token_source,
+        )
         return Response(status_code=403)
+
+    # Which architecture actually authenticated this delivery. The one field
+    # worth logging on the success path: during the Embedded Signup rollout
+    # it is the difference between "Tech Provider webhooks are working" and
+    # "every customer is still on the old path," and no other signal
+    # distinguishes them.
+    logger.info(
+        "whatsapp.webhook.verified business_id=%s token_source=%s",
+        business.id,
+        credential.token_source,
+    )
 
     try:
         messages = provider.parse_webhook(raw_body)

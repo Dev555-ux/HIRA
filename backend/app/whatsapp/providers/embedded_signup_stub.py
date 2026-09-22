@@ -1,17 +1,16 @@
-"""Stub `EmbeddedSignupProvider` (Track B prep, TODOS.md ONBOARD-E).
+"""Stub `EmbeddedSignupProvider` — what an *unconfigured* deployment gets.
 
-Both methods always raise `EmbeddedSignupNotConfiguredError` — there is no
-Meta Tech Provider approval yet (TODOS.md ONBOARD-E: "the Meta Tech Provider
-application has not been submitted"), so there is no real popup to launch and
-no real authorization code to exchange. This is deliberately not a fake
-"success" path: per WHATSAPP_ONBOARDING_V2_DESIGN.md, the real
-`complete()` needs a live Graph API token exchange, a `/register` call, and a
-`subscribed_apps` call, none of which can be invented without Meta's actual
-API responses to test against.
+Not a leftover: `MetaEmbeddedSignupProvider` (embedded_signup_meta.py) is the
+real implementation and is what a configured deployment gets. This one is
+returned by the factory when `META_APP_ID`/`META_APP_SECRET`/
+`META_APP_CONFIG_ID` aren't all set — local dev, a staging box, or production
+before those variables are filled in.
 
-Replace with a real provider (implementing the same `EmbeddedSignupProvider`
-interface, registered in providers/__init__.py) once approval exists — no
-change needed to the API routes that call `get_embedded_signup_provider()`.
+Both methods raise `EmbeddedSignupNotConfiguredError`, which the API turns
+into a 503 and the frontend into "use manual setup instead." Refusing up
+front is the point: without an app secret the flow cannot get past the token
+exchange, so failing at the first step with a clear reason beats opening
+Meta's popup, walking an owner through six screens, and failing at the end.
 """
 
 from __future__ import annotations
@@ -28,17 +27,24 @@ from app.whatsapp.providers.base import (
 )
 
 
+_NOT_CONFIGURED = (
+    "Embedded Signup isn't configured on this deployment — META_APP_ID, "
+    "META_APP_SECRET and META_APP_CONFIG_ID must all be set."
+)
+
+
 class StubEmbeddedSignupProvider(EmbeddedSignupProvider):
-    def start(self, *, business_id: uuid.UUID) -> EmbeddedSignupSession:
-        raise EmbeddedSignupNotConfiguredError(
-            "Embedded Signup isn't available yet — Meta Tech Provider approval "
-            "is still pending (see TODOS.md ONBOARD-E)."
-        )
+    def start(self, db: Session, *, business_id: uuid.UUID) -> EmbeddedSignupSession:
+        raise EmbeddedSignupNotConfiguredError(_NOT_CONFIGURED)
 
     def complete(
-        self, db: Session, *, business_id: uuid.UUID, authorization_code: str, state: str
+        self,
+        db: Session,
+        *,
+        business_id: uuid.UUID,
+        authorization_code: str,
+        state: str,
+        waba_id: str | None = None,
+        phone_number_id: str | None = None,
     ) -> EmbeddedSignupResult:
-        raise EmbeddedSignupNotConfiguredError(
-            "Embedded Signup isn't available yet — Meta Tech Provider approval "
-            "is still pending (see TODOS.md ONBOARD-E)."
-        )
+        raise EmbeddedSignupNotConfiguredError(_NOT_CONFIGURED)

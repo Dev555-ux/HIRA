@@ -5,9 +5,16 @@ A business brings its own Meta System User token + app secret — created on
 Meta's own site, following in-app instructions — rather than the founder
 manually running a script (app/onboarding/whatsapp.py, now an ops-only
 utility for repointing an existing business's number, not part of this
-flow). True one-click "Embedded Signup" (TODOS.md ONBOARD-E) needs Meta's
-Tech Provider approval, an external, non-engineering process not yet
-granted — this is the realistic self-serve option available today.
+flow).
+
+Stoneveil is now an approved Meta Tech Provider (Sprint 82), so one-click
+Embedded Signup is no longer blocked on an external approval — but this
+remains the production connect flow until that provider is built and
+pilot-validated, and DEC-052 §9 keeps it afterwards as the supported
+fallback for a business that can't complete Meta's hosted flow. Nothing in
+this module is scheduled for deletion; credentials stored here are marked
+`token_source="manual"` precisely so both paths can coexist indefinitely
+(app/meta.py).
 """
 
 from __future__ import annotations
@@ -22,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_current_principal
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.core.time import to_iso_utc
 from app.db.session import get_db
 from app.models import Business, Message
@@ -132,7 +140,9 @@ def get_webhook_config(
 
 
 @router.post("/connect")
+@limiter.limit(lambda: settings.rate_limit_whatsapp_connect)
 def connect_whatsapp(
+    request: Request,
     payload: ConnectWhatsAppRequest,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
@@ -153,12 +163,20 @@ def connect_whatsapp(
     against `uq_businesses_whatsapp_phone_number_id` (the actual race-proof
     guard) *before* any credential is stored — so a request that loses that
     race never leaves an orphaned WhatsAppCredential behind.
+
+    Rate limited (Sprint 82) because every call spends a live Graph API
+    round-trip on Meta's quota before it can fail.
     """
+    logger.info("whatsapp.onboarding.started business_id=%s method=manual", principal.business_id)
     try:
         display_phone_number = whatsapp_credentials.verify_whatsapp_credentials(
             payload.phone_number_id, payload.access_token
         )
     except WhatsAppCredentialInvalidError as exc:
+        logger.info(
+            "whatsapp.onboarding.failed business_id=%s method=manual reason=credentials_rejected",
+            principal.business_id,
+        )
         raise HTTPException(status_code=422, detail=exc.reason) from exc
 
     conflicting = db.scalars(
@@ -168,6 +186,10 @@ def connect_whatsapp(
         )
     ).first()
     if conflicting is not None:
+        logger.info(
+            "whatsapp.onboarding.failed business_id=%s method=manual reason=phone_number_in_use",
+            principal.business_id,
+        )
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PHONE_NUMBER_IN_USE_DETAIL)
 
     business = db.get(Business, principal.business_id)
@@ -201,6 +223,11 @@ def connect_whatsapp(
         ) from exc
 
     stored = whatsapp_credentials.get_stored_credential(db, principal.business_id)
+    logger.info(
+        "whatsapp.onboarding.completed business_id=%s method=manual token_source=%s",
+        principal.business_id,
+        stored.token_source,
+    )
     return {"data": _serialize_status(business, stored, db)}
 
 
@@ -217,6 +244,7 @@ def disconnect_whatsapp(
     that reads whatsapp_connection_status.
     """
     whatsapp_credentials.disconnect(db, principal.business_id)
+    logger.info("whatsapp.disconnected business_id=%s", principal.business_id)
     business = db.get(Business, principal.business_id)
     business.whatsapp_phone_number_id = None
     business.whatsapp_business_account_id = None

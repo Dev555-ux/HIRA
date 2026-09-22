@@ -1,4 +1,5 @@
-"""Encrypts WhatsApp credentials at rest with Fernet (Sprint 69).
+"""Encrypts WhatsApp credentials at rest with Fernet (Sprint 69), and signs
+the onboarding `state` parameter (Sprint 82).
 
 Reuses `CALENDAR_ENCRYPTION_KEY` rather than introducing a new required env
 var — same reasoning as DEC-032's own choice to reuse one key for both
@@ -10,16 +11,32 @@ already invalidates stored Calendar refresh tokens.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings
 from app.whatsapp.errors import WhatsAppNotConfiguredError
 
 
-def _fernet() -> Fernet:
+def _key() -> str:
     if not settings.calendar_encryption_key:
         raise WhatsAppNotConfiguredError("CALENDAR_ENCRYPTION_KEY is not set")
-    return Fernet(settings.calendar_encryption_key.encode())
+    return settings.calendar_encryption_key
+
+
+def _fernet() -> Fernet:
+    return Fernet(_key().encode())
+
+
+def sign(payload: str) -> str:
+    """HMAC-SHA256 of `payload` under the same key the Fernet functions
+    above use — the established pattern for signing an OAuth-style `state`
+    in this codebase (app/calendar/oauth.py does exactly this for Google).
+    Lives here, beside the key it borrows, so the onboarding module doesn't
+    grow a second private copy of the key-loading rules."""
+    return hmac.new(_key().encode(), payload.encode(), hashlib.sha256).hexdigest()
 
 
 def encrypt_secret(value: str) -> str:

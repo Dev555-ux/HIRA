@@ -33,7 +33,7 @@ import time
 
 import httpx
 
-from app.core.config import settings
+from app import meta
 
 
 class WhatsAppSendError(RuntimeError):
@@ -59,9 +59,7 @@ class RetryableSendError(RuntimeError):
 def _build_send_request(
     phone_number_id: str, to: str, body: str, access_token: str
 ) -> tuple[str, dict[str, str], dict[str, object]]:
-    url = (
-        f"{settings.whatsapp_api_base}/{settings.whatsapp_graph_version}/{phone_number_id}/messages"
-    )
+    url = meta.graph_url(phone_number_id, "messages")
     headers = {"Authorization": f"Bearer {access_token}"}
     payload = {
         "messaging_product": "whatsapp",

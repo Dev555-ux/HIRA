@@ -112,8 +112,7 @@ In the Railway service's **Variables** tab, set every one of these (see `backend
 |---|---|
 | `ENVIRONMENT` | `production` (required — this is what activates SEC-1's insecure-default guard) |
 | `WHATSAPP_VERIFY_TOKEN` | a real value you choose (not `dev-verify-token`) |
-| `WHATSAPP_APP_SECRET` | from your Meta App |
-| `WHATSAPP_ACCESS_TOKEN` | your System User token |
+| `META_APP_ID`, `META_APP_SECRET`, `META_APP_CONFIG_ID` | optional (Sprint 82) — Stoneveil's own Meta App, required only to serve Embedded Signup customers. A deployment serving only guided-manual customers boots and runs fine without them. `WHATSAPP_APP_SECRET`/`WHATSAPP_ACCESS_TOKEN` were removed: nothing had read them since credentials went per-business in Sprint 69. |
 | `LLM_PROVIDER` | `groq` or `claude` (not `mock` — the backend now refuses to boot in production with `LLM_PROVIDER=mock`) + the matching `GROQ_API_KEY`/`ANTHROPIC_API_KEY` |
 | `CLERK_JWKS_URL`, `CLERK_ISSUER` | from the Clerk dashboard — **required**; the backend refuses to boot in production without both. **Make sure these come from a Clerk *production* instance, not the default Development instance** — Clerk creates every app in Development mode first, and its API keys/URLs are real and functional, so nothing fails at signup or at this guard if you copy them by mistake (found live in production during RC-1). Development instances are served from a shared `*.clerk.accounts.dev` domain and have strict request-rate limits not meant for real traffic; a production instance needs its own domain (Clerk dashboard → your app → toggle "Production" / add a production instance). The backend logs a warning at startup (`app/main.py::_warn_if_clerk_looks_like_a_dev_instance`) if `CLERK_JWKS_URL` still looks like a `*.clerk.accounts.dev` domain with `ENVIRONMENT=production` — check Railway's logs after first deploy. |
 | `ALLOW_MOCK_AUTH` | `false` (or leave unset) |
@@ -330,8 +329,9 @@ Worker must be given the same values** for every backend variable they share.
 | `ENVIRONMENT` | API, Worker | **Yes** | `development` | No | Set to `production` — activates the SEC-1 insecure-default boot guard. |
 | `USE_TRANSACTIONAL_OUTBOX` | API, Worker | **Yes** (v0.10.0) | `false` | No | `true` routes AI-reply generation through the outbox+worker. Set on **both**; worker must exist first. Flip to `false` = instant rollback. |
 | `WHATSAPP_VERIFY_TOKEN` | API | **Yes** | `dev-verify-token` | **Yes** | Any string you choose; enter the same in Meta's webhook config. |
-| `WHATSAPP_APP_SECRET` | API, Worker | **Yes** | `dev-app-secret` | **Yes** | Meta App secret; verifies webhook signatures. |
-| `WHATSAPP_ACCESS_TOKEN` | API, Worker | **Yes** | `dev-access-token` | **Yes** | Meta System User token; used to send replies. |
+| `META_APP_ID` | API | No | `""` | No | Stoneveil's Meta App id (Tech Provider). Needed only for Embedded Signup. |
+| `META_APP_SECRET` | API | No | `""` | **Yes** | Verifies webhook signatures for Embedded Signup customers. Without it their deliveries are rejected (fail closed); guided-manual customers are unaffected. |
+| `META_APP_CONFIG_ID` | API | No | `""` | No | Business Login configuration id for Embedded Signup's popup. |
 | `WHATSAPP_API_BASE` | API, Worker | No | `https://graph.facebook.com` | No | Rarely changed. |
 | `WHATSAPP_GRAPH_VERSION` | API, Worker | No | `v21.0` | No | Meta Graph API version. |
 | `LLM_PROVIDER` | API, Worker | **Yes** | `mock` | No | `groq` or `claude` — backend refuses to boot in prod with `mock`. |

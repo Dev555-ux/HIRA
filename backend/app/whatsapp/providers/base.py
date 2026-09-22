@@ -2,12 +2,11 @@
 
 Mirrors app/calendar/providers/base.py's shape: callers (the API layer)
 depend only on `EmbeddedSignupProvider`, never on a concrete implementation.
-Today the only implementation is `StubEmbeddedSignupProvider`
-(embedded_signup_stub.py) — Meta Tech Provider approval isn't granted yet
-(TODOS.md ONBOARD-E), so there is nothing real to implement against. A real
-`MetaEmbeddedSignupProvider` is added later by implementing this interface
-and registering it in providers/__init__.py — no change to the API routes
-that call it.
+Two implementations exist: `MetaEmbeddedSignupProvider`
+(embedded_signup_meta.py), the real flow, and `StubEmbeddedSignupProvider`
+(embedded_signup_stub.py), which an unconfigured deployment gets. The factory
+in providers/__init__.py picks between them from configuration alone, so no
+route has to know which one it's talking to.
 
 Does not replace or touch app/whatsapp/credentials.py or app/api/whatsapp.py
 (the guided-manual v1 connect flow) — that remains the production path.
@@ -30,16 +29,36 @@ class EmbeddedSignupSession:
     state: str  # CSRF-protection token, verified again in complete()
 
 
+# `EmbeddedSignupResult.error_code` values. Stable, machine-readable, and
+# safe to show a client: the frontend maps each to its own copy, so no Meta
+# error text, error number, or response body ever reaches a browser. Every
+# failure the provider can produce has one — there is no "unknown" bucket a
+# screen would have to guess at.
+ERROR_STATE_INVALID = "state_invalid"
+ERROR_PERMISSION_DENIED = "permission_denied"
+ERROR_NO_WABA = "no_waba"
+ERROR_NO_PHONE_NUMBER = "no_phone_number"
+ERROR_PHONE_NUMBER_IN_USE = "phone_number_in_use"
+ERROR_TOKEN_EXCHANGE_FAILED = "token_exchange_failed"
+ERROR_REGISTRATION_FAILED = "registration_failed"
+ERROR_PIN_MISMATCH = "pin_mismatch"
+ERROR_SUBSCRIPTION_FAILED = "subscription_failed"
+ERROR_META_UNAVAILABLE = "meta_unavailable"
+
+
 @dataclass
 class EmbeddedSignupResult:
     """Outcome of exchanging a callback's authorization code. `success=False`
-    always carries `error` — callers never have to guess why."""
+    always carries `error` (engineer-readable) and `error_code` (one of the
+    constants above, which is what the UI actually branches on) — callers
+    never have to guess why, and never have to parse prose to find out."""
 
     success: bool
     phone_number_id: str | None = None
     whatsapp_business_account_id: str | None = None
     display_phone_number: str | None = None
     error: str | None = None
+    error_code: str | None = None
 
 
 class EmbeddedSignupError(RuntimeError):
@@ -47,22 +66,40 @@ class EmbeddedSignupError(RuntimeError):
 
 
 class EmbeddedSignupNotConfiguredError(EmbeddedSignupError):
-    """The flag is off, `config_id` is unset, or (today) Meta Tech Provider
-    approval doesn't exist yet — there is no real flow to start or complete."""
+    """This deployment can't attempt a real flow: the flag is off, the Tech
+    Provider configuration is incomplete (app/meta.py), or no Meta-backed
+    provider is registered yet."""
 
 
 class EmbeddedSignupProvider(ABC):
     @abstractmethod
-    def start(self, *, business_id: uuid.UUID) -> EmbeddedSignupSession:
-        """Prepare what the frontend needs to open Meta's popup. Raises
-        EmbeddedSignupNotConfiguredError if this deployment isn't ready to
-        start a real flow."""
+    def start(self, db: Session, *, business_id: uuid.UUID) -> EmbeddedSignupSession:
+        """Prepare what the frontend needs to open Meta's popup, and record
+        the attempt. Takes a session because the `state` it issues is only
+        meaningful if it's also persisted — a signed state nothing stored
+        can be replayed, which is exactly what `WhatsAppOnboardingAttempt`
+        exists to prevent. Raises EmbeddedSignupNotConfiguredError if this
+        deployment isn't ready to start a real flow."""
 
     @abstractmethod
     def complete(
-        self, db: Session, *, business_id: uuid.UUID, authorization_code: str, state: str
+        self,
+        db: Session,
+        *,
+        business_id: uuid.UUID,
+        authorization_code: str,
+        state: str,
+        waba_id: str | None = None,
+        phone_number_id: str | None = None,
     ) -> EmbeddedSignupResult:
-        """Receives the popup callback's authorization code, exchanges it
+        """`waba_id`/`phone_number_id` are what Meta's popup reported to the
+        browser via postMessage. They are hints, not facts: they arrive from
+        a client and are therefore verified server-side against the token's
+        own granular scopes and Meta's phone-number list before anything is
+        stored. Omitting them is fully supported — the provider resolves
+        both from the token itself.
+
+        Receives the popup callback's authorization code, exchanges it
         for a Business Integration System User token, registers the phone
         number (`/register`), subscribes HIRA's webhook (`subscribed_apps`),
         and stores the resulting credentials — the same four backend steps

@@ -152,13 +152,12 @@ class TestJobOutboxMigration:
     def test_migration_leaves_a_single_head(self):
         # Pinned to the current chain tip, not literally c8f2e91a4b3d (this
         # PR's own migration) — bumped whenever a later migration is
-        # appended (most recently a1c7d3f92b40, Sprint 73: ctwa_clid on
-        # conversations + whatsapp_dataset_id on businesses, for the
-        # Click-to-WhatsApp LeadSubmitted conversion event), same
+        # appended (most recently d3f7a10b92c4, Sprint 82: Tech Provider
+        # onboarding fields + the whatsapp_onboarding_attempts table), same
         # maintenance this assertion has always implied.
         cfg = Config(str(BACKEND_DIR / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["a1c7d3f92b40"]
+        assert script.get_heads() == ["d3f7a10b92c4"]
 
     def test_upgrade_then_downgrade_round_trips(self):
         module = _load_migration_module()
